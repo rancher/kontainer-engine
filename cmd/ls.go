@@ -1,19 +1,18 @@
 package cmd
 
 import (
+	"github.com/rancher/kontainer-engine/store"
+	"github.com/rancher/kontainer-engine/utils"
 	"github.com/urfave/cli"
-	"github.com/rancher/netes-machine/store"
-	"github.com/rancher/netes-machine/utils"
 )
 
 func LsCommand() cli.Command {
 	return cli.Command{
-		Name:            "list",
-		ShortName: 	     "ls",
-		Usage:           "list kubernetes clusters",
-		Action:          lsCluster,
-		Flags: []cli.Flag{
-		},
+		Name:      "list",
+		ShortName: "ls",
+		Usage:     "list kubernetes clusters",
+		Action:    lsCluster,
+		Flags:     []cli.Flag{},
 	}
 }
 

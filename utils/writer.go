@@ -121,7 +121,7 @@ func appendTabDelim(buf *bytes.Buffer, value string) {
 
 func printTemplate(out io.Writer, templateContent string, obj interface{}) error {
 	funcMap := map[string]interface{}{
-		"json":     FormatJSON,
+		"json": FormatJSON,
 	}
 	tmpl, err := template.New("").Funcs(funcMap).Parse(templateContent)
 	if err != nil {

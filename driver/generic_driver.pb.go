@@ -16,7 +16,7 @@ It has these top-level messages:
 	ClusterGetRequest
 	ClusterInfo
 */
-package generic_driver
+package drivers
 
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"

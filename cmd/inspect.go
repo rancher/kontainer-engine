@@ -1,20 +1,20 @@
 package cmd
 
 import (
-	"github.com/urfave/cli"
-	"fmt"
-	"github.com/rancher/netes-machine/store"
-	"errors"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/rancher/kontainer-engine/store"
+	"github.com/urfave/cli"
 	"os"
 )
 
 func InspectCommand() cli.Command {
 	return cli.Command{
-		Name:      "inspect",
-		Usage:     "inspect kubernetes clusters",
-		Action:    inspectCluster,
-		Flags:     []cli.Flag{},
+		Name:   "inspect",
+		Usage:  "inspect kubernetes clusters",
+		Action: inspectCluster,
+		Flags:  []cli.Flag{},
 	}
 }
 

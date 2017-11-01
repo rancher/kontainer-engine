@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rancher/netes-machine/cluster"
-	"github.com/rancher/netes-machine/utils"
+	"github.com/rancher/kontainer-engine/cluster"
+	"github.com/rancher/kontainer-engine/utils"
 )
 
 func GetAllClusterFromStore() (map[string]cluster.Cluster, error) {

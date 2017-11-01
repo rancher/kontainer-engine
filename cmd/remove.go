@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	generic "github.com/rancher/netes-machine/driver"
-	"github.com/rancher/netes-machine/store"
-	"github.com/rancher/netes-machine/utils"
+	generic "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/kontainer-engine/store"
+	"github.com/rancher/kontainer-engine/utils"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )

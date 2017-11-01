@@ -1,12 +1,12 @@
-package generic_driver
+package drivers
 
 const (
-	StringType = "string"
-	BoolType = "bool"
-	IntType = "int"
+	StringType      = "string"
+	BoolType        = "bool"
+	IntType         = "int"
 	StringSliceType = "stringSlice"
 )
 
-type RpcServer interface {
-	Serve(errStop chan error)
+type RPCServer interface {
+	Serve()
 }

@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 
+	"github.com/rancher/kontainer-engine/cmd"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-	"github.com/rancher/netes-machine/cmd"
 )
 
 var VERSION = "v0.0.0-dev"
@@ -27,7 +27,7 @@ Run '{{.Name}} COMMAND --help' for more information on a command.
 
 var CommandHelpTemplate = `{{.Usage}}
 {{if .Description}}{{.Description}}{{end}}
-Usage: netes-machine [global options] {{.Name}} {{if .Flags}}[OPTIONS] {{end}}{{if ne "None" .ArgsUsage}}{{if ne "" .ArgsUsage}}{{.ArgsUsage}}{{else}}[arg...]{{end}}{{end}}
+Usage: kontainer-engine [global options] {{.Name}} {{if .Flags}}[OPTIONS] {{end}}{{if ne "None" .ArgsUsage}}{{if ne "" .ArgsUsage}}{{.ArgsUsage}}{{else}}[arg...]{{end}}{{end}}
 
 {{if .Flags}}Options:{{range .Flags}}
 	 {{.}}{{end}}{{end}}
@@ -38,14 +38,14 @@ func main() {
 	cli.CommandHelpTemplate = CommandHelpTemplate
 
 	app := cli.NewApp()
-	app.Name = "netes-machine"
+	app.Name = "kontainer-engine"
 	app.Version = VERSION
 	app.Usage = "CLI tool for creating and managing kubernetes clusters"
 	app.Before = func(ctx *cli.Context) error {
 		if ctx.GlobalBool("debug") {
 			logrus.SetLevel(logrus.DebugLevel)
 		}
-		logrus.Debugf("netes-machine version: %v \n", VERSION)
+		logrus.Debugf("kontainer-engine version: %v \n", VERSION)
 		return nil
 	}
 	app.Author = "Rancher Labs, Inc."
@@ -55,10 +55,11 @@ func main() {
 		cmd.InspectCommand(),
 		cmd.LsCommand(),
 		cmd.RmCommand(),
+		cmd.EnvCommand(),
 	}
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{
-			Name: "debug",
+			Name:  "debug",
 			Usage: "Enable verbose logging",
 		},
 	}

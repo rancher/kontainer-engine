@@ -1,4 +1,4 @@
-package generic_driver
+package drivers
 
 import (
 	"context"
@@ -26,14 +26,14 @@ type GRPCDriverPlugin struct {
 }
 
 func (rpc *GRPCDriverPlugin) Create() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute * 10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 	defer cancel()
 	_, err := rpc.client.Create(ctx, &Empty{})
 	return err
 }
 
 func (rpc *GRPCDriverPlugin) Update() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute * 10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 	defer cancel()
 	_, err := rpc.client.Update(ctx, &Empty{})
 	return err
@@ -52,14 +52,14 @@ func (rpc *GRPCDriverPlugin) Get(name string) (ClusterInfo, error) {
 }
 
 func (rpc *GRPCDriverPlugin) Remove() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute * 5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
 	_, err := rpc.client.Remove(ctx, &Empty{})
 	return err
 }
 
 func (rpc *GRPCDriverPlugin) GetDriverCreateOptions() (DriverFlags, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 15)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
 	defer cancel()
 	flags, err := rpc.client.GetDriverCreateOptions(ctx, &Empty{})
 	if err != nil {
@@ -69,7 +69,7 @@ func (rpc *GRPCDriverPlugin) GetDriverCreateOptions() (DriverFlags, error) {
 }
 
 func (rpc *GRPCDriverPlugin) GetDriverUpdateOptions() (DriverFlags, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 15)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
 	defer cancel()
 	flags, err := rpc.client.GetDriverUpdateOptions(ctx, &Empty{})
 	if err != nil {

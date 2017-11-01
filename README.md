@@ -1,4 +1,4 @@
-netes-machine
+kontainer-engine
 ========
 
 A tool like docker-machine to provision kubernetes cluster for different cloud providers
@@ -9,24 +9,24 @@ A tool like docker-machine to provision kubernetes cluster for different cloud p
 
 ## Usage
 
-`netes-machine create --driver $driverName [OPTIONS] cluster-name`
+`kontainer-engine create --driver $driverName [OPTIONS] cluster-name`
 
-`netes-machine inspect cluster-name`
+`kontainer-engine inspect cluster-name`
 
-`netes-machine ls`
+`kontainer-engine ls`
 
-`netes-machine update [OPTIONS] cluster-name`
+`kontainer-engine update [OPTIONS] cluster-name`
 
-`netes-machine rm cluster-name`
+`kontainer-engine rm cluster-name`
 
 To see what driver create options it has , run
-`netes-machine create --driver $driverName --help`
+`kontainer-engine create --driver $driverName --help`
 
 To see what update options for a cluster , run
-`netes-machine update --help cluster-ame`
+`kontainer-engine update --help cluster-ame`
 
 A serviceAccountToken which binds to the clusterAdmin is automatically created for you, to see what it is, run
-`netes-machine inspect clusterName`
+`kontainer-engine inspect clusterName`
 
 The current supported driver is gke(https://cloud.google.com/container-engine/)
 
@@ -36,12 +36,12 @@ Before running gke driver, make sure you have the credential. To get the credent
 
 `export GOOGLE_APPLICATION_CREDENTIALS=$HOME/gce-credentials.json` or 
 
-`netes-machine create --driver gke --gke-credential-path /path/to/credential cluster-name`
+`kontainer-engine create --driver gke --gke-credential-path /path/to/credential cluster-name`
 
 
 ## Running
 
-`./bin/netes-machine`
+`./bin/kontainer-engine`
 
 ## License
 Copyright (c) 2014-2016 [Rancher Labs, Inc.](http://rancher.com)

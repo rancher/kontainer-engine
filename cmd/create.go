@@ -4,8 +4,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rancher/netes-machine/cluster"
-	generic "github.com/rancher/netes-machine/driver"
+	"github.com/rancher/kontainer-engine/cluster"
+	generic "github.com/rancher/kontainer-engine/driver"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )

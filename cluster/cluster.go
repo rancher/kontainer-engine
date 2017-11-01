@@ -2,14 +2,15 @@ package cluster
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
-	"encoding/json"
-
-	generic "github.com/rancher/netes-machine/driver"
-	"github.com/rancher/netes-machine/utils"
+	generic "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/kontainer-engine/utils"
 	"github.com/urfave/cli"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -21,7 +22,7 @@ const (
 // Cluster represents a kubernetes cluster
 type Cluster struct {
 	// The cluster driver to provision cluster
-	Driver ClusterDriver `json:"-"`
+	Driver Driver `json:"-"`
 	// The name of the cluster driver
 	DriverName string `json:"driverName,omitempty" yaml:"driver_name,omitempty"`
 	// The name of the cluster
@@ -53,9 +54,9 @@ type Cluster struct {
 	Ctx *cli.Context `json:"-"`
 }
 
-// ClusterDriver defines how a cluster should be created and managed.
+// Driver defines how a cluster should be created and managed.
 // Different drivers represents different providers.
-type ClusterDriver interface {
+type Driver interface {
 	// Create creates a cluster
 	Create() error
 
@@ -100,10 +101,7 @@ func (c *Cluster) Create() error {
 		return err
 	}
 	transformClusterInfo(c, info)
-	if err := c.Store(); err != nil {
-		return err
-	}
-	return nil
+	return c.Store()
 }
 
 // Update updates a cluster
@@ -161,9 +159,9 @@ func (c *Cluster) getFileDir() string {
 	return filepath.Join(utils.HomeDir(), ".netes", "clusters", c.Name)
 }
 
-// todo: implement store logic to store the cluster info files
-// todo: this might need to be a interface where we can store on disk or remote
+// Store persists cluster information
 func (c *Cluster) Store() error {
+	// todo: implement store logic to store the cluster info files. this might need to be a interface where we can store on disk or remote
 	for k, v := range map[string]string{
 		c.RootCACert:        caPem,
 		c.ClientKey:         clientKey,
@@ -184,7 +182,99 @@ func (c *Cluster) Store() error {
 	return utils.WriteToFile(data, filepath.Join(c.getFileDir(), "config.json"))
 }
 
-// newCluster create a cluster interface to do operations
+type KubeConfig struct {
+	APIVersion string `yaml:"apiVersion,omitempty"`
+	Clusters   []struct {
+		Cluster struct {
+			CertificateAuthorityData string `yaml:"certificate-authority-data,omitempty"`
+			Server                   string `yaml:"server,omitempty"`
+		} `yaml:"cluster,omitempty"`
+		Name string `yaml:"name,omitempty"`
+	} `yaml:"clusters,omitempty"`
+	Contexts []struct {
+		Context struct {
+			Cluster string `yaml:"cluster,omitempty"`
+			User    string `yaml:"user,omitempty"`
+		} `yaml:"context,omitempty"`
+		Name string `yaml:"name,omitempty"`
+	} `yaml:"contexts,omitempty"`
+	CurrentContext string `yaml:"current-context,omitempty"`
+	Kind           string `yaml:"kind,omitempty"`
+	Preferences    struct {
+	} `yaml:"preferences,omitempty"`
+	Users []struct {
+		Name string `yaml:"name,omitempty"`
+		User struct {
+			Token    string `yaml:"token,omitempty"`
+			Username string `yaml:"username,omitempty"`
+			Password string `yaml:"password,omitempty"`
+		} `yaml:"user,omitempty"`
+	} `yaml:"users,omitempty"`
+}
+
+func (c *Cluster) GenerateConfig() error {
+	name := fmt.Sprintf("%s-%s", c.DriverName, c.Name)
+	isBasicOn := false
+	if c.Username != "" && c.Password != "" {
+		isBasicOn = true
+	}
+
+	config := KubeConfig{
+		Kind:       "Config",
+		APIVersion: "v1",
+		Clusters: make([]struct {
+			Cluster struct {
+				CertificateAuthorityData string `yaml:"certificate-authority-data,omitempty"`
+				Server                   string `yaml:"server,omitempty"`
+			} `yaml:"cluster,omitempty"`
+			Name string `yaml:"name,omitempty"`
+		}, 1),
+		Contexts: make([]struct {
+			Context struct {
+				Cluster string `yaml:"cluster,omitempty"`
+				User    string `yaml:"user,omitempty"`
+			} `yaml:"context,omitempty"`
+			Name string `yaml:"name,omitempty"`
+		}, 1),
+		Users: make([]struct {
+			Name string `yaml:"name,omitempty"`
+			User struct {
+				Token    string `yaml:"token,omitempty"`
+				Username string `yaml:"username,omitempty"`
+				Password string `yaml:"password,omitempty"`
+			} `yaml:"user,omitempty"`
+		}, 1),
+	}
+	config.CurrentContext = name
+	config.Clusters[0].Cluster.CertificateAuthorityData = string(c.RootCACert)
+	config.Clusters[0].Cluster.Server = fmt.Sprintf("https://%s", c.Endpoint)
+	config.Clusters[0].Name = name
+	config.Contexts[0].Context.Cluster = name
+	config.Contexts[0].Context.User = name
+	config.Contexts[0].Name = name
+	config.Users[0].Name = name
+	if isBasicOn {
+		config.Users[0].User.Username = c.Username
+		config.Users[0].User.Password = c.Password
+	} else {
+		config.Users[0].User.Token = c.ServiceAccountToken
+	}
+
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		return err
+	}
+	fileToWrite := filepath.Join(c.getFileDir(), ".kubeconfig")
+	if err := utils.WriteToFile(data, fileToWrite); err != nil {
+		return err
+	}
+	fmt.Printf("\n# KubeConfig files is saved to %s\n", fileToWrite)
+	fmt.Printf("# Please run `eval \"$(./kontainer-engine env %s)\"` to change $KUBECONFIG to point to your config file or use --kubeconfig to point to that file\n\n", c.Name)
+	fmt.Println(fmt.Sprintf("export KUBECONFIG=%v", fileToWrite))
+	return nil
+}
+
+// NewCluster create a cluster interface to do operations
 func NewCluster(driverName string, ctx *cli.Context) (*Cluster, error) {
 	rpcClient, err := generic.NewRPCClient(driverName)
 	if err != nil {

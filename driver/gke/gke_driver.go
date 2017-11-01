@@ -9,16 +9,17 @@ import (
 
 	"os"
 
-	generic "github.com/rancher/netes-machine/driver"
+	generic "github.com/rancher/kontainer-engine/driver"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
 	raw "google.golang.org/api/container/v1"
-	"k8s.io/api/core/v1"
-	"k8s.io/api/rbac/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	v1 "k8s.io/client-go/pkg/api/v1"
+	v1beta1 "k8s.io/client-go/pkg/apis/rbac/v1beta1"
+	// to register gcp auth provider
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd/api"
@@ -33,7 +34,7 @@ const (
 	defaultCredentialEnv = "GOOGLE_APPLICATION_CREDENTIALS"
 )
 
-type driver struct {
+type Driver struct {
 	// ProjectID is the ID of your project to use when creating a cluster
 	ProjectID string
 	// The zone to launch the cluster
@@ -55,7 +56,7 @@ type driver struct {
 	// Enable alpha feature
 	EnableAlphaFeature bool
 	// NodePool id
-	NodePoolId string
+	NodePoolID string
 
 	// Update Config
 	UpdateConfig updateConfig
@@ -70,15 +71,16 @@ type updateConfig struct {
 	NodeVersion string
 }
 
-func NewDriver() *driver {
-	return &driver{
+// NewDriver creates a gke Driver
+func NewDriver() Driver {
+	return Driver{
 		NodeConfig: &raw.NodeConfig{
 			Labels: map[string]string{},
 		},
 	}
 }
 
-func (d *driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
+func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 	driverFlag := generic.DriverFlags{
 		Options: make(map[string]*generic.Flag),
 	}
@@ -125,7 +127,7 @@ func (d *driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 	return &driverFlag, nil
 }
 
-func (d *driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
+func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 	driverFlag := generic.DriverFlags{
 		Options: make(map[string]*generic.Flag),
 	}
@@ -144,11 +146,11 @@ func (d *driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 	return &driverFlag, nil
 }
 
-func (d *driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
+func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	d.Name = driverOptions.StringOptions["name"]
 	d.ProjectID = driverOptions.StringOptions["projectId"]
 	d.Zone = driverOptions.StringOptions["zone"]
-	d.NodePoolId = driverOptions.StringOptions["nodePool"]
+	d.NodePoolID = driverOptions.StringOptions["nodePool"]
 	d.ClusterIpv4Cidr = driverOptions.StringOptions["cluster-ipv4-cidr"]
 	d.Description = driverOptions.StringOptions["description"]
 	d.NodeConfig.DiskSizeGb = driverOptions.IntOptions["disk-size-gb"]
@@ -174,7 +176,7 @@ func (d *driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	return d.validate()
 }
 
-func (d *driver) validate() error {
+func (d *Driver) validate() error {
 	if d.ProjectID == "" || d.Zone == "" || d.Name == "" {
 		logrus.Errorf("ProjectID or Zone or Name is required")
 		return fmt.Errorf("projectID or zone or name is required")
@@ -185,7 +187,7 @@ func (d *driver) validate() error {
 	return nil
 }
 
-func (d *driver) Create() error {
+func (d *Driver) Create() error {
 	svc, err := d.getServiceClient()
 	if err != nil {
 		return err
@@ -198,7 +200,7 @@ func (d *driver) Create() error {
 	return d.waitCluster(svc)
 }
 
-func (d *driver) Update() error {
+func (d *Driver) Update() error {
 	svc, err := d.getServiceClient()
 	if err != nil {
 		return err
@@ -222,13 +224,13 @@ func (d *driver) Update() error {
 
 	if d.UpdateConfig.NodeVersion != "" {
 		logrus.Infof("Updating node version to %v", d.UpdateConfig.NodeVersion)
-		operation, err := svc.Projects.Zones.Clusters.NodePools.Update(d.ProjectID, d.Zone, d.Name, d.NodePoolId, &raw.UpdateNodePoolRequest{
+		operation, err := svc.Projects.Zones.Clusters.NodePools.Update(d.ProjectID, d.Zone, d.Name, d.NodePoolID, &raw.UpdateNodePoolRequest{
 			NodeVersion: d.UpdateConfig.NodeVersion,
 		}).Context(context.Background()).Do()
 		if err != nil {
 			return err
 		}
-		logrus.Debugf("Nodepool %s update is called for project %s, zone %s and cluster %s. Status Code %v", d.NodePoolId, d.ProjectID, d.Zone, d.Name, operation.HTTPStatusCode)
+		logrus.Debugf("Nodepool %s update is called for project %s, zone %s and cluster %s. Status Code %v", d.NodePoolID, d.ProjectID, d.Zone, d.Name, operation.HTTPStatusCode)
 		if err := d.waitNodePool(svc); err != nil {
 			return err
 		}
@@ -236,18 +238,18 @@ func (d *driver) Update() error {
 
 	if d.UpdateConfig.NodeCount != 0 {
 		logrus.Infof("Updating node number to %v", d.UpdateConfig.NodeCount)
-		operation, err := svc.Projects.Zones.Clusters.NodePools.SetSize(d.ProjectID, d.Zone, d.Name, d.NodePoolId, &raw.SetNodePoolSizeRequest{
+		operation, err := svc.Projects.Zones.Clusters.NodePools.SetSize(d.ProjectID, d.Zone, d.Name, d.NodePoolID, &raw.SetNodePoolSizeRequest{
 			NodeCount: d.UpdateConfig.NodeCount,
 		}).Context(context.Background()).Do()
 		if err != nil {
 			return err
 		}
-		logrus.Debugf("Nodepool %s setSize is called for project %s, zone %s and cluster %s. Status Code %v", d.NodePoolId, d.ProjectID, d.Zone, d.Name, operation.HTTPStatusCode)
+		logrus.Debugf("Nodepool %s setSize is called for project %s, zone %s and cluster %s. Status Code %v", d.NodePoolID, d.ProjectID, d.Zone, d.Name, operation.HTTPStatusCode)
 	}
 	return nil
 }
 
-func (d *driver) generateClusterCreateRequest() *raw.CreateClusterRequest {
+func (d *Driver) generateClusterCreateRequest() *raw.CreateClusterRequest {
 	request := raw.CreateClusterRequest{
 		Cluster: &raw.Cluster{},
 	}
@@ -264,7 +266,7 @@ func (d *driver) generateClusterCreateRequest() *raw.CreateClusterRequest {
 	return &request
 }
 
-func (d *driver) Get(request *generic.ClusterGetRequest) (*generic.ClusterInfo, error) {
+func (d *Driver) Get(request *generic.ClusterGetRequest) (*generic.ClusterInfo, error) {
 	svc, err := d.getServiceClient()
 	if err != nil {
 		return nil, err
@@ -298,7 +300,7 @@ func (d *driver) Get(request *generic.ClusterGetRequest) (*generic.ClusterInfo, 
 	return info, nil
 }
 
-func (d *driver) Remove() error {
+func (d *Driver) Remove() error {
 	svc, err := d.getServiceClient()
 	if err != nil {
 		return err
@@ -312,7 +314,7 @@ func (d *driver) Remove() error {
 	return nil
 }
 
-func (d *driver) getServiceClient() (*raw.Service, error) {
+func (d *Driver) getServiceClient() (*raw.Service, error) {
 	if d.CredentialPath != "" {
 		os.Setenv(defaultCredentialEnv, d.CredentialPath)
 	}
@@ -422,7 +424,7 @@ func generateServiceAccountToken(cluster *raw.Cluster) (string, error) {
 	return "", fmt.Errorf("failed to configure serviceAccountToken for cluster name %v", cluster.Name)
 }
 
-func (d *driver) waitCluster(svc *raw.Service) error {
+func (d *Driver) waitCluster(svc *raw.Service) error {
 	lastMsg := ""
 	for {
 		cluster, err := svc.Projects.Zones.Clusters.Get(d.ProjectID, d.Zone, d.Name).Context(context.TODO()).Do()
@@ -439,13 +441,12 @@ func (d *driver) waitCluster(svc *raw.Service) error {
 		}
 		time.Sleep(time.Second * 5)
 	}
-	return nil
 }
 
-func (d *driver) waitNodePool(svc *raw.Service) error {
+func (d *Driver) waitNodePool(svc *raw.Service) error {
 	lastMsg := ""
 	for {
-		nodepool, err := svc.Projects.Zones.Clusters.NodePools.Get(d.ProjectID, d.Zone, d.Name, d.NodePoolId).Context(context.TODO()).Do()
+		nodepool, err := svc.Projects.Zones.Clusters.NodePools.Get(d.ProjectID, d.Zone, d.Name, d.NodePoolID).Context(context.TODO()).Do()
 		if err != nil {
 			return err
 		}
@@ -454,10 +455,9 @@ func (d *driver) waitNodePool(svc *raw.Service) error {
 			return nil
 		}
 		if nodepool.Status != lastMsg {
-			logrus.Infof("%v nodepool %v......", strings.ToLower(nodepool.Status), d.NodePoolId)
+			logrus.Infof("%v nodepool %v......", strings.ToLower(nodepool.Status), d.NodePoolID)
 			lastMsg = nodepool.Status
 		}
 		time.Sleep(time.Second * 5)
 	}
-	return nil
 }

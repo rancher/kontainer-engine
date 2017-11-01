@@ -6,8 +6,8 @@ import (
 
 	"os"
 
-	generic "github.com/rancher/netes-machine/driver"
-	"github.com/rancher/netes-machine/store"
+	generic "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/kontainer-engine/store"
 	"github.com/urfave/cli"
 )
 

@@ -16,9 +16,9 @@ if echo $TAG | grep -q dirty; then
     TAG=dev
 fi
 
-cp ../bin/netes-machine .
+cp ../bin/kontainer-engine .
 
-IMAGE=${REPO}/netes-machine:${TAG}
+IMAGE=${REPO}/kontainer-engine:${TAG}
 docker build -t ${IMAGE} .
 echo ${IMAGE} > ../dist/images
 echo Built ${IMAGE}
