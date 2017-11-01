@@ -10,12 +10,16 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
+const (
+	listernAddr = "127.0.0.1:"
+)
+
 type Server struct {
 	gkeDriver *Driver
-	address   string
+	address   chan string
 }
 
-func NewGkeRPCServer(gkeDriver Driver, addr string) *Server {
+func NewGkeRPCServer(gkeDriver Driver, addr chan string) *Server {
 	return &Server{
 		gkeDriver: &gkeDriver,
 		address:   addr,
@@ -51,14 +55,16 @@ func (s *Server) Remove(ctx context.Context, in *generic.Empty) (*generic.Empty,
 }
 
 func (s *Server) Serve() {
-	listen, err := net.Listen("tcp", s.address)
+	listen, err := net.Listen("tcp", listernAddr)
 	if err != nil {
 		logrus.Fatal(err)
 	}
+	addr := listen.Addr().String()
+	s.address <- addr
 	grpcServer := grpc.NewServer()
 	generic.RegisterDriverServer(grpcServer, s)
 	reflection.Register(grpcServer)
-	logrus.Debugf("RPC Server listening on address %s", s.address)
+	logrus.Debugf("RPC Server listening on address %s", addr)
 	if err := grpcServer.Serve(listen); err != nil {
 		logrus.Fatal(err)
 	}

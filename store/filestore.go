@@ -12,7 +12,7 @@ import (
 )
 
 func GetAllClusterFromStore() (map[string]cluster.Cluster, error) {
-	homeDir := filepath.Join(utils.HomeDir(), ".netes", "clusters")
+	homeDir := filepath.Join(utils.HomeDir(), ".kontainer", "clusters")
 	dir, err := ioutil.ReadDir(homeDir)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err

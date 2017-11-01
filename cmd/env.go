@@ -12,7 +12,6 @@ func EnvCommand() cli.Command {
 		Name:   "env",
 		Usage:  "Show the environment variable(KUBECONFIG) to export",
 		Action: env,
-		// todo: set unset flag
 	}
 }
 

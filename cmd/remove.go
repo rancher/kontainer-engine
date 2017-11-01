@@ -5,9 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	generic "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/store"
-	"github.com/rancher/kontainer-engine/utils"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -34,8 +32,7 @@ func rmCluster(ctx *cli.Context) error {
 	if !ok {
 		return fmt.Errorf("cluster %v can't be found", name)
 	}
-	runDriver(cluster.DriverName)
-	rpcClient, err := generic.NewRPCClient(cluster.DriverName)
+	rpcClient, _, err := runRPCDriver(cluster.DriverName)
 	if err != nil {
 		return err
 	}
@@ -44,7 +41,7 @@ func rmCluster(ctx *cli.Context) error {
 		return err
 	}
 	// todo: interface the storage level
-	clusterFilePath := filepath.Join(utils.HomeDir(), ".netes", "clusters", cluster.Name)
+	clusterFilePath := filepath.Join(cluster.GetFileDir(), cluster.Name)
 	logrus.Debugf("Deleting cluster storage path %v", clusterFilePath)
 	if err := os.RemoveAll(clusterFilePath); err != nil && !os.IsNotExist(err) {
 		return err

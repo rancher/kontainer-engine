@@ -33,12 +33,11 @@ func updateWrapper(ctx *cli.Context) error {
 	if !ok {
 		return fmt.Errorf("cluster %v can't be found", name)
 	}
-	runDriver(cluster.DriverName)
-
-	rpcClient, err := generic.NewRPCClient(cluster.DriverName)
+	rpcClient, addr, err := runRPCDriver(cluster.DriverName)
 	if err != nil {
 		return err
 	}
+
 	driverFlags, err := rpcClient.GetDriverUpdateOptions()
 	if err != nil {
 		return err
@@ -52,6 +51,10 @@ func updateWrapper(ctx *cli.Context) error {
 			updateeCmd.Flags = append(GlobalFlag, append(updateeCmd.Flags, flags...)...)
 			updateeCmd.Action = updateCluster
 		}
+	}
+	if len(os.Args) > 1 && addr != "" {
+		args := append(os.Args[0:len(os.Args)-1], "--plugin-listen-addr", addr, os.Args[len(os.Args)-1])
+		return ctx.App.Run(args)
 	}
 	return ctx.App.Run(os.Args)
 }
@@ -69,7 +72,8 @@ func updateCluster(ctx *cli.Context) error {
 	if !ok {
 		return fmt.Errorf("cluster %v can't be found", name)
 	}
-	rpcClient, err := generic.NewRPCClient(cluster.DriverName)
+	addr := ctx.String("plugin-listen-addr")
+	rpcClient, err := generic.NewRPCClient(cluster.DriverName, addr)
 	if err != nil {
 		return err
 	}

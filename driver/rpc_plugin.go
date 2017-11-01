@@ -7,9 +7,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-func NewRPCClient(driverName string) (*GRPCDriverPlugin, error) {
-	// todo: not hard-coded
-	conn, err := grpc.Dial("127.0.0.1:9001", grpc.WithInsecure())
+func NewRPCClient(driverName string, addr string) (*GRPCDriverPlugin, error) {
+	conn, err := grpc.Dial(addr, grpc.WithInsecure())
 	if err != nil {
 		return nil, err
 	}

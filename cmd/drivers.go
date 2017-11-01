@@ -5,13 +5,13 @@ import (
 	"github.com/rancher/kontainer-engine/driver/gke"
 )
 
-func runDriver(driverName string) error {
+func runDriver(driverName string, addrChan chan string) error {
 	switch driverName {
 	case "gke":
 		gkeDriver := gke.NewDriver()
-		// todo: change it to be not hard-coded
-		addr := "127.0.0.1:9001"
-		go startRPCServer(gke.NewGkeRPCServer(gkeDriver, addr))
+		go startRPCServer(gke.NewGkeRPCServer(gkeDriver, addrChan))
+	default:
+		addrChan <- ""
 	}
 	return nil
 }

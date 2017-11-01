@@ -15,6 +15,10 @@ var GlobalFlag = []cli.Flag{
 		Name:  "debug",
 		Usage: "Enable verbose logging",
 	},
+	cli.StringFlag{
+		Name: "plugin-listen-addr",
+		Usage: "The listening address for rpc plugin server",
+	},
 }
 
 func CreateCommand() cli.Command {
@@ -43,9 +47,7 @@ func createWapper(ctx *cli.Context) error {
 		logrus.Error("Driver name is required")
 		return cli.ShowCommandHelp(ctx, "create")
 	}
-	runDriver(driverName)
-
-	rpcClient, err := generic.NewRPCClient(driverName)
+	rpcClient, addr, err := runRPCDriver(driverName)
 	if err != nil {
 		return err
 	}
@@ -61,6 +63,10 @@ func createWapper(ctx *cli.Context) error {
 			createCmd.Flags = append(GlobalFlag, append(createCmd.Flags, flags...)...)
 			createCmd.Action = create
 		}
+	}
+	if len(os.Args) > 1 && addr != "" {
+		args := append(os.Args[0:len(os.Args)-1], "--plugin-listen-addr", addr, os.Args[len(os.Args)-1])
+		return ctx.App.Run(args)
 	}
 	return ctx.App.Run(os.Args)
 }

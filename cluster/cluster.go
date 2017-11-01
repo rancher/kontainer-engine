@@ -149,14 +149,14 @@ func transformClusterInfo(c *Cluster, clusterInfo generic.ClusterInfo) {
 }
 
 func (c *Cluster) IsCreated() bool {
-	if _, err := os.Stat(filepath.Join(c.getFileDir(), "config.json")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(c.GetFileDir(), "config.json")); os.IsNotExist(err) {
 		return false
 	}
 	return true
 }
 
-func (c *Cluster) getFileDir() string {
-	return filepath.Join(utils.HomeDir(), ".netes", "clusters", c.Name)
+func (c *Cluster) GetFileDir() string {
+	return filepath.Join(utils.HomeDir(), ".kontainer", "clusters", c.Name)
 }
 
 // Store persists cluster information
@@ -171,7 +171,7 @@ func (c *Cluster) Store() error {
 		if err != nil {
 			return err
 		}
-		if err := utils.WriteToFile(data, filepath.Join(c.getFileDir(), v)); err != nil {
+		if err := utils.WriteToFile(data, filepath.Join(c.GetFileDir(), v)); err != nil {
 			return err
 		}
 	}
@@ -179,7 +179,7 @@ func (c *Cluster) Store() error {
 	if err != nil {
 		return err
 	}
-	return utils.WriteToFile(data, filepath.Join(c.getFileDir(), "config.json"))
+	return utils.WriteToFile(data, filepath.Join(c.GetFileDir(), "config.json"))
 }
 
 type KubeConfig struct {
@@ -264,7 +264,7 @@ func (c *Cluster) GenerateConfig() error {
 	if err != nil {
 		return err
 	}
-	fileToWrite := filepath.Join(c.getFileDir(), ".kubeconfig")
+	fileToWrite := filepath.Join(c.GetFileDir(), ".kubeconfig")
 	if err := utils.WriteToFile(data, fileToWrite); err != nil {
 		return err
 	}
@@ -276,7 +276,8 @@ func (c *Cluster) GenerateConfig() error {
 
 // NewCluster create a cluster interface to do operations
 func NewCluster(driverName string, ctx *cli.Context) (*Cluster, error) {
-	rpcClient, err := generic.NewRPCClient(driverName)
+	addr := ctx.String("plugin-listen-addr")
+	rpcClient, err := generic.NewRPCClient(driverName, addr)
 	if err != nil {
 		return nil, err
 	}

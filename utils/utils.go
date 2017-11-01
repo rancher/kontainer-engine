@@ -1,9 +1,6 @@
 package utils
 
 import (
-	"encoding/base64"
-	"encoding/pem"
-	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -45,16 +42,4 @@ func HomeDir() string {
 		return os.Getenv("USERPROFILE")
 	}
 	return os.Getenv("HOME")
-}
-
-func DecodePem(data, types string) ([]byte, error) {
-	capem, err := base64.StdEncoding.DecodeString(data)
-	if err != nil {
-		return nil, err
-	}
-	capemBlock, _ := pem.Decode(capem)
-	if capemBlock == nil || capemBlock.Type != types {
-		return nil, errors.New("failed to decode ca.pem")
-	}
-	return capemBlock.Bytes, nil
 }
