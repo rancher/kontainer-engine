@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/rancher/kontainer-engine/cluster"
-	generic "github.com/rancher/kontainer-engine/driver"
+	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -121,7 +121,7 @@ func lookUpDebugFlag() bool {
 	return false
 }
 
-func getDriverFlags(opts generic.DriverFlags) []cli.Flag {
+func getDriverFlags(opts rpcDriver.DriverFlags) []cli.Flag {
 	flags := []cli.Flag{}
 	for k, v := range opts.Options {
 		switch v.Type {

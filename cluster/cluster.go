@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	generic "github.com/rancher/kontainer-engine/driver"
+	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/utils"
 	"github.com/urfave/cli"
 	"gopkg.in/yaml.v2"
@@ -64,7 +64,7 @@ type Driver interface {
 	Update() error
 
 	// Get a cluster info
-	Get(name string) (generic.ClusterInfo, error)
+	Get(name string) (rpcDriver.ClusterInfo, error)
 
 	// Remove removes a cluster
 	Remove() error
@@ -73,13 +73,13 @@ type Driver interface {
 	DriverName() string
 
 	// Get driver create options flags for creating clusters
-	GetDriverCreateOptions() (generic.DriverFlags, error)
+	GetDriverCreateOptions() (rpcDriver.DriverFlags, error)
 
 	// Get driver update options flags for updating cluster
-	GetDriverUpdateOptions() (generic.DriverFlags, error)
+	GetDriverUpdateOptions() (rpcDriver.DriverFlags, error)
 
 	// Set driver options for cluster driver
-	SetDriverOptions(options generic.DriverOptions) error
+	SetDriverOptions(options rpcDriver.DriverOptions) error
 }
 
 // Create creates a cluster
@@ -119,11 +119,11 @@ func (c *Cluster) Update() error {
 
 // Remove removes a cluster
 func (c *Cluster) Remove() error {
-	driverOptions := generic.DriverOptions{
+	driverOptions := rpcDriver.DriverOptions{
 		BoolOptions:        make(map[string]bool),
 		StringOptions:      make(map[string]string),
 		IntOptions:         make(map[string]int64),
-		StringSliceOptions: make(map[string]*generic.StringSlice),
+		StringSliceOptions: make(map[string]*rpcDriver.StringSlice),
 	}
 	for k, v := range c.Metadata {
 		driverOptions.StringOptions[k] = v
@@ -135,7 +135,7 @@ func (c *Cluster) Remove() error {
 	return c.Driver.Remove()
 }
 
-func transformClusterInfo(c *Cluster, clusterInfo generic.ClusterInfo) {
+func transformClusterInfo(c *Cluster, clusterInfo rpcDriver.ClusterInfo) {
 	c.ClientCertificate = clusterInfo.ClientCertificate
 	c.ClientKey = clusterInfo.ClientKey
 	c.RootCACert = clusterInfo.RootCaCertificate
@@ -277,7 +277,7 @@ func (c *Cluster) GenerateConfig() error {
 // NewCluster create a cluster interface to do operations
 func NewCluster(driverName string, ctx *cli.Context) (*Cluster, error) {
 	addr := ctx.String("plugin-listen-addr")
-	rpcClient, err := generic.NewRPCClient(driverName, addr)
+	rpcClient, err := rpcDriver.NewClient(driverName, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -294,12 +294,12 @@ func NewCluster(driverName string, ctx *cli.Context) (*Cluster, error) {
 }
 
 // getDriverOpts get the flags and value and generate DriverOptions
-func getDriverOpts(ctx *cli.Context) generic.DriverOptions {
-	driverOptions := generic.DriverOptions{
+func getDriverOpts(ctx *cli.Context) rpcDriver.DriverOptions {
+	driverOptions := rpcDriver.DriverOptions{
 		BoolOptions:        make(map[string]bool),
 		StringOptions:      make(map[string]string),
 		IntOptions:         make(map[string]int64),
-		StringSliceOptions: make(map[string]*generic.StringSlice),
+		StringSliceOptions: make(map[string]*rpcDriver.StringSlice),
 	}
 	for _, flag := range ctx.Command.Flags {
 		switch flag.(type) {
@@ -310,7 +310,7 @@ func getDriverOpts(ctx *cli.Context) generic.DriverOptions {
 		case cli.Int64Flag:
 			driverOptions.IntOptions[flag.GetName()] = ctx.Int64(flag.GetName())
 		case cli.StringSliceFlag:
-			driverOptions.StringSliceOptions[flag.GetName()] = &generic.StringSlice{
+			driverOptions.StringSliceOptions[flag.GetName()] = &rpcDriver.StringSlice{
 				Value: ctx.StringSlice(flag.GetName()),
 			}
 		}

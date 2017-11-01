@@ -72,8 +72,8 @@ type updateConfig struct {
 }
 
 // NewDriver creates a gke Driver
-func NewDriver() Driver {
-	return Driver{
+func NewDriver() *Driver {
+	return &Driver{
 		NodeConfig: &raw.NodeConfig{
 			Labels: map[string]string{},
 		},

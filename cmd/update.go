@@ -73,7 +73,7 @@ func updateCluster(ctx *cli.Context) error {
 		return fmt.Errorf("cluster %v can't be found", name)
 	}
 	addr := ctx.String("plugin-listen-addr")
-	rpcClient, err := generic.NewRPCClient(cluster.DriverName, addr)
+	rpcClient, err := generic.NewClient(cluster.DriverName, addr)
 	if err != nil {
 		return err
 	}

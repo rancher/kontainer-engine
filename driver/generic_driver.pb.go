@@ -347,7 +347,7 @@ func (c *driverClient) SetDriverOptions(ctx context.Context, in *DriverOptions, 
 	return out, nil
 }
 
-// Server API for Driver service
+// GrpcServer API for Driver service
 
 type DriverServer interface {
 	Create(context.Context, *Empty) (*Empty, error)
