@@ -289,7 +289,7 @@ func (d *Driver) Get(request *generic.ClusterGetRequest) (*generic.ClusterInfo, 
 
 	info.Metadata["projectId"] = d.ProjectID
 	info.Metadata["zone"] = d.Zone
-	info.Metadata["credentialPath"] = d.CredentialPath
+	info.Metadata["gke-credential-path"] = d.CredentialPath
 	info.Metadata["nodePool"] = cluster.NodePools[0].Name
 	serviceAccountToken, err := generateServiceAccountToken(cluster)
 	if err != nil {
