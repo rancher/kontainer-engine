@@ -16,7 +16,7 @@ var GlobalFlag = []cli.Flag{
 		Usage: "Enable verbose logging",
 	},
 	cli.StringFlag{
-		Name: "plugin-listen-addr",
+		Name:  "plugin-listen-addr",
 		Usage: "The listening address for rpc plugin server",
 	},
 }

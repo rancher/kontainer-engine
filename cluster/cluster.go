@@ -9,14 +9,17 @@ import (
 
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/utils"
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"gopkg.in/yaml.v2"
+	"io/ioutil"
 )
 
 const (
-	caPem      = "ca.pem"
-	clientKey  = "key.pem"
-	clientCert = "cert.pem"
+	caPem             = "ca.pem"
+	clientKey         = "key.pem"
+	clientCert        = "cert.pem"
+	defaultConfigName = "config.json"
 )
 
 // Cluster represents a kubernetes cluster
@@ -85,6 +88,7 @@ type Driver interface {
 // Create creates a cluster
 func (c *Cluster) Create() error {
 	if c.IsCreated() {
+		logrus.Warnf("Cluster %s already exists. If it doesn't exist on the provider, make sure to clean them up by running `kontainer-engine rm %s`", c.Name, c.Name)
 		return nil
 	}
 	driverOpts := getDriverOpts(c.Ctx)
@@ -101,6 +105,9 @@ func (c *Cluster) Create() error {
 		return err
 	}
 	transformClusterInfo(c, info)
+	if err := c.StoreConfig(); err != nil {
+		return err
+	}
 	return c.Store()
 }
 
@@ -114,7 +121,15 @@ func (c *Cluster) Update() error {
 	if err := c.Driver.SetDriverOptions(driverOpts); err != nil {
 		return err
 	}
-	return c.Driver.Update()
+	if err := c.Driver.Update(); err != nil {
+		return err
+	}
+	info, err := c.Driver.Get(c.Name)
+	if err != nil {
+		return err
+	}
+	transformClusterInfo(c, info)
+	return c.Store()
 }
 
 // Remove removes a cluster
@@ -149,14 +164,14 @@ func transformClusterInfo(c *Cluster, clusterInfo rpcDriver.ClusterInfo) {
 }
 
 func (c *Cluster) IsCreated() bool {
-	if _, err := os.Stat(filepath.Join(c.GetFileDir(), "config.json")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(c.GetFileDir(), defaultConfigName)); os.IsNotExist(err) {
 		return false
 	}
 	return true
 }
 
 func (c *Cluster) GetFileDir() string {
-	return filepath.Join(utils.HomeDir(), ".kontainer", "clusters", c.Name)
+	return filepath.Join(utils.HomeDir(), "clusters", c.Name)
 }
 
 // Store persists cluster information
@@ -179,98 +194,117 @@ func (c *Cluster) Store() error {
 	if err != nil {
 		return err
 	}
-	return utils.WriteToFile(data, filepath.Join(c.GetFileDir(), "config.json"))
+	return utils.WriteToFile(data, filepath.Join(c.GetFileDir(), defaultConfigName))
 }
 
-type KubeConfig struct {
-	APIVersion string `yaml:"apiVersion,omitempty"`
-	Clusters   []struct {
-		Cluster struct {
-			CertificateAuthorityData string `yaml:"certificate-authority-data,omitempty"`
-			Server                   string `yaml:"server,omitempty"`
-		} `yaml:"cluster,omitempty"`
-		Name string `yaml:"name,omitempty"`
-	} `yaml:"clusters,omitempty"`
-	Contexts []struct {
-		Context struct {
-			Cluster string `yaml:"cluster,omitempty"`
-			User    string `yaml:"user,omitempty"`
-		} `yaml:"context,omitempty"`
-		Name string `yaml:"name,omitempty"`
-	} `yaml:"contexts,omitempty"`
-	CurrentContext string `yaml:"current-context,omitempty"`
-	Kind           string `yaml:"kind,omitempty"`
-	Preferences    struct {
-	} `yaml:"preferences,omitempty"`
-	Users []struct {
-		Name string `yaml:"name,omitempty"`
-		User struct {
-			Token    string `yaml:"token,omitempty"`
-			Username string `yaml:"username,omitempty"`
-			Password string `yaml:"password,omitempty"`
-		} `yaml:"user,omitempty"`
-	} `yaml:"users,omitempty"`
-}
-
-func (c *Cluster) GenerateConfig() error {
-	name := fmt.Sprintf("%s-%s", c.DriverName, c.Name)
+func (c *Cluster) StoreConfig() error {
 	isBasicOn := false
 	if c.Username != "" && c.Password != "" {
 		isBasicOn = true
 	}
-
-	config := KubeConfig{
-		Kind:       "Config",
-		APIVersion: "v1",
-		Clusters: make([]struct {
-			Cluster struct {
-				CertificateAuthorityData string `yaml:"certificate-authority-data,omitempty"`
-				Server                   string `yaml:"server,omitempty"`
-			} `yaml:"cluster,omitempty"`
-			Name string `yaml:"name,omitempty"`
-		}, 1),
-		Contexts: make([]struct {
-			Context struct {
-				Cluster string `yaml:"cluster,omitempty"`
-				User    string `yaml:"user,omitempty"`
-			} `yaml:"context,omitempty"`
-			Name string `yaml:"name,omitempty"`
-		}, 1),
-		Users: make([]struct {
-			Name string `yaml:"name,omitempty"`
-			User struct {
-				Token    string `yaml:"token,omitempty"`
-				Username string `yaml:"username,omitempty"`
-				Password string `yaml:"password,omitempty"`
-			} `yaml:"user,omitempty"`
-		}, 1),
-	}
-	config.CurrentContext = name
-	config.Clusters[0].Cluster.CertificateAuthorityData = string(c.RootCACert)
-	config.Clusters[0].Cluster.Server = fmt.Sprintf("https://%s", c.Endpoint)
-	config.Clusters[0].Name = name
-	config.Contexts[0].Context.Cluster = name
-	config.Contexts[0].Context.User = name
-	config.Contexts[0].Name = name
-	config.Users[0].Name = name
+	username, password, token := "", "", ""
 	if isBasicOn {
-		config.Users[0].User.Username = c.Username
-		config.Users[0].User.Password = c.Password
+		username = c.Username
+		password = c.Password
 	} else {
-		config.Users[0].User.Token = c.ServiceAccountToken
+		token = c.ServiceAccountToken
+	}
+
+	configFile := utils.KubeConfigFilePath()
+	config := KubeConfig{}
+	if _, err := os.Stat(configFile); err == nil {
+		data, err := ioutil.ReadFile(configFile)
+		if err != nil {
+			return err
+		}
+		if err := yaml.Unmarshal(data, &config); err != nil {
+			return err
+		}
+	}
+	config.APIVersion = "v1"
+	config.Kind = "Config"
+
+	// setup clusters
+	cluster := ConfigCluster{
+		Cluster: DataCluster{
+			CertificateAuthorityData: string(c.RootCACert),
+			Server: fmt.Sprintf("https://%s", c.Endpoint),
+		},
+		Name: c.Name,
+	}
+	if config.Clusters == nil || len(config.Clusters) == 0 {
+		config.Clusters = []ConfigCluster{cluster}
+	} else {
+		exist := false
+		for _, cluster := range config.Clusters {
+			if cluster.Name == c.Name {
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			config.Clusters = append(config.Clusters, cluster)
+		}
+	}
+
+	// setup users
+	user := ConfigUser{
+		User: UserData{
+			Username: username,
+			Password: password,
+			Token:    token,
+		},
+		Name: c.Name,
+	}
+	if config.Users == nil || len(config.Users) == 0 {
+		config.Users = []ConfigUser{user}
+	} else {
+		exist := false
+		for _, user := range config.Users {
+			if user.Name == c.Name {
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			config.Users = append(config.Users, user)
+		}
+	}
+
+	// setup context
+	context := ConfigContext{
+		Context: ContextData{
+			Cluster: c.Name,
+			User:    c.Name,
+		},
+		Name: c.Name,
+	}
+	if config.Contexts == nil || len(config.Contexts) == 0 {
+		config.Contexts = []ConfigContext{context}
+	} else {
+		exist := false
+		for _, context := range config.Contexts {
+			if context.Name == c.Name {
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			config.Contexts = append(config.Contexts, context)
+		}
 	}
 
 	data, err := yaml.Marshal(config)
 	if err != nil {
 		return err
 	}
-	fileToWrite := filepath.Join(c.GetFileDir(), ".kubeconfig")
+	fileToWrite := utils.KubeConfigFilePath()
 	if err := utils.WriteToFile(data, fileToWrite); err != nil {
 		return err
 	}
-	fmt.Printf("\n# KubeConfig files is saved to %s\n", fileToWrite)
-	fmt.Printf("# Please run `eval \"$(./kontainer-engine env %s)\"` to change $KUBECONFIG to point to your config file or use --kubeconfig to point to that file\n\n", c.Name)
-	fmt.Println(fmt.Sprintf("export KUBECONFIG=%v", fileToWrite))
+	logrus.Debugf("KubeConfig files is saved to %s", fileToWrite)
+	logrus.Debug("Kubeconfig file\n" + string(data))
+
 	return nil
 }
 

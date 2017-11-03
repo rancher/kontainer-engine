@@ -7,6 +7,10 @@ import (
 	"runtime"
 )
 
+const (
+	defaultFileName = "kubeconfig"
+)
+
 func WriteToFile(data []byte, file string) error {
 	if err := os.MkdirAll(filepath.Dir(file), os.ModePerm); err != nil {
 		return err
@@ -15,7 +19,7 @@ func WriteToFile(data []byte, file string) error {
 		return ioutil.WriteFile(file, data, 0644)
 	}
 
-	tmpfi, err := ioutil.TempFile("", "file.tmp")
+	tmpfi, err := ioutil.TempFile(filepath.Dir(file), "file.tmp")
 	if err != nil {
 		return err
 	}
@@ -38,8 +42,15 @@ func WriteToFile(data []byte, file string) error {
 }
 
 func HomeDir() string {
+	homeDir := ""
 	if runtime.GOOS == "windows" {
-		return os.Getenv("USERPROFILE")
+		homeDir = os.Getenv("USERPROFILE")
+	} else {
+		homeDir = os.Getenv("HOME")
 	}
-	return os.Getenv("HOME")
+	return filepath.Join(homeDir, ".kontainer")
+}
+
+func KubeConfigFilePath() string {
+	return filepath.Join(HomeDir(), defaultFileName)
 }

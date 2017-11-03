@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	listernAddr = "127.0.0.1:"
+	listenAddr = "127.0.0.1:"
 )
 
 type Driver interface {
@@ -70,7 +70,7 @@ func (s *GrpcServer) Remove(ctx context.Context, in *Empty) (*Empty, error) {
 }
 
 func (s *GrpcServer) Serve() {
-	listen, err := net.Listen("tcp", listernAddr)
+	listen, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		logrus.Fatal(err)
 	}

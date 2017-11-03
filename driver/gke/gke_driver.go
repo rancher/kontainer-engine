@@ -289,7 +289,7 @@ func (d *Driver) Get(request *generic.ClusterGetRequest) (*generic.ClusterInfo, 
 
 	info.Metadata["projectId"] = d.ProjectID
 	info.Metadata["zone"] = d.Zone
-	info.Metadata["gke-credential-path"] = d.CredentialPath
+	info.Metadata["gke-credential-path"] = os.Getenv(defaultCredentialEnv)
 	info.Metadata["nodePool"] = cluster.NodePools[0].Name
 	serviceAccountToken, err := generateServiceAccountToken(cluster)
 	if err != nil {
@@ -307,10 +307,13 @@ func (d *Driver) Remove() error {
 	}
 	logrus.Debugf("Removing cluster %v from project %v, zone %v", d.Name, d.ProjectID, d.Zone)
 	operation, err := svc.Projects.Zones.Clusters.Delete(d.ProjectID, d.Zone, d.Name).Context(context.Background()).Do()
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "notFound") {
 		return err
+	} else if err == nil {
+		logrus.Debugf("Cluster %v delete is called. Status Code %v", d.Name, operation.HTTPStatusCode)
+	} else {
+		logrus.Debugf("Cluster %s doesn't exist", d.Name)
 	}
-	logrus.Debugf("Cluster %v delete is called. Status Code %v", d.Name, operation.HTTPStatusCode)
 	return nil
 }
 

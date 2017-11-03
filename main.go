@@ -45,7 +45,7 @@ func main() {
 		if ctx.GlobalBool("debug") {
 			logrus.SetLevel(logrus.DebugLevel)
 		}
-		logrus.Debugf("kontainer-engine version: %v \n", VERSION)
+		logrus.Debugf("kontainer-engine version: %v", VERSION)
 		return nil
 	}
 	app.Author = "Rancher Labs, Inc."

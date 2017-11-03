@@ -5,13 +5,23 @@ import (
 	"github.com/rancher/kontainer-engine/driver/gke"
 )
 
+var (
+	builtInDrivers = map[string]bool{
+		"gke": true,
+		"aks": true,
+	}
+)
+
 func runDriver(driverName string, addrChan chan string) error {
+	var driver rpcDriver.Driver
 	switch driverName {
 	case "gke":
-		gkeDriver := gke.NewDriver()
-		go startRPCServer(rpcDriver.NewServer(gkeDriver, addrChan))
+		driver = gke.NewDriver()
 	default:
 		addrChan <- ""
+	}
+	if builtInDrivers[driverName] {
+		go startRPCServer(rpcDriver.NewServer(driver, addrChan))
 	}
 	return nil
 }

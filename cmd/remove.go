@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"fmt"
+
 	"os"
-	"path/filepath"
 
 	"github.com/rancher/kontainer-engine/store"
 	"github.com/sirupsen/logrus"
@@ -41,9 +41,18 @@ func rmCluster(ctx *cli.Context) error {
 		return err
 	}
 	// todo: interface the storage level
-	clusterFilePath := filepath.Join(cluster.GetFileDir(), cluster.Name)
+	clusterFilePath := cluster.GetFileDir()
 	logrus.Debugf("Deleting cluster storage path %v", clusterFilePath)
 	if err := os.RemoveAll(clusterFilePath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	config, err := GetConfigFromFile()
+	if err != nil {
+		return err
+	}
+	deleteConfigByName(&config, name)
+	if err := SetConfigToFile(config); err != nil {
 		return err
 	}
 	fmt.Println(cluster.Name)

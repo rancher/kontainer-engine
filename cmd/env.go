@@ -4,13 +4,14 @@ import (
 	"fmt"
 
 	"github.com/rancher/kontainer-engine/store"
+	"github.com/rancher/kontainer-engine/utils"
 	"github.com/urfave/cli"
 )
 
 func EnvCommand() cli.Command {
 	return cli.Command{
 		Name:   "env",
-		Usage:  "Show the environment variable(KUBECONFIG) to export",
+		Usage:  "Set cluster as current context",
 		Action: env,
 	}
 }
@@ -25,9 +26,21 @@ func env(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	cluster, ok := clusters[name]
+	_, ok := clusters[name]
 	if !ok {
 		return fmt.Errorf("cluster %v can't be found", name)
 	}
-	return cluster.GenerateConfig()
+	config, err := GetConfigFromFile()
+	if err != nil {
+		return err
+	}
+	config.CurrentContext = name
+	if err := SetConfigToFile(config); err != nil {
+		return err
+	}
+
+	configFile := utils.KubeConfigFilePath()
+	fmt.Printf("Current context is set to %s\n", name)
+	fmt.Printf("run `export KUBECONFIG=%v` or `--kubeconfig %s` to use the config file\n", configFile, configFile)
+	return nil
 }
