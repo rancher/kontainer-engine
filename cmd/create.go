@@ -1,13 +1,25 @@
 package cmd
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"os"
 	"strings"
 
+	"path/filepath"
+
 	"github.com/rancher/kontainer-engine/cluster"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/kontainer-engine/utils"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+)
+
+const (
+	caPem             = "ca.pem"
+	clientKey         = "key.pem"
+	clientCert        = "cert.pem"
+	defaultConfigName = "config.json"
 )
 
 var GlobalFlag = []cli.Flag{
@@ -95,13 +107,71 @@ func flagHackLookup(flagName string) string {
 	return ""
 }
 
+type cliConfigGetter struct {
+	name string
+	ctx  *cli.Context
+}
+
+func (c cliConfigGetter) GetConfig() (rpcDriver.DriverOptions, error) {
+	driverOpts :=  getDriverOpts(c.ctx)
+	driverOpts.StringOptions["name"] = c.name
+	return driverOpts, nil
+}
+
+type cliPersistStore struct{}
+
+func (c cliPersistStore) Check(name string) (bool, error) {
+	path := filepath.Join(utils.HomeDir(), "clusters", name)
+	if _, err := os.Stat(filepath.Join(path, defaultConfigName)); os.IsNotExist(err) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (c cliPersistStore) Store(cls cluster.Cluster) error {
+	// store kube config file
+	if err := storeConfig(cls); err != nil {
+		return err
+	}
+	// store json config file
+	fileDir := filepath.Join(utils.HomeDir(), "clusters", cls.Name)
+	for k, v := range map[string]string{
+		cls.RootCACert:        caPem,
+		cls.ClientKey:         clientKey,
+		cls.ClientCertificate: clientCert,
+	} {
+		data, err := base64.StdEncoding.DecodeString(k)
+		if err != nil {
+			return err
+		}
+		if err := utils.WriteToFile(data, filepath.Join(fileDir, v)); err != nil {
+			return err
+		}
+	}
+	data, err := json.Marshal(cls)
+	if err != nil {
+		return err
+	}
+	return utils.WriteToFile(data, filepath.Join(fileDir, defaultConfigName))
+}
+
 func create(ctx *cli.Context) error {
 	driverName := ctx.String("driver")
 	if driverName == "" {
 		logrus.Error("Driver name is required")
 		return cli.ShowCommandHelp(ctx, "create")
 	}
-	cls, err := cluster.NewCluster(driverName, ctx)
+	addr := ctx.String("plugin-listen-addr")
+	name := ""
+	if ctx.NArg() > 0 {
+		name = ctx.Args().Get(0)
+	}
+	configGetter := cliConfigGetter{
+		name: name,
+		ctx:  ctx,
+	}
+	persistStore := cliPersistStore{}
+	cls, err := cluster.NewCluster(driverName, addr, name, configGetter, persistStore)
 	if err != nil {
 		return err
 	}

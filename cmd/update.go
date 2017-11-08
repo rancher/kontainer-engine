@@ -77,7 +77,12 @@ func updateCluster(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	cluster.Ctx = ctx
+	configGetter := cliConfigGetter{
+		name: name,
+		ctx:  ctx,
+	}
+	cluster.ConfigGetter = configGetter
+	cluster.PersistStore = cliPersistStore{}
 	cluster.Driver = rpcClient
 	return cluster.Update()
 }

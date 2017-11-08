@@ -1,4 +1,4 @@
-package cmd
+package plugin
 
 import (
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
@@ -6,13 +6,13 @@ import (
 )
 
 var (
-	builtInDrivers = map[string]bool{
+	BuiltInDrivers = map[string]bool{
 		"gke": true,
 		"aks": true,
 	}
 )
 
-func runDriver(driverName string, addrChan chan string) error {
+func Run(driverName string, addrChan chan string) error {
 	var driver rpcDriver.Driver
 	switch driverName {
 	case "gke":
@@ -20,7 +20,7 @@ func runDriver(driverName string, addrChan chan string) error {
 	default:
 		addrChan <- ""
 	}
-	if builtInDrivers[driverName] {
+	if BuiltInDrivers[driverName] {
 		go startRPCServer(rpcDriver.NewServer(driver, addrChan))
 	}
 	return nil
