@@ -2,11 +2,9 @@ package gke
 
 import (
 	"strings"
-
 	"encoding/base64"
 	"fmt"
 	"time"
-
 	"os"
 
 	generic "github.com/rancher/kontainer-engine/driver"
@@ -45,6 +43,8 @@ type Driver struct {
 	Description string
 	// The number of nodes to create in this cluster
 	InitialNodeCount int64
+	// the initial kubernetes master version
+	InitialClusterVersion string
 	// The authentication information for accessing the master
 	MasterAuth *raw.MasterAuth
 	// The name of this cluster
@@ -104,6 +104,10 @@ func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 		Type:  generic.StringType,
 		Usage: "An optional description of this cluster",
 	}
+	driverFlag.Options["master-version"] = &generic.Flag{
+		Type:  generic.StringType,
+		Usage: "The kubernetes master version",
+	}
 	driverFlag.Options["initial-node-count"] = &generic.Flag{
 		Type:  generic.IntType,
 		Usage: "The number of nodes to create in this cluster",
@@ -147,33 +151,64 @@ func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 }
 
 func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
-	d.Name = driverOptions.StringOptions["name"]
-	d.ProjectID = driverOptions.StringOptions["projectId"]
-	d.Zone = driverOptions.StringOptions["zone"]
-	d.NodePoolID = driverOptions.StringOptions["nodePool"]
-	d.ClusterIpv4Cidr = driverOptions.StringOptions["cluster-ipv4-cidr"]
-	d.Description = driverOptions.StringOptions["description"]
-	d.NodeConfig.DiskSizeGb = driverOptions.IntOptions["disk-size-gb"]
-	d.NodeConfig.MachineType = driverOptions.StringOptions["machine-type"]
-	d.CredentialPath = driverOptions.StringOptions["gke-credential-path"]
-	d.EnableAlphaFeature = driverOptions.BoolOptions["enable-alpha-feature"]
-	if v, ok := driverOptions.IntOptions["initial-node-count"]; ok {
-		d.InitialNodeCount = v
-	}
-	if v, ok := driverOptions.StringSliceOptions["machine-type"]; ok {
-		for _, part := range v.Value {
-			kv := strings.Split(part, "=")
-			if len(kv) == 2 {
-				d.NodeConfig.Labels[kv[0]] = kv[1]
-			}
+	d.Name = getValueFromDriverOptions(driverOptions, generic.StringType, "name").(string)
+	d.ProjectID = getValueFromDriverOptions(driverOptions, generic.StringType, "projectId").(string)
+	d.Zone = getValueFromDriverOptions(driverOptions, generic.StringType, "zone").(string)
+	d.NodePoolID = getValueFromDriverOptions(driverOptions, generic.StringType, "nodePool").(string)
+	d.ClusterIpv4Cidr = getValueFromDriverOptions(driverOptions, generic.StringType, "cluster-ipv4-cidr", "clusterIpv4Cidr").(string)
+	d.Description = getValueFromDriverOptions(driverOptions, generic.StringType, "description").(string)
+	d.InitialClusterVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "master-version", "masterVersion").(string)
+	d.NodeConfig.DiskSizeGb = getValueFromDriverOptions(driverOptions, generic.IntType, "disk-size-gb", "diskSizeGb").(int64)
+	d.NodeConfig.MachineType = getValueFromDriverOptions(driverOptions, generic.StringType, "machine-type", "machineType").(string)
+	d.CredentialPath = getValueFromDriverOptions(driverOptions, generic.StringType, "gke-credential-path", "gkeCredentialPath").(string)
+	d.EnableAlphaFeature = getValueFromDriverOptions(driverOptions, generic.BoolType, "enable-alpha-feature", "enableAlphaFeature").(bool)
+	d.InitialNodeCount = getValueFromDriverOptions(driverOptions, generic.IntType, "initial-node-count", "initialNodeCount").(int64)
+	labelValues := getValueFromDriverOptions(driverOptions, generic.StringSliceType, "labels").(*generic.StringSlice)
+	for _, part := range labelValues.Value {
+		kv := strings.Split(part, "=")
+		if len(kv) == 2 {
+			d.NodeConfig.Labels[kv[0]] = kv[1]
 		}
 	}
-
 	// updateConfig
-	d.UpdateConfig.NodeCount = driverOptions.IntOptions["node-count"]
-	d.UpdateConfig.MasterVersion = driverOptions.StringOptions["master-version"]
-	d.UpdateConfig.NodeVersion = driverOptions.StringOptions["node-version"]
+	d.UpdateConfig.NodeCount = getValueFromDriverOptions(driverOptions, generic.IntType, "node-count", "nodeCount").(int64)
+	d.UpdateConfig.MasterVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "master-version", "masterVersion").(string)
+	d.UpdateConfig.NodeVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "node-version", "nodeVersion").(string)
 	return d.validate()
+}
+
+func getValueFromDriverOptions(driverOptions *generic.DriverOptions, optionType string, keys... string) interface{} {
+	switch optionType {
+	case generic.IntType:
+		for _, key := range keys {
+			if value, ok := driverOptions.IntOptions[key]; ok {
+				return value
+			}
+		}
+		return int64(0)
+	case generic.StringType:
+		for _, key := range keys {
+			if value, ok := driverOptions.StringOptions[key]; ok {
+				return value
+			}
+		}
+		return ""
+	case generic.BoolType:
+		for _, key := range keys {
+			if value, ok := driverOptions.BoolOptions[key]; ok {
+				return value
+			}
+		}
+		return false
+	case generic.StringSliceType:
+		for _, key := range keys {
+			if value, ok := driverOptions.StringSliceOptions[key]; ok {
+				return value
+			}
+		}
+		return &generic.StringSlice{}
+	}
+	return nil
 }
 
 func (d *Driver) validate() error {
@@ -206,6 +241,14 @@ func (d *Driver) Update() error {
 		return err
 	}
 	logrus.Debugf("Received Update config %v", d.UpdateConfig)
+	if d.NodePoolID == "" {
+		cluster, err := svc.Projects.Zones.Clusters.Get(d.ProjectID, d.Zone, d.Name).Context(context.Background()).Do()
+		if err != nil {
+			return err
+		}
+		d.NodePoolID = cluster.NodePools[0].Name
+	}
+
 	if d.UpdateConfig.MasterVersion != "" {
 		logrus.Infof("Updating master to %v", d.UpdateConfig.MasterVersion)
 		operation, err := svc.Projects.Zones.Clusters.Update(d.ProjectID, d.Zone, d.Name, &raw.UpdateClusterRequest{
@@ -255,6 +298,7 @@ func (d *Driver) generateClusterCreateRequest() *raw.CreateClusterRequest {
 	}
 	request.Cluster.Name = d.Name
 	request.Cluster.Zone = d.Zone
+	request.Cluster.InitialClusterVersion = d.InitialClusterVersion
 	request.Cluster.InitialNodeCount = d.InitialNodeCount
 	request.Cluster.ClusterIpv4Cidr = d.ClusterIpv4Cidr
 	request.Cluster.Description = d.Description

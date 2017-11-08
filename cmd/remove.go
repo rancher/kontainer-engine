@@ -8,6 +8,8 @@ import (
 	"github.com/rancher/kontainer-engine/store"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"path/filepath"
+	"github.com/rancher/kontainer-engine/utils"
 )
 
 func RmCommand() cli.Command {
@@ -36,12 +38,18 @@ func rmCluster(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
+	configGetter := cliConfigGetter{
+		name: name,
+		ctx:  ctx,
+	}
+	cluster.ConfigGetter = configGetter
+	cluster.PersistStore = cliPersistStore{}
 	cluster.Driver = rpcClient
 	if err := cluster.Remove(); err != nil {
 		return err
 	}
 	// todo: interface the storage level
-	clusterFilePath := cluster.GetFileDir()
+	clusterFilePath := filepath.Join(utils.HomeDir(), "clusters", cluster.Name)
 	logrus.Debugf("Deleting cluster storage path %v", clusterFilePath)
 	if err := os.RemoveAll(clusterFilePath); err != nil && !os.IsNotExist(err) {
 		return err

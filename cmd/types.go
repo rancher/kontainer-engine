@@ -1,4 +1,4 @@
-package cluster
+package cmd
 
 type KubeConfig struct {
 	APIVersion     string          `yaml:"apiVersion,omitempty"`
