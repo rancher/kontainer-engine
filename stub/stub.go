@@ -1,21 +1,24 @@
 /*
-This package can only be imported if it is running as a library. The init function will start all the driver plugin servers
+Package stub can only be imported if it is running as a library. The init function will start all the driver plugin servers
 */
 package stub
 
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
-	"github.com/alena1108/cluster-controller/client/v1"
+	yaml "gopkg.in/yaml.v2"
+
 	"github.com/rancher/kontainer-engine/cluster"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/plugin"
+	"github.com/rancher/types/apis/cluster.cattle.io/v1"
 	"github.com/sirupsen/logrus"
 )
 
 var (
-	PluginAddress = map[string]string{}
+	pluginAddress = map[string]string{}
 )
 
 func init() {
@@ -25,15 +28,16 @@ func init() {
 			addr := make(chan string)
 			plugin.Run(driver, addr)
 			listenAddr := <-addr
-			PluginAddress[driver] = listenAddr
+			pluginAddress[driver] = listenAddr
 			logrus.Infof("Activating driver %s done", driver)
 		}
 	}()
 }
 
 type controllerConfigGetter struct {
-	driverName string
-	cluster    v1.Cluster
+	driverName  string
+	clusterSpec v1.ClusterSpec
+	clusterName string
 }
 
 func (c controllerConfigGetter) GetConfig() (rpcDriver.DriverOptions, error) {
@@ -43,21 +47,23 @@ func (c controllerConfigGetter) GetConfig() (rpcDriver.DriverOptions, error) {
 		IntOptions:         make(map[string]int64),
 		StringSliceOptions: make(map[string]*rpcDriver.StringSlice),
 	}
-	var config interface{}
+	data := map[string]interface{}{}
 	switch c.driverName {
 	case "gke":
-		config = c.cluster.Spec.GKEConfig
-	case "aks":
-		config = c.cluster.Spec.AKSConfig
+		config, err := toMap(c.clusterSpec.GoogleKubernetesEngineConfig, "json")
+		if err != nil {
+			return driverOptions, err
+		}
+		data = config
+		flatten(data, &driverOptions)
 	case "rke":
-		config = c.cluster.Spec.RKEConfig
+		config, err := yaml.Marshal(c.clusterSpec.RancherKubernetesEngineConfig)
+		if err != nil {
+			return driverOptions, err
+		}
+		driverOptions.StringOptions["rkeConfig"] = string(config)
 	}
-	opts, err := toMap(config)
-	if err != nil {
-		return driverOptions, err
-	}
-	flatten(opts, &driverOptions)
-	driverOptions.StringOptions["name"] = c.cluster.Name
+	driverOptions.StringOptions["name"] = c.clusterName
 
 	return driverOptions, nil
 }
@@ -89,7 +95,7 @@ func flatten(data map[string]interface{}, driverOptions *rpcDriver.DriverOptions
 	}
 }
 
-type controllerPersistStore struct {}
+type controllerPersistStore struct{}
 
 // no-op
 func (c controllerPersistStore) Check(name string) (bool, error) {
@@ -101,74 +107,96 @@ func (c controllerPersistStore) Store(cluster cluster.Cluster) error {
 	return nil
 }
 
-func toMap(obj interface{}) (map[string]interface{}, error) {
-	data, err := json.Marshal(obj)
-	if err != nil {
-		return nil, err
+func toMap(obj interface{}, format string) (map[string]interface{}, error) {
+	if format == "json" {
+		data, err := json.Marshal(obj)
+		if err != nil {
+			return nil, err
+		}
+		var result map[string]interface{}
+		if err := json.Unmarshal(data, &result); err != nil {
+			return nil, err
+		}
+		return result, nil
+	} else if format == "yaml" {
+		data, err := yaml.Marshal(obj)
+		if err != nil {
+			return nil, err
+		}
+		var result map[string]interface{}
+		if err := yaml.Unmarshal(data, &result); err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
-	var result map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return nil, nil
 }
 
-func convertCluster(cls v1.Cluster) (cluster.Cluster, error) {
+func convertCluster(name string, spec v1.ClusterSpec) (cluster.Cluster, error) {
 	// todo: decide whether we need a driver field
 	driverName := ""
-	if cls.Spec.AKSConfig != nil {
+	if spec.AzureKubernetesServiceConfig != nil {
 		driverName = "aks"
-	} else if cls.Spec.GKEConfig != nil {
+	} else if spec.GoogleKubernetesEngineConfig != nil {
 		driverName = "gke"
-	} else if cls.Spec.RKEConfig != nil {
+	} else if spec.RancherKubernetesEngineConfig != nil {
 		driverName = "rke"
 	}
 	if driverName == "" {
 		return cluster.Cluster{}, fmt.Errorf("no driver config found")
 	}
-	pluginAddr := PluginAddress[driverName]
+	pluginAddr := pluginAddress[driverName]
 	configGetter := controllerConfigGetter{
-		driverName: driverName,
-		cluster:    cls,
+		driverName:  driverName,
+		clusterSpec: spec,
+		clusterName: name,
 	}
 	persistStore := controllerPersistStore{}
-	clusterPlugin, err := cluster.NewCluster(driverName, pluginAddr, cls.Name, configGetter, persistStore)
+	clusterPlugin, err := cluster.NewCluster(driverName, pluginAddr, name, configGetter, persistStore)
 	if err != nil {
 		return cluster.Cluster{}, err
 	}
 	return *clusterPlugin, nil
 }
 
-// stub for cluster manager to call
-func Create(cluster v1.Cluster) (v1.Cluster, error) {
-	cls, err := convertCluster(cluster)
+// Create creates the stub for cluster manager to call
+func Create(name string, clusterSpec v1.ClusterSpec) (string, string, string, error) {
+	cls, err := convertCluster(name, clusterSpec)
 	if err != nil {
-		return v1.Cluster{}, err
+		return "", "", "", err
 	}
 	if err := cls.Create(); err != nil {
-		return v1.Cluster{}, err
+		return "", "", "", err
+	}
+	endpoint := cls.Endpoint
+	if !strings.HasPrefix(endpoint, "http://") {
+		endpoint = fmt.Sprintf("http://%s", cls.Endpoint)
+	}
+	return endpoint, cls.ServiceAccountToken, cls.RootCACert, nil
+}
+
+// Update creates the stub for cluster manager to call
+func Update(cluster v1.Cluster) (string, string, string, error) {
+	cls, err := convertCluster(cluster.Name, cluster.Spec)
+	if err != nil {
+		return "", "", "", err
+	}
+	if err := cls.Update(); err != nil {
+		return "", "", "", err
 	}
 	if cluster.Status == nil {
 		cluster.Status = &v1.ClusterStatus{}
 	}
-	cluster.Status.APIEndpoint = fmt.Sprintf("http://%s", cls.Endpoint)
-	cluster.Status.ServiceAccountToken = cls.ServiceAccountToken
-	// todo: cacerts
-	return cluster, nil
-}
-
-// stub for cluster manager to call
-func Update(cluster v1.Cluster) error {
-	cls, err := convertCluster(cluster)
-	if err != nil {
-		return err
+	endpoint := cls.Endpoint
+	if !strings.HasPrefix(endpoint, "http://") {
+		endpoint = fmt.Sprintf("http://%s", cls.Endpoint)
 	}
-	return cls.Update()
+	return endpoint, cls.ServiceAccountToken, cls.RootCACert, nil
 }
 
-// stub for cluster manager to call
+// Remove removes stub for cluster manager to call
 func Remove(cluster v1.Cluster) error {
-	cls, err := convertCluster(cluster)
+	cls, err := convertCluster(cluster.Name, cluster.Spec)
 	if err != nil {
 		return err
 	}

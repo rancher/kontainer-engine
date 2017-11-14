@@ -22,7 +22,7 @@ const (
 	defaultConfigName = "config.json"
 )
 
-var GlobalFlag = []cli.Flag{
+var globalFlag = []cli.Flag{
 	cli.BoolFlag{
 		Name:  "debug",
 		Usage: "Enable verbose logging",
@@ -33,6 +33,7 @@ var GlobalFlag = []cli.Flag{
 	},
 }
 
+// CreateCommand defines the create command
 func CreateCommand() cli.Command {
 	return cli.Command{
 		Name:            "create",
@@ -72,7 +73,7 @@ func createWapper(ctx *cli.Context) error {
 		if command.Name == "create" {
 			createCmd := &ctx.App.Commands[i]
 			createCmd.SkipFlagParsing = false
-			createCmd.Flags = append(GlobalFlag, append(createCmd.Flags, flags...)...)
+			createCmd.Flags = append(globalFlag, append(createCmd.Flags, flags...)...)
 			createCmd.Action = create
 		}
 	}
@@ -113,7 +114,7 @@ type cliConfigGetter struct {
 }
 
 func (c cliConfigGetter) GetConfig() (rpcDriver.DriverOptions, error) {
-	driverOpts :=  getDriverOpts(c.ctx)
+	driverOpts := getDriverOpts(c.ctx)
 	driverOpts.StringOptions["name"] = c.name
 	return driverOpts, nil
 }

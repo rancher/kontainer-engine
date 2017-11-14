@@ -1,14 +1,15 @@
 package stub
 
 import (
-	"testing"
-
 	"fmt"
+	"io/ioutil"
+	"testing"
 	"time"
 
-	"github.com/alena1108/cluster-controller/client/v1"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/types/apis/cluster.cattle.io/v1"
 	"gopkg.in/check.v1"
+	"gopkg.in/yaml.v2"
 )
 
 // Hook up gocheck into the "go test" runner.
@@ -25,7 +26,7 @@ func (s *StubTestSuite) SetUpSuite(c *check.C) {
 }
 
 func (s *StubTestSuite) TestFlatten(c *check.C) {
-	config := v1.GKEConfig{
+	config := v1.GoogleKubernetesEngineConfig{
 		ProjectID:  "test",
 		Zone:       "test",
 		DiskSizeGb: 50,
@@ -34,10 +35,10 @@ func (s *StubTestSuite) TestFlatten(c *check.C) {
 		},
 		EnableAlphaFeature: true,
 	}
-	config.UpdateConfig.MasterVersion = "1.7.1"
-	config.UpdateConfig.NodeVersion = "1.7.1"
-	config.UpdateConfig.NodeCount = 3
-	opts, err := toMap(config)
+	config.MasterVersion = "1.7.1"
+	config.NodeVersion = "1.7.1"
+	config.NodeCount = 3
+	opts, err := toMap(config, "json")
 	if err != nil {
 		c.Fatal(err)
 	}
@@ -75,28 +76,31 @@ func (s *StubTestSuite) TestFlatten(c *check.C) {
 
 func (s *StubTestSuite) unTestCreate(c *check.C) {
 	time.Sleep(time.Second)
-	config := v1.GKEConfig{
+	config := v1.GoogleKubernetesEngineConfig{
 		ProjectID:  "rancher-dev",
 		Zone:       "us-central1-a",
 		DiskSizeGb: 50,
 		Labels: map[string]string{
 			"foo": "bar",
 		},
-		EnableAlphaFeature: true,
+
+		CredentialPath: "/Users/daishanpeng/Documents/gke/key.json",
 	}
 	cluster := v1.Cluster{}
-	cluster.Name = "daishan-test"
-	cluster.Spec.GKEConfig = &config
-	result, err := Create(cluster)
+	cluster.Spec.GoogleKubernetesEngineConfig = &config
+	endpoint, serviceAccountToken, cacert, err := Create("daishan-test", cluster.Spec)
 	if err != nil {
 		c.Fatal(err)
 	}
-	fmt.Println(result)
+	fmt.Println(endpoint)
+	fmt.Println(cacert)
+	fmt.Println(serviceAccountToken)
+	c.Fatal("hello")
 }
 
 func (s *StubTestSuite) unTestUpdate(c *check.C) {
 	time.Sleep(time.Second)
-	config := v1.GKEConfig{
+	config := v1.GoogleKubernetesEngineConfig{
 		ProjectID:  "rancher-dev",
 		Zone:       "us-central1-a",
 		DiskSizeGb: 50,
@@ -104,12 +108,13 @@ func (s *StubTestSuite) unTestUpdate(c *check.C) {
 			"foo": "bar",
 		},
 		EnableAlphaFeature: true,
+		CredentialPath:     "/Users/daishanpeng/Documents/gke/key.json",
 	}
-	config.UpdateConfig.NodeCount = 4
+	config.NodeCount = 4
 	cluster := v1.Cluster{}
 	cluster.Name = "daishan-test"
-	cluster.Spec.GKEConfig = &config
-	err := Update(cluster)
+	cluster.Spec.GoogleKubernetesEngineConfig = &config
+	_, _, _, err := Update(cluster)
 	if err != nil {
 		c.Fatal(err)
 	}
@@ -117,7 +122,7 @@ func (s *StubTestSuite) unTestUpdate(c *check.C) {
 
 func (s *StubTestSuite) unTestRemove(c *check.C) {
 	time.Sleep(time.Second)
-	config := v1.GKEConfig{
+	config := v1.GoogleKubernetesEngineConfig{
 		ProjectID:  "rancher-dev",
 		Zone:       "us-central1-a",
 		DiskSizeGb: 50,
@@ -125,12 +130,59 @@ func (s *StubTestSuite) unTestRemove(c *check.C) {
 			"foo": "bar",
 		},
 		EnableAlphaFeature: true,
+		CredentialPath:     "/Users/daishanpeng/Documents/gke/key.json",
 	}
 	cluster := v1.Cluster{}
 	cluster.Name = "daishan-test"
-	cluster.Spec.GKEConfig = &config
+	cluster.Spec.GoogleKubernetesEngineConfig = &config
 	err := Remove(cluster)
 	if err != nil {
 		c.Fatal(err)
 	}
+}
+
+func (s *StubTestSuite) unTestRkeCreate(c *check.C) {
+	configYaml, err := ioutil.ReadFile("/Users/daishanpeng/rke.yaml")
+	if err != nil {
+		c.Fatal(err)
+	}
+	cluster := v1.Cluster{}
+	cluster.Name = "daishan-test"
+	rkeConfig := v1.RancherKubernetesEngineConfig{}
+	if err := yaml.Unmarshal(configYaml, &rkeConfig); err != nil {
+		c.Fatal(err)
+	}
+	cluster.Spec.RancherKubernetesEngineConfig = &rkeConfig
+	fmt.Printf("%+v", rkeConfig)
+	endpoint, serviceAccountToken, cacert, err := Create("daishan-test", cluster.Spec)
+	if err != nil {
+		c.Fatal(err)
+	}
+	fmt.Println(endpoint)
+	fmt.Println(serviceAccountToken)
+	fmt.Println(cacert)
+	c.Fatal("hello")
+}
+
+func (s *StubTestSuite) unTestRkeUpdate(c *check.C) {
+	configYaml, err := ioutil.ReadFile("/Users/daishanpeng/rke.yaml")
+	if err != nil {
+		c.Fatal(err)
+	}
+	cluster := v1.Cluster{}
+	cluster.Name = "daishan-test"
+	rkeConfig := v1.RancherKubernetesEngineConfig{}
+	if err := yaml.Unmarshal(configYaml, &rkeConfig); err != nil {
+		c.Fatal(err)
+	}
+	cluster.Spec.RancherKubernetesEngineConfig = &rkeConfig
+	fmt.Printf("%+v", rkeConfig)
+	endpoint, serviceAccountToken, cacert, err := Update(cluster)
+	if err != nil {
+		c.Fatal(err)
+	}
+	fmt.Println(endpoint)
+	fmt.Println(serviceAccountToken)
+	fmt.Println(cacert)
+	c.Fatal("hello")
 }

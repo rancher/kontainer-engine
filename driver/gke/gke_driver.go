@@ -1,26 +1,19 @@
 package gke
 
 import (
-	"strings"
 	"encoding/base64"
 	"fmt"
-	"time"
 	"os"
+	"strings"
+	"time"
 
 	generic "github.com/rancher/kontainer-engine/driver"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
 	raw "google.golang.org/api/container/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	v1 "k8s.io/client-go/pkg/api/v1"
-	v1beta1 "k8s.io/client-go/pkg/apis/rbac/v1beta1"
 	// to register gcp auth provider
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd/api"
 )
 
 const (
@@ -32,6 +25,7 @@ const (
 	defaultCredentialEnv = "GOOGLE_APPLICATION_CREDENTIALS"
 )
 
+// Driver defines the struct of gke driver
 type Driver struct {
 	// ProjectID is the ID of your project to use when creating a cluster
 	ProjectID string
@@ -42,11 +36,13 @@ type Driver struct {
 	// An optional description of this cluster
 	Description string
 	// The number of nodes to create in this cluster
-	InitialNodeCount int64
-	// the initial kubernetes master version
-	InitialClusterVersion string
+	NodeCount int64
+	// the kubernetes master version
+	MasterVersion string
 	// The authentication information for accessing the master
 	MasterAuth *raw.MasterAuth
+	// the kubernetes node version
+	NodeVersion string
 	// The name of this cluster
 	Name string
 	// Parameters used in creating the cluster's nodes
@@ -57,18 +53,6 @@ type Driver struct {
 	EnableAlphaFeature bool
 	// NodePool id
 	NodePoolID string
-
-	// Update Config
-	UpdateConfig updateConfig
-}
-
-type updateConfig struct {
-	// the number of node
-	NodeCount int64
-	// Master kubernetes version
-	MasterVersion string
-	// Node kubernetes version
-	NodeVersion string
 }
 
 // NewDriver creates a gke Driver
@@ -80,6 +64,7 @@ func NewDriver() *Driver {
 	}
 }
 
+// GetDriverCreateOptions implements driver interface
 func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 	driverFlag := generic.DriverFlags{
 		Options: make(map[string]*generic.Flag),
@@ -108,7 +93,7 @@ func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 		Type:  generic.StringType,
 		Usage: "The kubernetes master version",
 	}
-	driverFlag.Options["initial-node-count"] = &generic.Flag{
+	driverFlag.Options["node-count"] = &generic.Flag{
 		Type:  generic.IntType,
 		Usage: "The number of nodes to create in this cluster",
 	}
@@ -131,6 +116,7 @@ func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 	return &driverFlag, nil
 }
 
+// GetDriverUpdateOptions implements driver interface
 func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 	driverFlag := generic.DriverFlags{
 		Options: make(map[string]*generic.Flag),
@@ -150,6 +136,7 @@ func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 	return &driverFlag, nil
 }
 
+// SetDriverOptions implements driver interface
 func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	d.Name = getValueFromDriverOptions(driverOptions, generic.StringType, "name").(string)
 	d.ProjectID = getValueFromDriverOptions(driverOptions, generic.StringType, "projectId").(string)
@@ -157,12 +144,13 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	d.NodePoolID = getValueFromDriverOptions(driverOptions, generic.StringType, "nodePool").(string)
 	d.ClusterIpv4Cidr = getValueFromDriverOptions(driverOptions, generic.StringType, "cluster-ipv4-cidr", "clusterIpv4Cidr").(string)
 	d.Description = getValueFromDriverOptions(driverOptions, generic.StringType, "description").(string)
-	d.InitialClusterVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "master-version", "masterVersion").(string)
+	d.MasterVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "master-version", "masterVersion").(string)
+	d.NodeVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "node-version", "nodeVersion").(string)
 	d.NodeConfig.DiskSizeGb = getValueFromDriverOptions(driverOptions, generic.IntType, "disk-size-gb", "diskSizeGb").(int64)
 	d.NodeConfig.MachineType = getValueFromDriverOptions(driverOptions, generic.StringType, "machine-type", "machineType").(string)
-	d.CredentialPath = getValueFromDriverOptions(driverOptions, generic.StringType, "gke-credential-path", "gkeCredentialPath").(string)
+	d.CredentialPath = getValueFromDriverOptions(driverOptions, generic.StringType, "gke-credential-path", "credentialPath").(string)
 	d.EnableAlphaFeature = getValueFromDriverOptions(driverOptions, generic.BoolType, "enable-alpha-feature", "enableAlphaFeature").(bool)
-	d.InitialNodeCount = getValueFromDriverOptions(driverOptions, generic.IntType, "initial-node-count", "initialNodeCount").(int64)
+	d.NodeCount = getValueFromDriverOptions(driverOptions, generic.IntType, "node-count", "nodeCount").(int64)
 	labelValues := getValueFromDriverOptions(driverOptions, generic.StringSliceType, "labels").(*generic.StringSlice)
 	for _, part := range labelValues.Value {
 		kv := strings.Split(part, "=")
@@ -171,13 +159,10 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 		}
 	}
 	// updateConfig
-	d.UpdateConfig.NodeCount = getValueFromDriverOptions(driverOptions, generic.IntType, "node-count", "nodeCount").(int64)
-	d.UpdateConfig.MasterVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "master-version", "masterVersion").(string)
-	d.UpdateConfig.NodeVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "node-version", "nodeVersion").(string)
 	return d.validate()
 }
 
-func getValueFromDriverOptions(driverOptions *generic.DriverOptions, optionType string, keys... string) interface{} {
+func getValueFromDriverOptions(driverOptions *generic.DriverOptions, optionType string, keys ...string) interface{} {
 	switch optionType {
 	case generic.IntType:
 		for _, key := range keys {
@@ -216,12 +201,13 @@ func (d *Driver) validate() error {
 		logrus.Errorf("ProjectID or Zone or Name is required")
 		return fmt.Errorf("projectID or zone or name is required")
 	}
-	if d.InitialNodeCount == 0 {
-		d.InitialNodeCount = defaultNodeCount
+	if d.NodeCount == 0 {
+		d.NodeCount = defaultNodeCount
 	}
 	return nil
 }
 
+// Create implements driver interface
 func (d *Driver) Create() error {
 	svc, err := d.getServiceClient()
 	if err != nil {
@@ -235,12 +221,13 @@ func (d *Driver) Create() error {
 	return d.waitCluster(svc)
 }
 
+// Update implements driver interface
 func (d *Driver) Update() error {
 	svc, err := d.getServiceClient()
 	if err != nil {
 		return err
 	}
-	logrus.Debugf("Received Update config %v", d.UpdateConfig)
+	logrus.Debugf("Updating config. MasterVersion: %s, NodeVersion: %s, NodeCount: %v", d.MasterVersion, d.NodeVersion, d.NodeCount)
 	if d.NodePoolID == "" {
 		cluster, err := svc.Projects.Zones.Clusters.Get(d.ProjectID, d.Zone, d.Name).Context(context.Background()).Do()
 		if err != nil {
@@ -249,11 +236,11 @@ func (d *Driver) Update() error {
 		d.NodePoolID = cluster.NodePools[0].Name
 	}
 
-	if d.UpdateConfig.MasterVersion != "" {
-		logrus.Infof("Updating master to %v", d.UpdateConfig.MasterVersion)
+	if d.MasterVersion != "" {
+		logrus.Infof("Updating master to %v", d.MasterVersion)
 		operation, err := svc.Projects.Zones.Clusters.Update(d.ProjectID, d.Zone, d.Name, &raw.UpdateClusterRequest{
 			Update: &raw.ClusterUpdate{
-				DesiredMasterVersion: d.UpdateConfig.MasterVersion,
+				DesiredMasterVersion: d.MasterVersion,
 			},
 		}).Context(context.Background()).Do()
 		if err != nil {
@@ -265,10 +252,10 @@ func (d *Driver) Update() error {
 		}
 	}
 
-	if d.UpdateConfig.NodeVersion != "" {
-		logrus.Infof("Updating node version to %v", d.UpdateConfig.NodeVersion)
+	if d.NodeVersion != "" {
+		logrus.Infof("Updating node version to %v", d.NodeVersion)
 		operation, err := svc.Projects.Zones.Clusters.NodePools.Update(d.ProjectID, d.Zone, d.Name, d.NodePoolID, &raw.UpdateNodePoolRequest{
-			NodeVersion: d.UpdateConfig.NodeVersion,
+			NodeVersion: d.NodeVersion,
 		}).Context(context.Background()).Do()
 		if err != nil {
 			return err
@@ -279,10 +266,10 @@ func (d *Driver) Update() error {
 		}
 	}
 
-	if d.UpdateConfig.NodeCount != 0 {
-		logrus.Infof("Updating node number to %v", d.UpdateConfig.NodeCount)
+	if d.NodeCount != 0 {
+		logrus.Infof("Updating node number to %v", d.NodeCount)
 		operation, err := svc.Projects.Zones.Clusters.NodePools.SetSize(d.ProjectID, d.Zone, d.Name, d.NodePoolID, &raw.SetNodePoolSizeRequest{
-			NodeCount: d.UpdateConfig.NodeCount,
+			NodeCount: d.NodeCount,
 		}).Context(context.Background()).Do()
 		if err != nil {
 			return err
@@ -298,8 +285,8 @@ func (d *Driver) generateClusterCreateRequest() *raw.CreateClusterRequest {
 	}
 	request.Cluster.Name = d.Name
 	request.Cluster.Zone = d.Zone
-	request.Cluster.InitialClusterVersion = d.InitialClusterVersion
-	request.Cluster.InitialNodeCount = d.InitialNodeCount
+	request.Cluster.InitialClusterVersion = d.MasterVersion
+	request.Cluster.InitialNodeCount = d.NodeCount
 	request.Cluster.ClusterIpv4Cidr = d.ClusterIpv4Cidr
 	request.Cluster.Description = d.Description
 	request.Cluster.EnableKubernetesAlpha = d.EnableAlphaFeature
@@ -310,7 +297,8 @@ func (d *Driver) generateClusterCreateRequest() *raw.CreateClusterRequest {
 	return &request
 }
 
-func (d *Driver) Get(request *generic.ClusterGetRequest) (*generic.ClusterInfo, error) {
+// Get implements driver interface
+func (d *Driver) Get() (*generic.ClusterInfo, error) {
 	svc, err := d.getServiceClient()
 	if err != nil {
 		return nil, err
@@ -335,7 +323,7 @@ func (d *Driver) Get(request *generic.ClusterGetRequest) (*generic.ClusterInfo, 
 	info.Metadata["zone"] = d.Zone
 	info.Metadata["gke-credential-path"] = os.Getenv(defaultCredentialEnv)
 	info.Metadata["nodePool"] = cluster.NodePools[0].Name
-	serviceAccountToken, err := generateServiceAccountToken(cluster)
+	serviceAccountToken, err := generateServiceAccountTokenForGke(cluster)
 	if err != nil {
 		return nil, err
 	}
@@ -344,6 +332,7 @@ func (d *Driver) Get(request *generic.ClusterGetRequest) (*generic.ClusterInfo, 
 	return info, nil
 }
 
+// Remove implements driver interface
 func (d *Driver) Remove() error {
 	svc, err := d.getServiceClient()
 	if err != nil {
@@ -376,16 +365,7 @@ func (d *Driver) getServiceClient() (*raw.Service, error) {
 	return service, nil
 }
 
-// todo: this function might be generic to all the drivers
-func generateServiceAccountToken(cluster *raw.Cluster) (string, error) {
-	ts, err := google.DefaultTokenSource(context.Background(), raw.CloudPlatformScope)
-	if err != nil {
-		return "", err
-	}
-	token, err := ts.Token()
-	if err != nil {
-		return "", err
-	}
+func generateServiceAccountTokenForGke(cluster *raw.Cluster) (string, error) {
 	capem, err := base64.StdEncoding.DecodeString(cluster.MasterAuth.ClusterCaCertificate)
 	if err != nil {
 		return "", err
@@ -398,77 +378,7 @@ func generateServiceAccountToken(cluster *raw.Cluster) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	config := &rest.Config{
-		Host: fmt.Sprintf("https://%s", cluster.Endpoint),
-		TLSClientConfig: rest.TLSClientConfig{
-			CAData:   capem,
-			CertData: certpem,
-			KeyData:  keypem,
-		},
-		AuthProvider: &api.AuthProviderConfig{
-			Name: "gcp",
-			Config: map[string]string{
-				"access-token": token.AccessToken,
-			},
-		},
-	}
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return "", err
-	}
-	serviceAccount := &v1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: netesDefault,
-		},
-	}
-
-	_, err = clientset.CoreV1().ServiceAccounts(defaultNamespace).Create(serviceAccount)
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return "", err
-	}
-
-	clusterAdminRole, err := clientset.RbacV1beta1().ClusterRoles().Get(clusterAdmin, metav1.GetOptions{})
-	if err != nil {
-		return "", err
-	}
-
-	clusterRoleBinding := &v1beta1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "netes-default-clusterRoleBinding",
-		},
-		Subjects: []v1beta1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceAccount.Name,
-				Namespace: "default",
-				APIGroup:  v1.GroupName,
-			},
-		},
-		RoleRef: v1beta1.RoleRef{
-			Kind:     "ClusterRole",
-			Name:     clusterAdminRole.Name,
-			APIGroup: v1beta1.GroupName,
-		},
-	}
-	if _, err = clientset.RbacV1beta1().ClusterRoleBindings().Create(clusterRoleBinding); err != nil && !errors.IsAlreadyExists(err) {
-		return "", err
-	}
-
-	if serviceAccount, err = clientset.CoreV1().ServiceAccounts(defaultNamespace).Get(serviceAccount.Name, metav1.GetOptions{}); err != nil {
-		return "", err
-	}
-
-	if len(serviceAccount.Secrets) > 0 {
-		secret := serviceAccount.Secrets[0]
-		secretObj, err := clientset.CoreV1().Secrets(defaultNamespace).Get(secret.Name, metav1.GetOptions{})
-		if err != nil {
-			return "", err
-		}
-		if token, ok := secretObj.Data["token"]; ok {
-			return string(token), nil
-		}
-	}
-	return "", fmt.Errorf("failed to configure serviceAccountToken for cluster name %v", cluster.Name)
+	return generic.GenerateServiceAccountToken(cluster.Endpoint, string(capem), string(certpem), string(keypem))
 }
 
 func (d *Driver) waitCluster(svc *raw.Service) error {

@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package generic_driver;
+package drivers;
 
 service Driver {
     rpc Create (Empty) returns (Empty) {}
     rpc Update(Empty) returns (Empty) {}
-    rpc Get(ClusterGetRequest) returns (ClusterInfo) {}
+    rpc Get(Empty) returns (ClusterInfo) {}
     rpc Remove (Empty) returns (Empty) {}
     rpc GetDriverCreateOptions (Empty) returns (DriverFlags) {}
     rpc GetDriverUpdateOptions (Empty) returns (DriverFlags) {}
@@ -37,10 +37,6 @@ message DriverOptions {
 
 message StringSlice {
     repeated string value = 1;
-}
-
-message ClusterGetRequest {
-    string name = 1;
 }
 
 message ClusterInfo {

@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+
 	"github.com/rancher/kontainer-engine/store"
 	"github.com/urfave/cli"
-	"os"
 )
 
+// InspectCommand defines the inspect command
 func InspectCommand() cli.Command {
 	return cli.Command{
 		Name:   "inspect",
