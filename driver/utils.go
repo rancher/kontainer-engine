@@ -2,14 +2,12 @@ package drivers
 
 import (
 	"fmt"
-	"strings"
 
 	"k8s.io/api/core/v1"
 	"k8s.io/api/rbac/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 )
 
 const (
@@ -18,31 +16,15 @@ const (
 	netesDefault     = "netes-default"
 )
 
-// GenerateServiceAccountToken generate a serviceAccountToken for clusterAdmin based on endpoint, cacert, client certs and client key
-func GenerateServiceAccountToken(endpoint, capem, certpem, keypem string) (string, error) {
-	host := endpoint
-	if !strings.HasPrefix(host, "https://") {
-		host = fmt.Sprintf("https://%s", endpoint)
-	}
-	config := &rest.Config{
-		Host: host,
-		TLSClientConfig: rest.TLSClientConfig{
-			CAData:   []byte(capem),
-			CertData: []byte(certpem),
-			KeyData:  []byte(keypem),
-		},
-	}
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return "", err
-	}
+// GenerateServiceAccountToken generate a serviceAccountToken for clusterAdmin given a rest clientset
+func GenerateServiceAccountToken(clientset *kubernetes.Clientset) (string, error) {
 	serviceAccount := &v1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: netesDefault,
 		},
 	}
 
-	_, err = clientset.CoreV1().ServiceAccounts(defaultNamespace).Create(serviceAccount)
+	_, err := clientset.CoreV1().ServiceAccounts(defaultNamespace).Create(serviceAccount)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return "", err
 	}
@@ -107,5 +89,5 @@ func GenerateServiceAccountToken(endpoint, capem, certpem, keypem string) (strin
 			return string(token), nil
 		}
 	}
-	return "", fmt.Errorf("failed to configure serviceAccountToken for endpoint %s", endpoint)
+	return "", fmt.Errorf("failed to configure serviceAccountToken")
 }

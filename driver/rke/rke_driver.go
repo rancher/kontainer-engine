@@ -2,7 +2,12 @@ package rke
 
 import (
 	"encoding/base64"
+	"fmt"
 	"io/ioutil"
+	"strings"
+
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	generic "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/rke/cmd"
@@ -95,7 +100,23 @@ func (d *Driver) Get() (*generic.ClusterInfo, error) {
 	info.ClientKey = base64.StdEncoding.EncodeToString([]byte(d.ClientKey))
 	info.RootCaCertificate = base64.StdEncoding.EncodeToString([]byte(d.RootCA))
 
-	token, err := generic.GenerateServiceAccountToken(d.Endpoint, d.RootCA, d.ClientCert, d.ClientKey)
+	host := d.Endpoint
+	if !strings.HasPrefix(host, "https://") {
+		host = fmt.Sprintf("https://%s", host)
+	}
+	config := &rest.Config{
+		Host: host,
+		TLSClientConfig: rest.TLSClientConfig{
+			CAData:   []byte(d.RootCA),
+			CertData: []byte(d.ClientCert),
+			KeyData:  []byte(d.ClientKey),
+		},
+	}
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	token, err := generic.GenerateServiceAccountToken(clientset)
 	if err != nil {
 		return nil, err
 	}

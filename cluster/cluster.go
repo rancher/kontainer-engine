@@ -1,8 +1,8 @@
 package cluster
 
 import (
-	"github.com/sirupsen/logrus"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
+	"github.com/sirupsen/logrus"
 )
 
 // Cluster represents a kubernetes cluster

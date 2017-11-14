@@ -83,12 +83,13 @@ func (s *StubTestSuite) unTestCreate(c *check.C) {
 		Labels: map[string]string{
 			"foo": "bar",
 		},
+		MasterVersion: "1.8.2-gke.0",
 
 		CredentialPath: "/Users/daishanpeng/Documents/gke/key.json",
 	}
 	cluster := v1.Cluster{}
 	cluster.Spec.GoogleKubernetesEngineConfig = &config
-	endpoint, serviceAccountToken, cacert, err := Create("daishan-test", cluster.Spec)
+	endpoint, serviceAccountToken, cacert, err := Create("daishan-test1", cluster.Spec)
 	if err != nil {
 		c.Fatal(err)
 	}

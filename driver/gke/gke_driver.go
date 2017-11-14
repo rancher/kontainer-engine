@@ -13,7 +13,9 @@ import (
 	"golang.org/x/oauth2/google"
 	raw "google.golang.org/api/container/v1"
 	// to register gcp auth provider
+	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -370,15 +372,25 @@ func generateServiceAccountTokenForGke(cluster *raw.Cluster) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	certpem, err := base64.StdEncoding.DecodeString(cluster.MasterAuth.ClientCertificate)
+	host := cluster.Endpoint
+	if !strings.HasPrefix(host, "https://") {
+		host = fmt.Sprintf("https://%s", host)
+	}
+	// in here we have to use http basic auth otherwise we can't get the permission to create cluster role
+	config := &rest.Config{
+		Host: host,
+		TLSClientConfig: rest.TLSClientConfig{
+			CAData: capem,
+		},
+		Username: cluster.MasterAuth.Username,
+		Password: cluster.MasterAuth.Password,
+	}
+	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return "", err
 	}
-	keypem, err := base64.StdEncoding.DecodeString(cluster.MasterAuth.ClientKey)
-	if err != nil {
-		return "", err
-	}
-	return generic.GenerateServiceAccountToken(cluster.Endpoint, string(capem), string(certpem), string(keypem))
+
+	return generic.GenerateServiceAccountToken(clientset)
 }
 
 func (d *Driver) waitCluster(svc *raw.Service) error {
