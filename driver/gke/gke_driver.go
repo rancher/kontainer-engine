@@ -13,17 +13,11 @@ import (
 	"golang.org/x/oauth2/google"
 	raw "google.golang.org/api/container/v1"
 	"k8s.io/client-go/kubernetes"
-	// to register gcp auth provider
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
 )
 
 const (
-	defaultNodeCount     = 3
 	runningStatus        = "RUNNING"
-	defaultNamespace     = "default"
-	clusterAdmin         = "cluster-admin"
-	netesDefault         = "netes-default"
 	defaultCredentialEnv = "GOOGLE_APPLICATION_CREDENTIALS"
 )
 
@@ -55,6 +49,8 @@ type Driver struct {
 	EnableAlphaFeature bool
 	// NodePool id
 	NodePoolID string
+	// cluster info
+	ClusterInfo generic.ClusterInfo
 }
 
 // NewDriver creates a gke Driver
@@ -62,6 +58,9 @@ func NewDriver() *Driver {
 	return &Driver{
 		NodeConfig: &raw.NodeConfig{
 			Labels: map[string]string{},
+		},
+		ClusterInfo: generic.ClusterInfo{
+			Metadata: map[string]string{},
 		},
 	}
 }
@@ -71,13 +70,14 @@ func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 	driverFlag := generic.DriverFlags{
 		Options: make(map[string]*generic.Flag),
 	}
-	driverFlag.Options["projectId"] = &generic.Flag{
+	driverFlag.Options["project-id"] = &generic.Flag{
 		Type:  generic.StringType,
 		Usage: "the ID of your project to use when creating a cluster",
 	}
 	driverFlag.Options["zone"] = &generic.Flag{
 		Type:  generic.StringType,
 		Usage: "The zone to launch the cluster",
+		Value: "us-central1-a",
 	}
 	driverFlag.Options["gke-credential-path"] = &generic.Flag{
 		Type:  generic.StringType,
@@ -98,10 +98,12 @@ func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 	driverFlag.Options["node-count"] = &generic.Flag{
 		Type:  generic.IntType,
 		Usage: "The number of nodes to create in this cluster",
+		Value: "3",
 	}
 	driverFlag.Options["disk-size-gb"] = &generic.Flag{
 		Type:  generic.IntType,
 		Usage: "Size of the disk attached to each node",
+		Value: "100",
 	}
 	driverFlag.Options["labels"] = &generic.Flag{
 		Type:  generic.StringSliceType,
@@ -125,7 +127,7 @@ func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 	}
 	driverFlag.Options["node-count"] = &generic.Flag{
 		Type:  generic.IntType,
-		Usage: "The node number for your cluster to update",
+		Usage: "The node number for your cluster to update. 0 means no updates",
 	}
 	driverFlag.Options["master-version"] = &generic.Flag{
 		Type:  generic.StringType,
@@ -141,7 +143,7 @@ func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 // SetDriverOptions implements driver interface
 func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	d.Name = getValueFromDriverOptions(driverOptions, generic.StringType, "name").(string)
-	d.ProjectID = getValueFromDriverOptions(driverOptions, generic.StringType, "projectId").(string)
+	d.ProjectID = getValueFromDriverOptions(driverOptions, generic.StringType, "project-id").(string)
 	d.Zone = getValueFromDriverOptions(driverOptions, generic.StringType, "zone").(string)
 	d.NodePoolID = getValueFromDriverOptions(driverOptions, generic.StringType, "nodePool").(string)
 	d.ClusterIpv4Cidr = getValueFromDriverOptions(driverOptions, generic.StringType, "cluster-ipv4-cidr", "clusterIpv4Cidr").(string)
@@ -159,6 +161,9 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 		if len(kv) == 2 {
 			d.NodeConfig.Labels[kv[0]] = kv[1]
 		}
+	}
+	if d.CredentialPath != "" {
+		os.Setenv(defaultCredentialEnv, d.CredentialPath)
 	}
 	// updateConfig
 	return d.validate()
@@ -199,12 +204,12 @@ func getValueFromDriverOptions(driverOptions *generic.DriverOptions, optionType 
 }
 
 func (d *Driver) validate() error {
-	if d.ProjectID == "" || d.Zone == "" || d.Name == "" {
-		logrus.Errorf("ProjectID or Zone or Name is required")
-		return fmt.Errorf("projectID or zone or name is required")
-	}
-	if d.NodeCount == 0 {
-		d.NodeCount = defaultNodeCount
+	if d.ProjectID == "" {
+		return fmt.Errorf("project ID is required")
+	} else if d.Zone == "" {
+		return fmt.Errorf("zone is required")
+	} else if d.Name == "" {
+		return fmt.Errorf("cluster name is required")
 	}
 	return nil
 }
@@ -216,10 +221,12 @@ func (d *Driver) Create() error {
 		return err
 	}
 	operation, err := svc.Projects.Zones.Clusters.Create(d.ProjectID, d.Zone, d.generateClusterCreateRequest()).Context(context.Background()).Do()
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "alreadyExists") {
 		return err
 	}
-	logrus.Debugf("Cluster %s create is called for project %s and zone %s. Status Code %v", d.Name, d.ProjectID, d.Zone, operation.HTTPStatusCode)
+	if err == nil {
+		logrus.Debugf("Cluster %s create is called for project %s and zone %s. Status Code %v", d.Name, d.ProjectID, d.Zone, operation.HTTPStatusCode)
+	}
 	return d.waitCluster(svc)
 }
 
@@ -277,6 +284,9 @@ func (d *Driver) Update() error {
 			return err
 		}
 		logrus.Debugf("Nodepool %s setSize is called for project %s, zone %s and cluster %s. Status Code %v", d.NodePoolID, d.ProjectID, d.Zone, d.Name, operation.HTTPStatusCode)
+		if err := d.waitCluster(svc); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -301,37 +311,36 @@ func (d *Driver) generateClusterCreateRequest() *raw.CreateClusterRequest {
 
 // Get implements driver interface
 func (d *Driver) Get() (*generic.ClusterInfo, error) {
+	d.ClusterInfo.Metadata["project-id"] = d.ProjectID
+	d.ClusterInfo.Metadata["zone"] = d.Zone
+	d.ClusterInfo.Metadata["gke-credential-path"] = os.Getenv(defaultCredentialEnv)
+	return &d.ClusterInfo, nil
+}
+
+func (d *Driver) PostCheck() error {
 	svc, err := d.getServiceClient()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	cluster, err := svc.Projects.Zones.Clusters.Get(d.ProjectID, d.Zone, d.Name).Context(context.Background()).Do()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	info := &generic.ClusterInfo{
-		Metadata: map[string]string{},
-	}
-	info.Endpoint = cluster.Endpoint
-	info.Version = cluster.CurrentMasterVersion
-	info.Username = cluster.MasterAuth.Username
-	info.Password = cluster.MasterAuth.Password
-	info.RootCaCertificate = cluster.MasterAuth.ClusterCaCertificate
-	info.ClientCertificate = cluster.MasterAuth.ClientCertificate
-	info.ClientKey = cluster.MasterAuth.ClientKey
-	info.NodeCount = cluster.CurrentNodeCount
-
-	info.Metadata["projectId"] = d.ProjectID
-	info.Metadata["zone"] = d.Zone
-	info.Metadata["gke-credential-path"] = os.Getenv(defaultCredentialEnv)
-	info.Metadata["nodePool"] = cluster.NodePools[0].Name
+	d.ClusterInfo.Endpoint = cluster.Endpoint
+	d.ClusterInfo.Version = cluster.CurrentMasterVersion
+	d.ClusterInfo.Username = cluster.MasterAuth.Username
+	d.ClusterInfo.Password = cluster.MasterAuth.Password
+	d.ClusterInfo.RootCaCertificate = cluster.MasterAuth.ClusterCaCertificate
+	d.ClusterInfo.ClientCertificate = cluster.MasterAuth.ClientCertificate
+	d.ClusterInfo.ClientKey = cluster.MasterAuth.ClientKey
+	d.ClusterInfo.NodeCount = cluster.CurrentNodeCount
+	d.ClusterInfo.Metadata["nodePool"] = cluster.NodePools[0].Name
 	serviceAccountToken, err := generateServiceAccountTokenForGke(cluster)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	info.ServiceAccountToken = serviceAccountToken
-
-	return info, nil
+	d.ClusterInfo.ServiceAccountToken = serviceAccountToken
+	return nil
 }
 
 // Remove implements driver interface
@@ -353,9 +362,6 @@ func (d *Driver) Remove() error {
 }
 
 func (d *Driver) getServiceClient() (*raw.Service, error) {
-	if d.CredentialPath != "" {
-		os.Setenv(defaultCredentialEnv, d.CredentialPath)
-	}
 	client, err := google.DefaultClient(context.Background(), raw.CloudPlatformScope)
 	if err != nil {
 		return nil, err

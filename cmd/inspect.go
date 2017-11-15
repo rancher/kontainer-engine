@@ -10,13 +10,22 @@ import (
 	"github.com/urfave/cli"
 )
 
+var inspectHelpTemplate = `{{.Usage}}
+{{if .Description}}{{.Description}}{{end}}
+Usage: kontainer-engine [global options] {{.Name}} {{if .Flags}}[OPTIONS] {{end}}{{if ne "None" .ArgsUsage}}{{if ne "" .ArgsUsage}}{{.ArgsUsage}}{{else}}[cluster-name]{{end}}{{end}}
+
+{{if .Flags}}Options:{{range .Flags}}
+	 {{.}}{{end}}{{end}}
+`
+
 // InspectCommand defines the inspect command
 func InspectCommand() cli.Command {
 	return cli.Command{
-		Name:   "inspect",
-		Usage:  "inspect kubernetes clusters",
-		Action: inspectCluster,
-		Flags:  []cli.Flag{},
+		Name:               "inspect",
+		Usage:              "inspect kubernetes clusters",
+		Action:             inspectCluster,
+		Flags:              []cli.Flag{},
+		CustomHelpTemplate: inspectHelpTemplate,
 	}
 }
 

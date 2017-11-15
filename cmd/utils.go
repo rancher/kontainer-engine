@@ -14,6 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	yaml "gopkg.in/yaml.v2"
+	"strings"
 )
 
 // runRPCDriver runs the rpc server and returns
@@ -128,10 +129,14 @@ func storeConfig(c cluster.Cluster) error {
 	config.Kind = "Config"
 
 	// setup clusters
+	host := c.Endpoint
+	if !strings.HasPrefix(host, "https://") {
+		host = fmt.Sprintf("https://%s", host)
+	}
 	cluster := configCluster{
 		Cluster: dataCluster{
 			CertificateAuthorityData: string(c.RootCACert),
-			Server: fmt.Sprintf("https://%s", c.Endpoint),
+			Server: host,
 		},
 		Name: c.Name,
 	}
