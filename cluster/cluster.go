@@ -37,22 +37,23 @@ type Cluster struct {
 	// Metadata store specific driver options per cloud provider
 	Metadata map[string]string
 
-	PersistStore PersistStore `json:"-,omitempty" yaml:"-,omitempty"`
+	PersistStore PersistStore `json:"-" yaml:"-"`
 
-	ConfigGetter ConfigGetter `json:"-,omitempty" yaml:"-,omitempty"`
+	ConfigGetter ConfigGetter `json:"-" yaml:"-"`
 }
 
+// PersistStore defines the interface for persist options like check and store
 type PersistStore interface {
 	Check(name string) (bool, error)
 	Store(cluster Cluster) error
 }
 
+// ConfigGetter defines the interface for getting the driver options.
 type ConfigGetter interface {
 	GetConfig() (rpcDriver.DriverOptions, error)
 }
 
-// Driver defines how a cluster should be created and managed.
-// Different drivers represents different providers.
+// Driver defines how a cluster should be created and managed. Different drivers represents different providers.
 type Driver interface {
 	// Create creates a cluster
 	Create() error
@@ -61,7 +62,7 @@ type Driver interface {
 	Update() error
 
 	// Get a cluster info
-	Get(name string) (rpcDriver.ClusterInfo, error)
+	Get() (rpcDriver.ClusterInfo, error)
 
 	// Remove removes a cluster
 	Remove() error
@@ -82,7 +83,7 @@ type Driver interface {
 // Create creates a cluster
 func (c *Cluster) Create() error {
 	// check if it is already created
-	if ok, err := c.IsCreated(); err == nil && ok {
+	if ok, err := c.isCreated(); err == nil && ok {
 		logrus.Warnf("Cluster %s already exists.", c.Name)
 		return nil
 	} else if err != nil {
@@ -106,11 +107,11 @@ func (c *Cluster) Create() error {
 	}
 
 	// receive cluster info back
-	if info, err := c.Driver.Get(c.Name); err != nil {
+	info, err := c.Driver.Get()
+	if err != nil {
 		return err
-	} else {
-		transformClusterInfo(c, info)
 	}
+	transformClusterInfo(c, info)
 
 	// persist cluster info
 	return c.Store()
@@ -132,7 +133,7 @@ func (c *Cluster) Update() error {
 	if err := c.Driver.Update(); err != nil {
 		return err
 	}
-	info, err := c.Driver.Get(c.Name)
+	info, err := c.Driver.Get()
 	if err != nil {
 		return err
 	}
@@ -169,7 +170,7 @@ func (c *Cluster) Remove() error {
 	return c.Driver.Remove()
 }
 
-func (c *Cluster) IsCreated() (bool, error) {
+func (c *Cluster) isCreated() (bool, error) {
 	return c.PersistStore.Check(c.Name)
 }
 

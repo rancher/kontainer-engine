@@ -11,6 +11,7 @@ import (
 	"github.com/rancher/kontainer-engine/utils"
 )
 
+// GetAllClusterFromStore retrieves all the cluster info from disk store
 func GetAllClusterFromStore() (map[string]cluster.Cluster, error) {
 	homeDir := filepath.Join(utils.HomeDir(), "clusters")
 	dir, err := ioutil.ReadDir(homeDir)

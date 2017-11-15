@@ -8,6 +8,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// EnvCommand defines the env command
 func EnvCommand() cli.Command {
 	return cli.Command{
 		Name:   "env",
@@ -30,12 +31,12 @@ func env(ctx *cli.Context) error {
 	if !ok {
 		return fmt.Errorf("cluster %v can't be found", name)
 	}
-	config, err := GetConfigFromFile()
+	config, err := getConfigFromFile()
 	if err != nil {
 		return err
 	}
 	config.CurrentContext = name
-	if err := SetConfigToFile(config); err != nil {
+	if err := setConfigToFile(config); err != nil {
 		return err
 	}
 

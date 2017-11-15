@@ -11,6 +11,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// UpdateCommand defines the update command
 func UpdateCommand() cli.Command {
 	return cli.Command{
 		Name:            "update",
@@ -48,7 +49,7 @@ func updateWrapper(ctx *cli.Context) error {
 		if command.Name == "update" {
 			updateeCmd := &ctx.App.Commands[i]
 			updateeCmd.SkipFlagParsing = false
-			updateeCmd.Flags = append(GlobalFlag, append(updateeCmd.Flags, flags...)...)
+			updateeCmd.Flags = append(globalFlag, append(updateeCmd.Flags, flags...)...)
 			updateeCmd.Action = updateCluster
 		}
 	}

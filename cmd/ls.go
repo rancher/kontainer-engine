@@ -6,6 +6,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// LsCommand defines the ls command
 func LsCommand() cli.Command {
 	return cli.Command{
 		Name:      "list",

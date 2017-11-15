@@ -3,14 +3,15 @@ package main
 import (
 	"os"
 
-	"github.com/rancher/kontainer-engine/cmd"
 	"github.com/sirupsen/logrus"
+	"github.com/rancher/kontainer-engine/cmd"
 	"github.com/urfave/cli"
 )
 
+// VERSION defines the cli version
 var VERSION = "v0.0.0-dev"
 
-var AppHelpTemplate = `{{.Usage}}
+var appHelpTemplate = `{{.Usage}}
 
 Usage: {{.Name}} {{if .Flags}}[DRIVER_OPTIONS] {{end}}COMMAND [arg...]
 
@@ -25,7 +26,7 @@ Commands:
 Run '{{.Name}} COMMAND --help' for more information on a command.
 `
 
-var CommandHelpTemplate = `{{.Usage}}
+var commandHelpTemplate = `{{.Usage}}
 {{if .Description}}{{.Description}}{{end}}
 Usage: kontainer-engine [global options] {{.Name}} {{if .Flags}}[OPTIONS] {{end}}{{if ne "None" .ArgsUsage}}{{if ne "" .ArgsUsage}}{{.ArgsUsage}}{{else}}[arg...]{{end}}{{end}}
 
@@ -34,8 +35,8 @@ Usage: kontainer-engine [global options] {{.Name}} {{if .Flags}}[OPTIONS] {{end}
 `
 
 func main() {
-	cli.AppHelpTemplate = AppHelpTemplate
-	cli.CommandHelpTemplate = CommandHelpTemplate
+	cli.AppHelpTemplate = appHelpTemplate
+	cli.CommandHelpTemplate = commandHelpTemplate
 
 	app := cli.NewApp()
 	app.Name = "kontainer-engine"

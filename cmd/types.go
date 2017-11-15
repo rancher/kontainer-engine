@@ -1,41 +1,41 @@
 package cmd
 
-type KubeConfig struct {
+type kubeConfig struct {
 	APIVersion     string          `yaml:"apiVersion,omitempty"`
-	Clusters       []ConfigCluster `yaml:"clusters,omitempty"`
-	Contexts       []ConfigContext `yaml:"contexts,omitempty"`
-	Users          []ConfigUser    `yaml:"users,omitempty"`
+	Clusters       []configCluster `yaml:"clusters,omitempty"`
+	Contexts       []configContext `yaml:"contexts,omitempty"`
+	Users          []configUser    `yaml:"users,omitempty"`
 	CurrentContext string          `yaml:"current-context,omitempty"`
 	Kind           string          `yaml:"kind,omitempty"`
 	Preferences    string          `yaml:"preferences,omitempty"`
 }
 
-type ConfigCluster struct {
-	Cluster DataCluster `yaml:"cluster,omitempty"`
+type configCluster struct {
+	Cluster dataCluster `yaml:"cluster,omitempty"`
 	Name    string      `yaml:"name,omitempty"`
 }
 
-type DataCluster struct {
+type dataCluster struct {
 	CertificateAuthorityData string `yaml:"certificate-authority-data,omitempty"`
 	Server                   string `yaml:"server,omitempty"`
 }
 
-type ConfigContext struct {
-	Context ContextData `yaml:"context,omitempty"`
+type configContext struct {
+	Context contextData `yaml:"context,omitempty"`
 	Name    string      `yaml:"name,omitempty"`
 }
 
-type ContextData struct {
+type contextData struct {
 	Cluster string `yaml:"cluster,omitempty"`
 	User    string `yaml:"user,omitempty"`
 }
 
-type ConfigUser struct {
+type configUser struct {
 	Name string   `yaml:"name,omitempty"`
-	User UserData `yaml:"user,omitempty"`
+	User userData `yaml:"user,omitempty"`
 }
 
-type UserData struct {
+type userData struct {
 	Token    string `yaml:"token,omitempty"`
 	Username string `yaml:"username,omitempty"`
 	Password string `yaml:"password,omitempty"`

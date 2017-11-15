@@ -5,13 +5,15 @@ import (
 
 	"os"
 
+	"path/filepath"
+
 	"github.com/rancher/kontainer-engine/store"
+	"github.com/rancher/kontainer-engine/utils"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-	"path/filepath"
-	"github.com/rancher/kontainer-engine/utils"
 )
 
+// RmCommand defines the remove command
 func RmCommand() cli.Command {
 	return cli.Command{
 		Name:      "remove",
@@ -55,12 +57,12 @@ func rmCluster(ctx *cli.Context) error {
 		return err
 	}
 
-	config, err := GetConfigFromFile()
+	config, err := getConfigFromFile()
 	if err != nil {
 		return err
 	}
 	deleteConfigByName(&config, name)
-	if err := SetConfigToFile(config); err != nil {
+	if err := setConfigToFile(config); err != nil {
 		return err
 	}
 	fmt.Println(cluster.Name)
