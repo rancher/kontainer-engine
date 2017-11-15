@@ -31,7 +31,7 @@ type Cluster struct {
 	Spec ClusterSpec `json:"spec"`
 	// Most recent observed status of the cluster. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
-	Status *ClusterStatus `json:"status"`
+	Status ClusterStatus `json:"status"`
 }
 
 type ClusterSpec struct {
@@ -135,9 +135,9 @@ type RKEConfigServices struct {
 	// Etcd Service
 	Etcd ETCDService `yaml:"etcd" json:"etcd,omitempty"`
 	// KubeAPI Service
-	KubeAPI KubeAPIService `yaml:"kube-api" json:"kube-api,omitempty"`
+	KubeAPI KubeAPIService `yaml:"kube-api" json:"kubeApi,omitempty"`
 	// KubeController Service
-	KubeController KubeControllerService `yaml:"kube-controller" json:"kube-controller,omitempty"`
+	KubeController KubeControllerService `yaml:"kube-controller" json:"kubeController,omitempty"`
 	// Scheduler Service
 	Scheduler SchedulerService `yaml:"scheduler" json:"scheduler,omitempty"`
 	// Kubelet Service
