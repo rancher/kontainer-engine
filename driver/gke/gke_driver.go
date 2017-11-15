@@ -12,8 +12,8 @@ import (
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
 	raw "google.golang.org/api/container/v1"
-	// to register gcp auth provider
 	"k8s.io/client-go/kubernetes"
+	// to register gcp auth provider
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
 )

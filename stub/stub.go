@@ -176,16 +176,13 @@ func Create(name string, clusterSpec v1.ClusterSpec) (string, string, string, er
 }
 
 // Update creates the stub for cluster manager to call
-func Update(cluster v1.Cluster) (string, string, string, error) {
-	cls, err := convertCluster(cluster.Name, cluster.Spec)
+func Update(name string, clusterSpec v1.ClusterSpec) (string, string, string, error) {
+	cls, err := convertCluster(name, clusterSpec)
 	if err != nil {
 		return "", "", "", err
 	}
 	if err := cls.Update(); err != nil {
 		return "", "", "", err
-	}
-	if cluster.Status == nil {
-		cluster.Status = &v1.ClusterStatus{}
 	}
 	endpoint := cls.Endpoint
 	if !strings.HasPrefix(endpoint, "http://") {
@@ -195,8 +192,8 @@ func Update(cluster v1.Cluster) (string, string, string, error) {
 }
 
 // Remove removes stub for cluster manager to call
-func Remove(cluster v1.Cluster) error {
-	cls, err := convertCluster(cluster.Name, cluster.Spec)
+func Remove(name string, clusterSpec v1.ClusterSpec) error {
+	cls, err := convertCluster(name, clusterSpec)
 	if err != nil {
 		return err
 	}
