@@ -1,10 +1,10 @@
 package plugin
 
 import (
-	"github.com/sirupsen/logrus"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/driver/gke"
 	"github.com/rancher/kontainer-engine/driver/rke"
+	"github.com/sirupsen/logrus"
 )
 
 var (

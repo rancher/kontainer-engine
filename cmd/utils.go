@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sirupsen/logrus"
 	"github.com/rancher/kontainer-engine/cluster"
 	generic "github.com/rancher/kontainer-engine/driver"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/plugin"
 	"github.com/rancher/kontainer-engine/utils"
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	yaml "gopkg.in/yaml.v2"
 )

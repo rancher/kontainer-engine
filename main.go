@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/sirupsen/logrus"
 	"github.com/rancher/kontainer-engine/cmd"
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
 
