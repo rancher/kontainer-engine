@@ -8,6 +8,11 @@ import (
 
 	"path/filepath"
 
+	"io/ioutil"
+	"strconv"
+
+	"fmt"
+
 	"github.com/rancher/kontainer-engine/cluster"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/utils"
@@ -21,17 +26,6 @@ const (
 	clientCert        = "cert.pem"
 	defaultConfigName = "config.json"
 )
-
-var globalFlag = []cli.Flag{
-	cli.BoolFlag{
-		Name:  "debug",
-		Usage: "Enable verbose logging",
-	},
-	cli.StringFlag{
-		Name:  "plugin-listen-addr",
-		Usage: "The listening address for rpc plugin server",
-	},
-}
 
 // CreateCommand defines the create command
 func CreateCommand() cli.Command {
@@ -57,8 +51,15 @@ func createWapper(ctx *cli.Context) error {
 
 	driverName := flagHackLookup("--driver")
 	if driverName == "" {
-		logrus.Error("Driver name is required")
-		return cli.ShowCommandHelp(ctx, "create")
+		persistStore := cliPersistStore{}
+		// ingore the error as we only care if cluster.name is present
+		cls, _ := persistStore.Get(os.Args[len(os.Args)-1])
+		if cls.DriverName != "" {
+			driverName = cls.DriverName
+		} else {
+			logrus.Error("Driver name is required")
+			return cli.ShowCommandHelp(ctx, "create")
+		}
 	}
 	rpcClient, addr, err := runRPCDriver(driverName)
 	if err != nil {
@@ -73,12 +74,14 @@ func createWapper(ctx *cli.Context) error {
 		if command.Name == "create" {
 			createCmd := &ctx.App.Commands[i]
 			createCmd.SkipFlagParsing = false
-			createCmd.Flags = append(globalFlag, append(createCmd.Flags, flags...)...)
+			createCmd.Flags = append(createCmd.Flags, flags...)
 			createCmd.Action = create
 		}
 	}
+	// append plugin addr if it is built-in driver
 	if len(os.Args) > 1 && addr != "" {
-		args := append(os.Args[0:len(os.Args)-1], "--plugin-listen-addr", addr, os.Args[len(os.Args)-1])
+		args := []string{os.Args[0], "--plugin-listen-addr", addr}
+		args = append(args, os.Args[1:len(os.Args)]...)
 		return ctx.App.Run(args)
 	}
 	return ctx.App.Run(os.Args)
@@ -126,7 +129,34 @@ func (c cliPersistStore) Check(name string) (bool, error) {
 	if _, err := os.Stat(filepath.Join(path, defaultConfigName)); os.IsNotExist(err) {
 		return false, nil
 	}
+	cls := cluster.Cluster{}
+	data, err := ioutil.ReadFile(filepath.Join(path, defaultConfigName))
+	if err != nil {
+		return false, err
+	}
+	if err := json.Unmarshal(data, &cls); err != nil {
+		return false, err
+	}
+	if cls.Status != cluster.Running {
+		return false, nil
+	}
 	return true, nil
+}
+
+func (c cliPersistStore) Get(name string) (cluster.Cluster, error) {
+	path := filepath.Join(utils.HomeDir(), "clusters", name)
+	if _, err := os.Stat(filepath.Join(path, defaultConfigName)); os.IsNotExist(err) {
+		return cluster.Cluster{}, fmt.Errorf("%s not found", name)
+	}
+	cls := cluster.Cluster{}
+	data, err := ioutil.ReadFile(filepath.Join(path, defaultConfigName))
+	if err != nil {
+		return cluster.Cluster{}, err
+	}
+	if err := json.Unmarshal(data, &cls); err != nil {
+		return cluster.Cluster{}, err
+	}
+	return cls, nil
 }
 
 func (c cliPersistStore) Store(cls cluster.Cluster) error {
@@ -156,13 +186,19 @@ func (c cliPersistStore) Store(cls cluster.Cluster) error {
 	return utils.WriteToFile(data, filepath.Join(fileDir, defaultConfigName))
 }
 
-func create(ctx *cli.Context) error {
-	driverName := ctx.String("driver")
-	if driverName == "" {
-		logrus.Error("Driver name is required")
-		return cli.ShowCommandHelp(ctx, "create")
+func (c cliPersistStore) PersistStatus(cluster cluster.Cluster, status string) error {
+	fileDir := filepath.Join(utils.HomeDir(), "clusters", cluster.Name)
+	cluster.Status = status
+	data, err := json.Marshal(cluster)
+	if err != nil {
+		return err
 	}
-	addr := ctx.String("plugin-listen-addr")
+	return utils.WriteToFile(data, filepath.Join(fileDir, defaultConfigName))
+}
+
+func create(ctx *cli.Context) error {
+	persistStore := cliPersistStore{}
+	addr := ctx.GlobalString("plugin-listen-addr")
 	name := ""
 	if ctx.NArg() > 0 {
 		name = ctx.Args().Get(0)
@@ -171,7 +207,23 @@ func create(ctx *cli.Context) error {
 		name: name,
 		ctx:  ctx,
 	}
-	persistStore := cliPersistStore{}
+	// first try to receive the cluster from disk
+	// ingore the error as we only care if cluster.name is present
+	clusterFrom, _ := persistStore.Get(os.Args[len(os.Args)-1])
+	if clusterFrom.DriverName != "" {
+		cls, err := cluster.FromCluster(&clusterFrom, addr, configGetter, persistStore)
+		if err != nil {
+			return err
+		}
+		return cls.Create()
+	}
+	// if cluster doesn't exist then we try to create a new one
+	driverName := ctx.String("driver")
+	if driverName == "" {
+		logrus.Error("Driver name is required")
+		return cli.ShowCommandHelp(ctx, "create")
+	}
+
 	cls, err := cluster.NewCluster(driverName, addr, name, configGetter, persistStore)
 	if err != nil {
 		return err
@@ -197,14 +249,20 @@ func getDriverFlags(opts rpcDriver.DriverFlags) []cli.Flag {
 	for k, v := range opts.Options {
 		switch v.Type {
 		case "int":
+			val, err := strconv.Atoi(v.Value)
+			if err != nil {
+				val = 0
+			}
 			flags = append(flags, cli.Int64Flag{
 				Name:  k,
 				Usage: v.Usage,
+				Value: int64(val),
 			})
 		case "string":
 			flags = append(flags, cli.StringFlag{
 				Name:  k,
 				Usage: v.Usage,
+				Value: v.Value,
 			})
 		case "stringSlice":
 			flags = append(flags, cli.StringSliceFlag{

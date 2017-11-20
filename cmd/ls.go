@@ -30,6 +30,7 @@ func lsCluster(ctx *cli.Context) error {
 		{"VERISON", "Version"},
 		{"ENDPOINT", "Endpoint"},
 		{"NODE_COUNT", "NodeCount"},
+		{"STATUS", "Status"},
 	}, ctx)
 	defer writer.Close()
 	for _, cluster := range clusters {

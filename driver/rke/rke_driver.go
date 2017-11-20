@@ -25,6 +25,8 @@ type Driver struct {
 	ClientCert string
 	// Client key
 	ClientKey string
+	// Cluster info
+	ClusterInfo generic.ClusterInfo
 }
 
 // NewDriver creates a new rke driver
@@ -46,8 +48,14 @@ func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 
 // GetDriverUpdateOptions returns update flags for rke driver
 func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
-	// todo: rke doesn't have update
-	return nil, nil
+	driverFlag := generic.DriverFlags{
+		Options: make(map[string]*generic.Flag),
+	}
+	driverFlag.Options["config-file-path"] = &generic.Flag{
+		Type:  generic.StringType,
+		Usage: "the path to the config file",
+	}
+	return &driverFlag, nil
 }
 
 // SetDriverOptions sets the drivers options to rke driver
@@ -93,7 +101,11 @@ func (d *Driver) Update() error {
 
 // Get retrieve the cluster info by name
 func (d *Driver) Get() (*generic.ClusterInfo, error) {
-	// TODO:
+	return &d.ClusterInfo, nil
+}
+
+// PostCheck does post action
+func (d *Driver) PostCheck() error {
 	info := &generic.ClusterInfo{}
 	info.Endpoint = d.Endpoint
 	info.ClientCertificate = base64.StdEncoding.EncodeToString([]byte(d.ClientCert))
@@ -114,14 +126,20 @@ func (d *Driver) Get() (*generic.ClusterInfo, error) {
 	}
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	serverVersion, err := clientset.DiscoveryClient.ServerVersion()
+	if err != nil {
+		return fmt.Errorf("Failed to get Kubernetes server version: %v", err)
 	}
 	token, err := generic.GenerateServiceAccountToken(clientset)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	info.Version = serverVersion.GitVersion
 	info.ServiceAccountToken = token
-	return info, nil
+	d.ClusterInfo = *info
+	return nil
 }
 
 // Remove removes the cluster

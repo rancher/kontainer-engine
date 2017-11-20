@@ -6,6 +6,7 @@ import (
 	"github.com/rancher/kontainer-engine/cmd"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
 
 // VERSION defines the cli version
@@ -13,7 +14,7 @@ var VERSION = "v0.0.0-dev"
 
 var appHelpTemplate = `{{.Usage}}
 
-Usage: {{.Name}} {{if .Flags}}[DRIVER_OPTIONS] {{end}}COMMAND [arg...]
+Usage: {{.Name}} {{if .Flags}}[GLOBAL_OPTIONS] {{end}}COMMAND [arg...]
 
 Version: {{.Version}}
 {{if .Flags}}
@@ -62,6 +63,10 @@ func main() {
 		cli.BoolFlag{
 			Name:  "debug",
 			Usage: "Enable verbose logging",
+		},
+		cli.StringFlag{
+			Name:  "plugin-listen-addr",
+			Usage: "The listening address for rpc plugin server",
 		},
 	}
 

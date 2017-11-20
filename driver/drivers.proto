@@ -6,6 +6,7 @@ service Driver {
     rpc Create (Empty) returns (Empty) {}
     rpc Update(Empty) returns (Empty) {}
     rpc Get(Empty) returns (ClusterInfo) {}
+    rpc PostCheck(Empty) returns (Empty) {}
     rpc Remove (Empty) returns (Empty) {}
     rpc GetDriverCreateOptions (Empty) returns (DriverFlags) {}
     rpc GetDriverUpdateOptions (Empty) returns (DriverFlags) {}
@@ -23,6 +24,8 @@ message Flag {
     string type = 1;
 
     string usage = 2;
+
+    string value = 3;
 }
 
 message DriverOptions {

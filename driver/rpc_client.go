@@ -43,14 +43,23 @@ func (rpc *GrpcClient) Update() error {
 }
 
 // Get call grpc get
-func (rpc *GrpcClient) Get() (ClusterInfo, error) {
+func (rpc *GrpcClient) Get() ClusterInfo {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	info, err := rpc.client.Get(ctx, &Empty{})
 	if err != nil {
-		return ClusterInfo{}, err
+		return ClusterInfo{}
 	}
-	return *info, nil
+	return *info
+}
+
+func (rpc *GrpcClient) PostCheck() error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	if _, err := rpc.client.PostCheck(ctx, &Empty{}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Remove call grpc remove

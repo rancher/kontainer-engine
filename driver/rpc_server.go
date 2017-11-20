@@ -33,6 +33,9 @@ type Driver interface {
 	// Get retrieve the cluster and return cluster info
 	Get() (*ClusterInfo, error)
 
+	// PostCheck does post action after provisioning
+	PostCheck() error
+
 	// Remove removes the cluster
 	Remove() error
 }
@@ -79,6 +82,10 @@ func (s *GrpcServer) Update(ctx context.Context, in *Empty) (*Empty, error) {
 // Get implements grpc method
 func (s *GrpcServer) Get(cont context.Context, in *Empty) (*ClusterInfo, error) {
 	return s.driver.Get()
+}
+
+func (s *GrpcServer) PostCheck(cont context.Context, in *Empty) (*Empty, error) {
+	return &Empty{}, s.driver.PostCheck()
 }
 
 // Remove implements grpc method

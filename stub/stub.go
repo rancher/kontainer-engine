@@ -107,6 +107,16 @@ func (c controllerPersistStore) Store(cluster cluster.Cluster) error {
 	return nil
 }
 
+// no-op
+func (c controllerPersistStore) Get(name string) (cluster.Cluster, error) {
+	return cluster.Cluster{}, nil
+}
+
+// no-op
+func (c controllerPersistStore) PersistStatus(cluster cluster.Cluster, status string) error {
+	return nil
+}
+
 func toMap(obj interface{}, format string) (map[string]interface{}, error) {
 	if format == "json" {
 		data, err := json.Marshal(obj)
