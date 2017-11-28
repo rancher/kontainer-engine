@@ -61,8 +61,8 @@ func DeployCertificatesOnWorkers(workerHosts []hosts.Host, crtMap map[string]Cer
 }
 
 func doRunDeployer(host *hosts.Host, containerEnv []string) error {
-	logrus.Debugf("[certificates] Pulling Certificate downloader Image on host [%s]", host.AdvertisedHostname)
-	err := docker.PullImage(host.DClient, host.AdvertisedHostname, CrtDownloaderImage)
+	logrus.Debugf("[certificates] Pulling Certificate downloader Image on host [%s]", host.Address)
+	err := docker.PullImage(host.DClient, host.Address, CrtDownloaderImage)
 	if err != nil {
 		return err
 	}
@@ -79,15 +79,15 @@ func doRunDeployer(host *hosts.Host, containerEnv []string) error {
 	}
 	resp, err := host.DClient.ContainerCreate(context.Background(), imageCfg, hostCfg, nil, CrtDownloaderContainer)
 	if err != nil {
-		return fmt.Errorf("Failed to create Certificates deployer container on host [%s]: %v", host.AdvertisedHostname, err)
+		return fmt.Errorf("Failed to create Certificates deployer container on host [%s]: %v", host.Address, err)
 	}
 
 	if err := host.DClient.ContainerStart(context.Background(), resp.ID, types.ContainerStartOptions{}); err != nil {
-		return fmt.Errorf("Failed to start Certificates deployer container on host [%s]: %v", host.AdvertisedHostname, err)
+		return fmt.Errorf("Failed to start Certificates deployer container on host [%s]: %v", host.Address, err)
 	}
 	logrus.Debugf("[certificates] Successfully started Certificate deployer container: %s", resp.ID)
 	for {
-		isDeployerRunning, err := docker.IsContainerRunning(host.DClient, host.AdvertisedHostname, CrtDownloaderContainer)
+		isDeployerRunning, err := docker.IsContainerRunning(host.DClient, host.Address, CrtDownloaderContainer)
 		if err != nil {
 			return err
 		}
@@ -96,15 +96,15 @@ func doRunDeployer(host *hosts.Host, containerEnv []string) error {
 			continue
 		}
 		if err := host.DClient.ContainerRemove(context.Background(), resp.ID, types.ContainerRemoveOptions{}); err != nil {
-			return fmt.Errorf("Failed to delete Certificates deployer container on host[%s]: %v", host.AdvertisedHostname, err)
+			return fmt.Errorf("Failed to delete Certificates deployer container on host [%s]: %v", host.Address, err)
 		}
 		return nil
 	}
 }
 
-func DeployAdminConfig(kubeConfig string) error {
+func DeployAdminConfig(kubeConfig, localConfigPath string) error {
 	logrus.Debugf("Deploying admin Kubeconfig locally: %s", kubeConfig)
-	err := ioutil.WriteFile(KubeAdminConfigPath, []byte(kubeConfig), 0644)
+	err := ioutil.WriteFile(localConfigPath, []byte(kubeConfig), 0640)
 	if err != nil {
 		return fmt.Errorf("Failed to create local admin kubeconfig file: %v", err)
 	}
