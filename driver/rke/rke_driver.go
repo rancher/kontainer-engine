@@ -144,6 +144,5 @@ func (d *Driver) PostCheck() error {
 
 // Remove removes the cluster
 func (d *Driver) Remove() error {
-	//TODO:
-	return nil
+	return cmd.ClusterRemove(d.ConfigYaml)
 }
