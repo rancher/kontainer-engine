@@ -12,6 +12,7 @@ import (
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
 	raw "google.golang.org/api/container/v1"
+	"io/ioutil"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -45,6 +46,10 @@ type Driver struct {
 	NodeConfig *raw.NodeConfig
 	// The path to the credential file(key.json)
 	CredentialPath string
+	// The content of the credential
+	CredentialContent string
+	// the temp file of the credential
+	TempCredentialPath string
 	// Enable alpha feature
 	EnableAlphaFeature bool
 	// NodePool id
@@ -143,7 +148,7 @@ func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 // SetDriverOptions implements driver interface
 func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	d.Name = getValueFromDriverOptions(driverOptions, generic.StringType, "name").(string)
-	d.ProjectID = getValueFromDriverOptions(driverOptions, generic.StringType, "project-id").(string)
+	d.ProjectID = getValueFromDriverOptions(driverOptions, generic.StringType, "project-id", "projectId").(string)
 	d.Zone = getValueFromDriverOptions(driverOptions, generic.StringType, "zone").(string)
 	d.NodePoolID = getValueFromDriverOptions(driverOptions, generic.StringType, "nodePool").(string)
 	d.ClusterIpv4Cidr = getValueFromDriverOptions(driverOptions, generic.StringType, "cluster-ipv4-cidr", "clusterIpv4Cidr").(string)
@@ -152,7 +157,8 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	d.NodeVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "node-version", "nodeVersion").(string)
 	d.NodeConfig.DiskSizeGb = getValueFromDriverOptions(driverOptions, generic.IntType, "disk-size-gb", "diskSizeGb").(int64)
 	d.NodeConfig.MachineType = getValueFromDriverOptions(driverOptions, generic.StringType, "machine-type", "machineType").(string)
-	d.CredentialPath = getValueFromDriverOptions(driverOptions, generic.StringType, "gke-credential-path", "credentialPath").(string)
+	d.CredentialPath = getValueFromDriverOptions(driverOptions, generic.StringType, "gke-credential-path").(string)
+	d.CredentialContent = getValueFromDriverOptions(driverOptions, generic.StringType, "credential").(string)
 	d.EnableAlphaFeature = getValueFromDriverOptions(driverOptions, generic.BoolType, "enable-alpha-feature", "enableAlphaFeature").(bool)
 	d.NodeCount = getValueFromDriverOptions(driverOptions, generic.IntType, "node-count", "nodeCount").(int64)
 	labelValues := getValueFromDriverOptions(driverOptions, generic.StringSliceType, "labels").(*generic.StringSlice)
@@ -164,6 +170,21 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	}
 	if d.CredentialPath != "" {
 		os.Setenv(defaultCredentialEnv, d.CredentialPath)
+	}
+	if d.CredentialContent != "" {
+		if d.TempCredentialPath != "" {
+			os.Setenv(defaultCredentialEnv, d.TempCredentialPath)
+		} else {
+			file, err := ioutil.TempFile("", "credential-file")
+			if err != nil {
+				return err
+			}
+			if err := ioutil.WriteFile(file.Name(), []byte(d.CredentialContent), 0755); err != nil {
+				return err
+			}
+			os.Setenv(defaultCredentialEnv, file.Name())
+			d.TempCredentialPath = file.Name()
+		}
 	}
 	// updateConfig
 	return d.validate()
@@ -340,6 +361,8 @@ func (d *Driver) PostCheck() error {
 		return err
 	}
 	d.ClusterInfo.ServiceAccountToken = serviceAccountToken
+	// clean up the default credential temp file
+	os.RemoveAll(d.TempCredentialPath)
 	return nil
 }
 
@@ -358,6 +381,7 @@ func (d *Driver) Remove() error {
 	} else {
 		logrus.Debugf("Cluster %s doesn't exist", d.Name)
 	}
+	os.RemoveAll(d.TempCredentialPath)
 	return nil
 }
 
