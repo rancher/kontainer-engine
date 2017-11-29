@@ -16,15 +16,13 @@ func SetUpAuthentication(kubeCluster, currentCluster *Cluster) error {
 	if kubeCluster.Authentication.Strategy == X509AuthenticationProvider {
 		var err error
 		if currentCluster != nil {
-			kubeCluster.Certificates, err = getClusterCerts(kubeCluster.KubeClient)
-			if err != nil {
-				return fmt.Errorf("Failed to Get Kubernetes certificates: %v", err)
-			}
+			kubeCluster.Certificates = currentCluster.Certificates
 		} else {
 			kubeCluster.Certificates, err = pki.StartCertificatesGeneration(
 				kubeCluster.ControlPlaneHosts,
 				kubeCluster.WorkerHosts,
 				kubeCluster.ClusterDomain,
+				kubeCluster.LocalKubeConfigPath,
 				kubeCluster.KubernetesServiceIP)
 			if err != nil {
 				return fmt.Errorf("Failed to generate Kubernetes certificates: %v", err)
@@ -32,6 +30,27 @@ func SetUpAuthentication(kubeCluster, currentCluster *Cluster) error {
 		}
 	}
 	return nil
+}
+
+func regenerateAPICertificate(c *Cluster, certificates map[string]pki.CertificatePKI) (map[string]pki.CertificatePKI, error) {
+	logrus.Debugf("[certificates] Regenerating kubeAPI certificate")
+	kubeAPIAltNames := pki.GetAltNames(c.ControlPlaneHosts, c.ClusterDomain, c.KubernetesServiceIP)
+	caCrt := certificates[pki.CACertName].Certificate
+	caKey := certificates[pki.CACertName].Key
+	kubeAPIKey := certificates[pki.KubeAPICertName].Key
+	kubeAPICert, err := pki.GenerateCertWithKey(pki.KubeAPICertName, kubeAPIKey, caCrt, caKey, kubeAPIAltNames)
+	if err != nil {
+		return nil, err
+	}
+	certificates[pki.KubeAPICertName] = pki.CertificatePKI{
+		Certificate:   kubeAPICert,
+		Key:           kubeAPIKey,
+		Config:        certificates[pki.KubeAPICertName].Config,
+		EnvName:       certificates[pki.KubeAPICertName].EnvName,
+		ConfigEnvName: certificates[pki.KubeAPICertName].ConfigEnvName,
+		KeyEnvName:    certificates[pki.KubeAPICertName].KeyEnvName,
+	}
+	return certificates, nil
 }
 
 func getClusterCerts(kubeClient *kubernetes.Clientset) (map[string]pki.CertificatePKI, error) {

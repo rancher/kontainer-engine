@@ -20,8 +20,13 @@ func RunWorkerPlane(controlHosts []hosts.Host, workerHosts []hosts.Host, workerS
 		}
 	}
 	for _, host := range workerHosts {
+		// run nginx proxy
+		err := runNginxProxy(host, controlHosts)
+		if err != nil {
+			return err
+		}
 		// run kubelet
-		err := runKubelet(host, workerServices.Kubelet, false)
+		err = runKubelet(host, workerServices.Kubelet, false)
 		if err != nil {
 			return err
 		}
@@ -32,5 +37,36 @@ func RunWorkerPlane(controlHosts []hosts.Host, workerHosts []hosts.Host, workerS
 		}
 	}
 	logrus.Infof("[%s] Successfully started Worker Plane..", WorkerRole)
+	return nil
+}
+
+func RemoveWorkerPlane(controlHosts []hosts.Host, workerHosts []hosts.Host) error {
+	logrus.Infof("[%s] Tearing down Worker Plane..", WorkerRole)
+	for _, host := range controlHosts {
+		err := removeKubelet(host)
+		if err != nil {
+			return err
+		}
+		err = removeKubeproxy(host)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, host := range workerHosts {
+		err := removeKubelet(host)
+		if err != nil {
+			return err
+		}
+		err = removeKubeproxy(host)
+		if err != nil {
+			return err
+		}
+		err = removeNginxProxy(host)
+		if err != nil {
+			return err
+		}
+	}
+	logrus.Infof("[%s] Successfully teared down Worker Plane..", WorkerRole)
 	return nil
 }

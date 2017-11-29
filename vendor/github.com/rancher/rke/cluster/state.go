@@ -2,11 +2,10 @@ package cluster
 
 import (
 	"fmt"
+	"os"
 	"time"
 
-	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/k8s"
-	"github.com/rancher/rke/pki"
 	"github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v2"
 	"k8s.io/api/core/v1"
@@ -16,7 +15,7 @@ import (
 func (c *Cluster) SaveClusterState(clusterFile string) error {
 	// Reinitialize kubernetes Client
 	var err error
-	c.KubeClient, err = k8s.NewClient(pki.KubeAdminConfigPath)
+	c.KubeClient, err = k8s.NewClient(c.LocalKubeConfigPath)
 	if err != nil {
 		return fmt.Errorf("Failed to re-initialize Kubernetes Client: %v", err)
 	}
@@ -24,7 +23,7 @@ func (c *Cluster) SaveClusterState(clusterFile string) error {
 	if err != nil {
 		return fmt.Errorf("[certificates] Failed to Save Kubernetes certificates: %v", err)
 	}
-	err = saveStateToKubernetes(c.KubeClient, pki.KubeAdminConfigPath, []byte(clusterFile))
+	err = saveStateToKubernetes(c.KubeClient, c.LocalKubeConfigPath, []byte(clusterFile))
 	if err != nil {
 		return fmt.Errorf("[state] Failed to save configuration state: %v", err)
 	}
@@ -34,20 +33,34 @@ func (c *Cluster) SaveClusterState(clusterFile string) error {
 func (c *Cluster) GetClusterState() (*Cluster, error) {
 	var err error
 	var currentCluster *Cluster
-	c.KubeClient, err = k8s.NewClient(pki.KubeAdminConfigPath)
-	if err != nil {
-		logrus.Warnf("Failed to initiate new Kubernetes Client: %v", err)
-	} else {
-		// Handle pervious kubernetes state and certificate generation
-		currentCluster = getStateFromKubernetes(c.KubeClient, pki.KubeAdminConfigPath)
+
+	// check if local kubeconfig file exists
+	if _, err = os.Stat(c.LocalKubeConfigPath); !os.IsNotExist(err) {
+		logrus.Infof("[state] Found local kube config file, trying to get state from cluster")
+
+		// initiate kubernetes client
+		c.KubeClient, err = k8s.NewClient(c.LocalKubeConfigPath)
+		if err != nil {
+			logrus.Warnf("Failed to initiate new Kubernetes Client: %v", err)
+			return nil, nil
+		}
+		// Get pervious kubernetes state
+		currentCluster = getStateFromKubernetes(c.KubeClient, c.LocalKubeConfigPath)
+		// Get previous kubernetes certificates
 		if currentCluster != nil {
-			err = currentCluster.InvertIndexHosts()
+			currentCluster.Certificates, err = getClusterCerts(c.KubeClient)
 			if err != nil {
+				return nil, fmt.Errorf("Failed to Get Kubernetes certificates: %v", err)
+			}
+			// setting cluster defaults for the fetched cluster as well
+			currentCluster.setClusterDefaults()
+
+			if err := currentCluster.InvertIndexHosts(); err != nil {
 				return nil, fmt.Errorf("Failed to classify hosts from fetched cluster: %v", err)
 			}
-			err = hosts.ReconcileWorkers(currentCluster.WorkerHosts, c.WorkerHosts, c.KubeClient)
+			currentCluster.Certificates, err = regenerateAPICertificate(c, currentCluster.Certificates)
 			if err != nil {
-				return nil, fmt.Errorf("Failed to reconcile hosts: %v", err)
+				return nil, fmt.Errorf("Failed to regenerate KubeAPI certificate %v", err)
 			}
 		}
 	}
@@ -104,14 +117,14 @@ func getStateFromKubernetes(kubeClient *kubernetes.Clientset, kubeConfigPath str
 		}
 		return &currentCluster
 	case <-time.After(time.Second * GetStateTimeout):
-		logrus.Warnf("Timed out waiting for kubernetes cluster")
+		logrus.Infof("Timed out waiting for kubernetes cluster to get state")
 		return nil
 	}
 }
 
-func GetK8sVersion() (string, error) {
+func GetK8sVersion(localConfigPath string) (string, error) {
 	logrus.Debugf("[version] Using admin.config to connect to Kubernetes cluster..")
-	k8sClient, err := k8s.NewClient(pki.KubeAdminConfigPath)
+	k8sClient, err := k8s.NewClient(localConfigPath)
 	if err != nil {
 		return "", fmt.Errorf("Failed to create Kubernetes Client: %v", err)
 	}

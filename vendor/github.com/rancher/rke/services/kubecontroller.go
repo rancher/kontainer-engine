@@ -12,16 +12,20 @@ import (
 
 func runKubeController(host hosts.Host, kubeControllerService v1.KubeControllerService) error {
 	imageCfg, hostCfg := buildKubeControllerConfig(kubeControllerService)
-	return docker.DoRunContainer(host.DClient, imageCfg, hostCfg, KubeControllerContainerName, host.AdvertisedHostname, ControlRole)
+	return docker.DoRunContainer(host.DClient, imageCfg, hostCfg, KubeControllerContainerName, host.Address, ControlRole)
+}
+
+func removeKubeController(host hosts.Host) error {
+	return docker.DoRemoveContainer(host.DClient, KubeControllerContainerName, host.Address)
 }
 
 func buildKubeControllerConfig(kubeControllerService v1.KubeControllerService) (*container.Config, *container.HostConfig) {
 	imageCfg := &container.Config{
 		Image: kubeControllerService.Image,
-		Cmd: []string{"/hyperkube",
-			"controller-manager",
+		Entrypoint: []string{"kube-controller-manager",
 			"--address=0.0.0.0",
 			"--cloud-provider=",
+			"--leader-elect=true",
 			"--kubeconfig=" + pki.KubeControllerConfigPath,
 			"--enable-hostpath-provisioner=false",
 			"--node-monitor-grace-period=40s",
@@ -38,6 +42,7 @@ func buildKubeControllerConfig(kubeControllerService v1.KubeControllerService) (
 		Binds: []string{
 			"/etc/kubernetes:/etc/kubernetes",
 		},
+		NetworkMode:   "host",
 		RestartPolicy: container.RestartPolicy{Name: "always"},
 	}
 	for arg, value := range kubeControllerService.ExtraArgs {

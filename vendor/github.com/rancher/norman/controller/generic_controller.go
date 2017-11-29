@@ -24,8 +24,10 @@ type HandlerFunc func(key string) error
 type GenericController interface {
 	Informer() cache.SharedIndexInformer
 	AddHandler(handler HandlerFunc)
+	HandlerCount() int
 	Enqueue(namespace, name string)
-	Start(threadiness int, ctx context.Context) error
+	Sync(ctx context.Context) error
+	Start(ctx context.Context, threadiness int) error
 }
 
 type genericController struct {
@@ -35,6 +37,7 @@ type genericController struct {
 	queue    workqueue.RateLimitingInterface
 	name     string
 	running  bool
+	synced   bool
 }
 
 func NewGenericController(name string, objectClient *clientbase.ObjectClient) GenericController {
@@ -53,6 +56,10 @@ func NewGenericController(name string, objectClient *clientbase.ObjectClient) Ge
 	}
 }
 
+func (g *genericController) HandlerCount() int {
+	return len(g.handlers)
+}
+
 func (g *genericController) Informer() cache.SharedIndexInformer {
 	return g.informer
 }
@@ -69,28 +76,19 @@ func (g *genericController) AddHandler(handler HandlerFunc) {
 	g.handlers = append(g.handlers, handler)
 }
 
-func (g *genericController) Start(threadiness int, ctx context.Context) error {
+func (g *genericController) Sync(ctx context.Context) error {
 	g.Lock()
 	defer g.Unlock()
 
-	if !g.running {
-		go g.run(threadiness, ctx)
-	}
-
-	g.running = true
-	return nil
+	return g.sync(ctx)
 }
 
-func (g *genericController) queueObject(obj interface{}) {
-	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-	if err == nil {
-		g.queue.Add(key)
+func (g *genericController) sync(ctx context.Context) error {
+	if g.synced {
+		return nil
 	}
-}
 
-func (g *genericController) run(threadiness int, ctx context.Context) {
 	defer utilruntime.HandleCrash()
-	defer g.queue.ShutDown()
 
 	g.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: g.queueObject,
@@ -105,8 +103,41 @@ func (g *genericController) run(threadiness int, ctx context.Context) {
 	go g.informer.Run(ctx.Done())
 
 	if !cache.WaitForCacheSync(ctx.Done(), g.informer.HasSynced) {
-		return
+		return fmt.Errorf("failed to sync controller %s", g.name)
 	}
+
+	g.synced = true
+	return nil
+}
+
+func (g *genericController) Start(ctx context.Context, threadiness int) error {
+	g.Lock()
+	defer g.Unlock()
+
+	if !g.synced {
+		if err := g.sync(ctx); err != nil {
+			return err
+		}
+	}
+
+	if !g.running {
+		go g.run(ctx, threadiness)
+	}
+
+	g.running = true
+	return nil
+}
+
+func (g *genericController) queueObject(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err == nil {
+		g.queue.Add(key)
+	}
+}
+
+func (g *genericController) run(ctx context.Context, threadiness int) {
+	defer utilruntime.HandleCrash()
+	defer g.queue.ShutDown()
 
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(g.runWorker, time.Second, ctx.Done())
