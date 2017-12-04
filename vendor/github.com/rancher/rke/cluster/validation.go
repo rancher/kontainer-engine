@@ -35,10 +35,7 @@ func (c *Cluster) ValidateCluster() error {
 	}
 
 	// validate services options
-	if err := validateServicesOptions(c); err != nil {
-		return err
-	}
-	return nil
+	return validateServicesOptions(c)
 }
 
 func validateAuthOptions(c *Cluster) error {
@@ -70,15 +67,6 @@ func validateHostsOptions(c *Cluster) error {
 			if role != services.ETCDRole && role != services.ControlRole && role != services.WorkerRole {
 				return fmt.Errorf("Role [%s] for host (%d) is not recognized", role, i+1)
 			}
-		}
-		k := 0
-		for _, role := range host.Role {
-			if role == services.ControlRole || role == services.WorkerRole {
-				k++
-			}
-		}
-		if k > 1 {
-			return fmt.Errorf("Host (%d) can't contain both worker and controlplane roles", i+1)
 		}
 	}
 	return nil

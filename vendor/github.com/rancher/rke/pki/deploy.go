@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -13,7 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func DeployCertificatesOnMasters(cpHosts []hosts.Host, crtMap map[string]CertificatePKI) error {
+func DeployCertificatesOnMasters(cpHosts []*hosts.Host, crtMap map[string]CertificatePKI) error {
 	// list of certificates that should be deployed on the masters
 	crtList := []string{
 		CACertName,
@@ -30,7 +31,7 @@ func DeployCertificatesOnMasters(cpHosts []hosts.Host, crtMap map[string]Certifi
 	}
 
 	for i := range cpHosts {
-		err := doRunDeployer(&cpHosts[i], env)
+		err := doRunDeployer(cpHosts[i], env)
 		if err != nil {
 			return err
 		}
@@ -38,7 +39,7 @@ func DeployCertificatesOnMasters(cpHosts []hosts.Host, crtMap map[string]Certifi
 	return nil
 }
 
-func DeployCertificatesOnWorkers(workerHosts []hosts.Host, crtMap map[string]CertificatePKI) error {
+func DeployCertificatesOnWorkers(workerHosts []*hosts.Host, crtMap map[string]CertificatePKI) error {
 	// list of certificates that should be deployed on the workers
 	crtList := []string{
 		CACertName,
@@ -52,7 +53,7 @@ func DeployCertificatesOnWorkers(workerHosts []hosts.Host, crtMap map[string]Cer
 	}
 
 	for i := range workerHosts {
-		err := doRunDeployer(&workerHosts[i], env)
+		err := doRunDeployer(workerHosts[i], env)
 		if err != nil {
 			return err
 		}
@@ -74,8 +75,7 @@ func doRunDeployer(host *hosts.Host, containerEnv []string) error {
 		Binds: []string{
 			"/etc/kubernetes:/etc/kubernetes",
 		},
-		Privileged:    true,
-		RestartPolicy: container.RestartPolicy{Name: "never"},
+		Privileged: true,
 	}
 	resp, err := host.DClient.ContainerCreate(context.Background(), imageCfg, hostCfg, nil, CrtDownloaderContainer)
 	if err != nil {
@@ -108,5 +108,15 @@ func DeployAdminConfig(kubeConfig, localConfigPath string) error {
 	if err != nil {
 		return fmt.Errorf("Failed to create local admin kubeconfig file: %v", err)
 	}
+	logrus.Infof("Successfully Deployed local admin kubeconfig at [%s]", localConfigPath)
+	return nil
+}
+
+func RemoveAdminConfig(localConfigPath string) error {
+	logrus.Infof("Removing local admin Kubeconfig: %s", localConfigPath)
+	if err := os.Remove(localConfigPath); err != nil {
+		return fmt.Errorf("Failed to remove local admin Kubeconfig file: %v", err)
+	}
+	logrus.Infof("Local admin Kubeconfig removed successfully")
 	return nil
 }

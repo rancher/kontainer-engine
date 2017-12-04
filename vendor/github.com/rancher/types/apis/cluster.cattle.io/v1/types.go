@@ -55,6 +55,8 @@ type ClusterStatus struct {
 	Capacity            v1.ResourceList          `json:"capacity,omitempty"`
 	Allocatable         v1.ResourceList          `json:"allocatable,omitempty"`
 	AppliedSpec         ClusterSpec              `json:"appliedSpec,omitempty"`
+	Requested           v1.ResourceList          `json:"requested,omitempty"`
+	Limits              v1.ResourceList          `json:"limits,omitempty"`
 }
 
 type ClusterComponentStatus struct {
@@ -118,6 +120,8 @@ type RancherKubernetesEngineConfig struct {
 	Authentication AuthConfig `yaml:"auth" json:"auth,omitempty"`
 	// YAML manifest for user provided addons to be deployed on the cluster
 	Addons string `yaml:"addons" json:"addons,omitempty"`
+	// List of images used internally for proxy, cert downlaod and kubedns
+	SystemImages map[string]string `yaml:"system_images" json:"systemImages,omitempty"`
 	// SSH Private Key Path
 	SSHKeyPath string `yaml:"ssh_key_path" json:"sshKeyPath,omitempty"`
 }
@@ -135,6 +139,10 @@ type RKEConfigNode struct {
 	User string `yaml:"user" json:"user,omitempty"`
 	// Optional - Docker socket on the node that will be used in tunneling
 	DockerSocket string `yaml:"docker_socket" json:"dockerSocket,omitempty"`
+	// SSH Private Key
+	SSHKey string `yaml:"ssh_key" json:"sshKey,omitempty"`
+	// SSH Private Key Path
+	SSHKeyPath string `yaml:"ssh_key_path" json:"sshKeyPath,omitempty"`
 }
 
 type RKEConfigServices struct {
@@ -214,9 +222,25 @@ type AuthConfig struct {
 	// Authentication options
 	Options map[string]string `yaml:"options" json:"options,omitempty"`
 }
-
 type ClusterNode struct {
-	v1.Node
+	metav1.TypeMeta `json:",inline"`
+	// Standard object’s metadata. More info:
+	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#metadata
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	// Specification of the desired behavior of the cluster node. More info:
+	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
+	v1.NodeSpec `json:"spec,omitempty"`
+	// Most recent observed status of the cluster. More info:
+	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
+	Status      ClusterNodeStatus `json:"status"`
+	NodeName    string
+	ClusterName string
+}
+
+type ClusterNodeStatus struct {
+	v1.NodeStatus
+	Requested v1.ResourceList `json:"requested,omitempty"`
+	Limits    v1.ResourceList `json:"limits,omitempty"`
 }
 
 type MachineTemplate struct {
