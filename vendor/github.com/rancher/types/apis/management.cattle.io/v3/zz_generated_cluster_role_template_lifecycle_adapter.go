@@ -6,7 +6,7 @@ import (
 )
 
 type ClusterRoleTemplateLifecycle interface {
-	Initialize(obj *ClusterRoleTemplate) error
+	Create(obj *ClusterRoleTemplate) error
 	Remove(obj *ClusterRoleTemplate) error
 	Updated(obj *ClusterRoleTemplate) error
 }
@@ -15,8 +15,8 @@ type clusterRoleTemplateLifecycleAdapter struct {
 	lifecycle ClusterRoleTemplateLifecycle
 }
 
-func (w *clusterRoleTemplateLifecycleAdapter) Initialize(obj runtime.Object) error {
-	return w.lifecycle.Initialize(obj.(*ClusterRoleTemplate))
+func (w *clusterRoleTemplateLifecycleAdapter) Create(obj runtime.Object) error {
+	return w.lifecycle.Create(obj.(*ClusterRoleTemplate))
 }
 
 func (w *clusterRoleTemplateLifecycleAdapter) Finalize(obj runtime.Object) error {

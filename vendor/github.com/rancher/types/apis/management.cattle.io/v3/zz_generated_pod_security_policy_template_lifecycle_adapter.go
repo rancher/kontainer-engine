@@ -6,7 +6,7 @@ import (
 )
 
 type PodSecurityPolicyTemplateLifecycle interface {
-	Initialize(obj *PodSecurityPolicyTemplate) error
+	Create(obj *PodSecurityPolicyTemplate) error
 	Remove(obj *PodSecurityPolicyTemplate) error
 	Updated(obj *PodSecurityPolicyTemplate) error
 }
@@ -15,8 +15,8 @@ type podSecurityPolicyTemplateLifecycleAdapter struct {
 	lifecycle PodSecurityPolicyTemplateLifecycle
 }
 
-func (w *podSecurityPolicyTemplateLifecycleAdapter) Initialize(obj runtime.Object) error {
-	return w.lifecycle.Initialize(obj.(*PodSecurityPolicyTemplate))
+func (w *podSecurityPolicyTemplateLifecycleAdapter) Create(obj runtime.Object) error {
+	return w.lifecycle.Create(obj.(*PodSecurityPolicyTemplate))
 }
 
 func (w *podSecurityPolicyTemplateLifecycleAdapter) Finalize(obj runtime.Object) error {

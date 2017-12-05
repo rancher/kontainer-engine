@@ -24,6 +24,9 @@ type Interface interface {
 	ClusterRoleTemplateBindingsGetter
 	ProjectRoleTemplateBindingsGetter
 	ClustersGetter
+	CatalogsGetter
+	TemplatesGetter
+	TemplateVersionsGetter
 }
 
 type Client struct {
@@ -41,6 +44,9 @@ type Client struct {
 	clusterRoleTemplateBindingControllers map[string]ClusterRoleTemplateBindingController
 	projectRoleTemplateBindingControllers map[string]ProjectRoleTemplateBindingController
 	clusterControllers                    map[string]ClusterController
+	catalogControllers                    map[string]CatalogController
+	templateControllers                   map[string]TemplateController
+	templateVersionControllers            map[string]TemplateVersionController
 }
 
 func NewForConfig(config rest.Config) (Interface, error) {
@@ -67,6 +73,9 @@ func NewForConfig(config rest.Config) (Interface, error) {
 		clusterRoleTemplateBindingControllers: map[string]ClusterRoleTemplateBindingController{},
 		projectRoleTemplateBindingControllers: map[string]ProjectRoleTemplateBindingController{},
 		clusterControllers:                    map[string]ClusterController{},
+		catalogControllers:                    map[string]CatalogController{},
+		templateControllers:                   map[string]TemplateController{},
+		templateVersionControllers:            map[string]TemplateVersionController{},
 	}, nil
 }
 
@@ -206,6 +215,45 @@ type ClustersGetter interface {
 func (c *Client) Clusters(namespace string) ClusterInterface {
 	objectClient := clientbase.NewObjectClient(namespace, c.restClient, &ClusterResource, ClusterGroupVersionKind, clusterFactory{})
 	return &clusterClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type CatalogsGetter interface {
+	Catalogs(namespace string) CatalogInterface
+}
+
+func (c *Client) Catalogs(namespace string) CatalogInterface {
+	objectClient := clientbase.NewObjectClient(namespace, c.restClient, &CatalogResource, CatalogGroupVersionKind, catalogFactory{})
+	return &catalogClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type TemplatesGetter interface {
+	Templates(namespace string) TemplateInterface
+}
+
+func (c *Client) Templates(namespace string) TemplateInterface {
+	objectClient := clientbase.NewObjectClient(namespace, c.restClient, &TemplateResource, TemplateGroupVersionKind, templateFactory{})
+	return &templateClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type TemplateVersionsGetter interface {
+	TemplateVersions(namespace string) TemplateVersionInterface
+}
+
+func (c *Client) TemplateVersions(namespace string) TemplateVersionInterface {
+	objectClient := clientbase.NewObjectClient(namespace, c.restClient, &TemplateVersionResource, TemplateVersionGroupVersionKind, templateVersionFactory{})
+	return &templateVersionClient{
 		ns:           namespace,
 		client:       c,
 		objectClient: objectClient,

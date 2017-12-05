@@ -6,7 +6,7 @@ import (
 )
 
 type ProjectLifecycle interface {
-	Initialize(obj *Project) error
+	Create(obj *Project) error
 	Remove(obj *Project) error
 	Updated(obj *Project) error
 }
@@ -15,8 +15,8 @@ type projectLifecycleAdapter struct {
 	lifecycle ProjectLifecycle
 }
 
-func (w *projectLifecycleAdapter) Initialize(obj runtime.Object) error {
-	return w.lifecycle.Initialize(obj.(*Project))
+func (w *projectLifecycleAdapter) Create(obj runtime.Object) error {
+	return w.lifecycle.Create(obj.(*Project))
 }
 
 func (w *projectLifecycleAdapter) Finalize(obj runtime.Object) error {

@@ -6,7 +6,7 @@ import (
 )
 
 type MachineDriverLifecycle interface {
-	Initialize(obj *MachineDriver) error
+	Create(obj *MachineDriver) error
 	Remove(obj *MachineDriver) error
 	Updated(obj *MachineDriver) error
 }
@@ -15,8 +15,8 @@ type machineDriverLifecycleAdapter struct {
 	lifecycle MachineDriverLifecycle
 }
 
-func (w *machineDriverLifecycleAdapter) Initialize(obj runtime.Object) error {
-	return w.lifecycle.Initialize(obj.(*MachineDriver))
+func (w *machineDriverLifecycleAdapter) Create(obj runtime.Object) error {
+	return w.lifecycle.Create(obj.(*MachineDriver))
 }
 
 func (w *machineDriverLifecycleAdapter) Finalize(obj runtime.Object) error {

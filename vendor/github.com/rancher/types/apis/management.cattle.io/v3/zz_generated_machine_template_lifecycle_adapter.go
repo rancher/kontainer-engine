@@ -6,7 +6,7 @@ import (
 )
 
 type MachineTemplateLifecycle interface {
-	Initialize(obj *MachineTemplate) error
+	Create(obj *MachineTemplate) error
 	Remove(obj *MachineTemplate) error
 	Updated(obj *MachineTemplate) error
 }
@@ -15,8 +15,8 @@ type machineTemplateLifecycleAdapter struct {
 	lifecycle MachineTemplateLifecycle
 }
 
-func (w *machineTemplateLifecycleAdapter) Initialize(obj runtime.Object) error {
-	return w.lifecycle.Initialize(obj.(*MachineTemplate))
+func (w *machineTemplateLifecycleAdapter) Create(obj runtime.Object) error {
+	return w.lifecycle.Create(obj.(*MachineTemplate))
 }
 
 func (w *machineTemplateLifecycleAdapter) Finalize(obj runtime.Object) error {
