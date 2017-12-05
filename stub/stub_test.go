@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
-	"github.com/rancher/types/apis/cluster.cattle.io/v1"
+	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"gopkg.in/check.v1"
 )
 
@@ -23,7 +23,7 @@ func (s *StubTestSuite) SetUpSuite(c *check.C) {
 }
 
 func (s *StubTestSuite) TestFlatten(c *check.C) {
-	config := v1.GoogleKubernetesEngineConfig{
+	config := v3.GoogleKubernetesEngineConfig{
 		ProjectID:  "test",
 		Zone:       "test",
 		DiskSizeGb: 50,

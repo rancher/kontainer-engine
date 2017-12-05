@@ -8,13 +8,12 @@ import (
 	"fmt"
 	"strings"
 
-	yaml "gopkg.in/yaml.v2"
-
 	"github.com/rancher/kontainer-engine/cluster"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/plugin"
-	"github.com/rancher/types/apis/cluster.cattle.io/v1"
+	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -36,7 +35,7 @@ func init() {
 
 type controllerConfigGetter struct {
 	driverName  string
-	clusterSpec v1.ClusterSpec
+	clusterSpec v3.ClusterSpec
 	clusterName string
 }
 
@@ -142,7 +141,7 @@ func toMap(obj interface{}, format string) (map[string]interface{}, error) {
 	return nil, nil
 }
 
-func convertCluster(name string, spec v1.ClusterSpec) (cluster.Cluster, error) {
+func convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
 	// todo: decide whether we need a driver field
 	driverName := ""
 	if spec.AzureKubernetesServiceConfig != nil {
@@ -170,7 +169,7 @@ func convertCluster(name string, spec v1.ClusterSpec) (cluster.Cluster, error) {
 }
 
 // Create creates the stub for cluster manager to call
-func Create(name string, clusterSpec v1.ClusterSpec) (string, string, string, error) {
+func Create(name string, clusterSpec v3.ClusterSpec) (string, string, string, error) {
 	cls, err := convertCluster(name, clusterSpec)
 	if err != nil {
 		return "", "", "", err
@@ -186,7 +185,7 @@ func Create(name string, clusterSpec v1.ClusterSpec) (string, string, string, er
 }
 
 // Update creates the stub for cluster manager to call
-func Update(name string, clusterSpec v1.ClusterSpec) (string, string, string, error) {
+func Update(name string, clusterSpec v3.ClusterSpec) (string, string, string, error) {
 	cls, err := convertCluster(name, clusterSpec)
 	if err != nil {
 		return "", "", "", err
@@ -202,7 +201,7 @@ func Update(name string, clusterSpec v1.ClusterSpec) (string, string, string, er
 }
 
 // Remove removes stub for cluster manager to call
-func Remove(name string, clusterSpec v1.ClusterSpec) error {
+func Remove(name string, clusterSpec v3.ClusterSpec) error {
 	cls, err := convertCluster(name, clusterSpec)
 	if err != nil {
 		return err
