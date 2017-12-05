@@ -11,8 +11,15 @@ type Starter interface {
 	Start(ctx context.Context, threadiness int) error
 }
 
+func SyncThenSync(ctx context.Context, threadiness int, starters ...Starter) error {
+	if err := Sync(ctx, starters...); err != nil {
+		return err
+	}
+	return Start(ctx, threadiness, starters...)
+}
+
 func Sync(ctx context.Context, starters ...Starter) error {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, _ := errgroup.WithContext(ctx)
 	for _, starter := range starters {
 		func(starter Starter) {
 			eg.Go(func() error {
