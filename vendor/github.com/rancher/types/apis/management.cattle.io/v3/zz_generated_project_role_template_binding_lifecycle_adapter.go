@@ -6,7 +6,7 @@ import (
 )
 
 type ProjectRoleTemplateBindingLifecycle interface {
-	Initialize(obj *ProjectRoleTemplateBinding) error
+	Create(obj *ProjectRoleTemplateBinding) error
 	Remove(obj *ProjectRoleTemplateBinding) error
 	Updated(obj *ProjectRoleTemplateBinding) error
 }
@@ -15,8 +15,8 @@ type projectRoleTemplateBindingLifecycleAdapter struct {
 	lifecycle ProjectRoleTemplateBindingLifecycle
 }
 
-func (w *projectRoleTemplateBindingLifecycleAdapter) Initialize(obj runtime.Object) error {
-	return w.lifecycle.Initialize(obj.(*ProjectRoleTemplateBinding))
+func (w *projectRoleTemplateBindingLifecycleAdapter) Create(obj runtime.Object) error {
+	return w.lifecycle.Create(obj.(*ProjectRoleTemplateBinding))
 }
 
 func (w *projectRoleTemplateBindingLifecycleAdapter) Finalize(obj runtime.Object) error {

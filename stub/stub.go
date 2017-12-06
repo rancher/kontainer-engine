@@ -178,8 +178,8 @@ func Create(name string, clusterSpec v3.ClusterSpec) (string, string, string, er
 		return "", "", "", err
 	}
 	endpoint := cls.Endpoint
-	if !strings.HasPrefix(endpoint, "http://") {
-		endpoint = fmt.Sprintf("http://%s", cls.Endpoint)
+	if !strings.HasPrefix(endpoint, "https://") {
+		endpoint = fmt.Sprintf("https://%s", cls.Endpoint)
 	}
 	return endpoint, cls.ServiceAccountToken, cls.RootCACert, nil
 }
@@ -194,8 +194,8 @@ func Update(name string, clusterSpec v3.ClusterSpec) (string, string, string, er
 		return "", "", "", err
 	}
 	endpoint := cls.Endpoint
-	if !strings.HasPrefix(endpoint, "http://") {
-		endpoint = fmt.Sprintf("http://%s", cls.Endpoint)
+	if !strings.HasPrefix(endpoint, "https://") {
+		endpoint = fmt.Sprintf("https://%s", cls.Endpoint)
 	}
 	return endpoint, cls.ServiceAccountToken, cls.RootCACert, nil
 }

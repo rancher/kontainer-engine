@@ -6,7 +6,7 @@ import (
 )
 
 type ClusterLifecycle interface {
-	Initialize(obj *Cluster) error
+	Create(obj *Cluster) error
 	Remove(obj *Cluster) error
 	Updated(obj *Cluster) error
 }
@@ -15,8 +15,8 @@ type clusterLifecycleAdapter struct {
 	lifecycle ClusterLifecycle
 }
 
-func (w *clusterLifecycleAdapter) Initialize(obj runtime.Object) error {
-	return w.lifecycle.Initialize(obj.(*Cluster))
+func (w *clusterLifecycleAdapter) Create(obj runtime.Object) error {
+	return w.lifecycle.Create(obj.(*Cluster))
 }
 
 func (w *clusterLifecycleAdapter) Finalize(obj runtime.Object) error {

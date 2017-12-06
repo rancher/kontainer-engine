@@ -52,6 +52,22 @@ type Driver struct {
 	TempCredentialPath string
 	// Enable alpha feature
 	EnableAlphaFeature bool
+	// Configuration for the HTTP (L7) load balancing controller addon
+	HTTPLoadBalancing bool
+	// Configuration for the horizontal pod autoscaling feature, which increases or decreases the number of replica pods a replication controller has based on the resource usage of the existing pods
+	HorizontalPodAutoscaling bool
+	// Configuration for the Kubernetes Dashboard
+	KubernetesDashboard bool
+	// Configuration for NetworkPolicy
+	NetworkPolicyConfig bool
+	// The list of Google Compute Engine locations in which the cluster's nodes should be located
+	Locations []string
+	// Network
+	Network string
+	// Sub Network
+	SubNetwork string
+	// Configuration for LegacyAbac
+	LegacyAbac bool
 	// NodePool id
 	NodePoolID string
 	// cluster info
@@ -160,6 +176,20 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	d.CredentialPath = getValueFromDriverOptions(driverOptions, generic.StringType, "gke-credential-path").(string)
 	d.CredentialContent = getValueFromDriverOptions(driverOptions, generic.StringType, "credential").(string)
 	d.EnableAlphaFeature = getValueFromDriverOptions(driverOptions, generic.BoolType, "enable-alpha-feature", "enableAlphaFeature").(bool)
+	d.HorizontalPodAutoscaling = getValueFromDriverOptions(driverOptions, generic.BoolType, "horizontalPodAutoscaling").(bool)
+	d.HTTPLoadBalancing = getValueFromDriverOptions(driverOptions, generic.BoolType, "httpLoadBalancing").(bool)
+	d.KubernetesDashboard = getValueFromDriverOptions(driverOptions, generic.BoolType, "kubernetesDashboard").(bool)
+	d.NetworkPolicyConfig = getValueFromDriverOptions(driverOptions, generic.BoolType, "networkPolicyConfig").(bool)
+	d.NodeConfig.ImageType = getValueFromDriverOptions(driverOptions, generic.StringType, "imageType").(string)
+	d.Network = getValueFromDriverOptions(driverOptions, generic.StringType, "network").(string)
+	d.SubNetwork = getValueFromDriverOptions(driverOptions, generic.StringType, "subNetwork").(string)
+	d.LegacyAbac = getValueFromDriverOptions(driverOptions, generic.BoolType, "legacyAbac").(bool)
+	d.Locations = []string{}
+	locations := getValueFromDriverOptions(driverOptions, generic.StringSliceType, "locations").(*generic.StringSlice)
+	for _, location := range locations.Value {
+		d.Locations = append(d.Locations, location)
+	}
+
 	d.NodeCount = getValueFromDriverOptions(driverOptions, generic.IntType, "node-count", "nodeCount").(int64)
 	labelValues := getValueFromDriverOptions(driverOptions, generic.StringSliceType, "labels").(*generic.StringSlice)
 	for _, part := range labelValues.Value {
@@ -172,19 +202,15 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 		os.Setenv(defaultCredentialEnv, d.CredentialPath)
 	}
 	if d.CredentialContent != "" {
-		if d.TempCredentialPath != "" {
-			os.Setenv(defaultCredentialEnv, d.TempCredentialPath)
-		} else {
-			file, err := ioutil.TempFile("", "credential-file")
-			if err != nil {
-				return err
-			}
-			if err := ioutil.WriteFile(file.Name(), []byte(d.CredentialContent), 0755); err != nil {
-				return err
-			}
-			os.Setenv(defaultCredentialEnv, file.Name())
-			d.TempCredentialPath = file.Name()
+		file, err := ioutil.TempFile("", "credential-file")
+		if err != nil {
+			return err
 		}
+		if err := ioutil.WriteFile(file.Name(), []byte(d.CredentialContent), 0755); err != nil {
+			return err
+		}
+		os.Setenv(defaultCredentialEnv, file.Name())
+		d.TempCredentialPath = file.Name()
 	}
 	// updateConfig
 	return d.validate()
@@ -323,6 +349,17 @@ func (d *Driver) generateClusterCreateRequest() *raw.CreateClusterRequest {
 	request.Cluster.ClusterIpv4Cidr = d.ClusterIpv4Cidr
 	request.Cluster.Description = d.Description
 	request.Cluster.EnableKubernetesAlpha = d.EnableAlphaFeature
+	request.Cluster.AddonsConfig = &raw.AddonsConfig{
+		HttpLoadBalancing:        &raw.HttpLoadBalancing{Disabled: !d.HTTPLoadBalancing},
+		HorizontalPodAutoscaling: &raw.HorizontalPodAutoscaling{Disabled: !d.HorizontalPodAutoscaling},
+		KubernetesDashboard:      &raw.KubernetesDashboard{Disabled: !d.KubernetesDashboard},
+		NetworkPolicyConfig:      &raw.NetworkPolicyConfig{Disabled: !d.NetworkPolicyConfig},
+	}
+	request.Cluster.Network = d.Network
+	request.Cluster.Subnetwork = d.SubNetwork
+	request.Cluster.LegacyAbac = &raw.LegacyAbac{
+		Enabled: d.LegacyAbac,
+	}
 	request.Cluster.MasterAuth = &raw.MasterAuth{
 		Username: "admin",
 	}

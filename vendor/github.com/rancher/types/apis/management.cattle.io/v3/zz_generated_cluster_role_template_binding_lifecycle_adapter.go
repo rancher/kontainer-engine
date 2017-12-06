@@ -6,7 +6,7 @@ import (
 )
 
 type ClusterRoleTemplateBindingLifecycle interface {
-	Initialize(obj *ClusterRoleTemplateBinding) error
+	Create(obj *ClusterRoleTemplateBinding) error
 	Remove(obj *ClusterRoleTemplateBinding) error
 	Updated(obj *ClusterRoleTemplateBinding) error
 }
@@ -15,8 +15,8 @@ type clusterRoleTemplateBindingLifecycleAdapter struct {
 	lifecycle ClusterRoleTemplateBindingLifecycle
 }
 
-func (w *clusterRoleTemplateBindingLifecycleAdapter) Initialize(obj runtime.Object) error {
-	return w.lifecycle.Initialize(obj.(*ClusterRoleTemplateBinding))
+func (w *clusterRoleTemplateBindingLifecycleAdapter) Create(obj runtime.Object) error {
+	return w.lifecycle.Create(obj.(*ClusterRoleTemplateBinding))
 }
 
 func (w *clusterRoleTemplateBindingLifecycleAdapter) Finalize(obj runtime.Object) error {
