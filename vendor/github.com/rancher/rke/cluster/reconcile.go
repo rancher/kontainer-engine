@@ -17,13 +17,6 @@ func ReconcileCluster(kubeCluster, currentCluster *Cluster) error {
 
 		return nil
 	}
-	// to handle if current local admin is down and we need to use new cp from the list
-	if !isLocalConfigWorking(kubeCluster.LocalKubeConfigPath) {
-		if err := rebuildLocalAdminConfig(kubeCluster); err != nil {
-			return err
-		}
-	}
-
 	kubeClient, err := k8s.NewClient(kubeCluster.LocalKubeConfigPath)
 	if err != nil {
 		return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
@@ -50,7 +43,7 @@ func reconcileWorker(currentCluster, kubeCluster *Cluster, kubeClient *kubernete
 			return fmt.Errorf("Failed to delete worker node %s from cluster", toDeleteHost.Address)
 		}
 		// attempting to clean services/files on the host
-		if err := reconcileHost(toDeleteHost, true); err != nil {
+		if err := reconcileHost(toDeleteHost, true, currentCluster.SystemImages[AplineImage]); err != nil {
 			logrus.Warnf("[reconcile] Couldn't clean up worker node [%s]: %v", toDeleteHost.Address, err)
 			continue
 		}
@@ -82,7 +75,7 @@ func reconcileControl(currentCluster, kubeCluster *Cluster, kubeClient *kubernet
 			return fmt.Errorf("Failed to delete controlplane node %s from cluster", toDeleteHost.Address)
 		}
 		// attempting to clean services/files on the host
-		if err := reconcileHost(toDeleteHost, false); err != nil {
+		if err := reconcileHost(toDeleteHost, false, currentCluster.SystemImages[AplineImage]); err != nil {
 			logrus.Warnf("[reconcile] Couldn't clean up controlplane node [%s]: %v", toDeleteHost.Address, err)
 			continue
 		}
@@ -95,7 +88,7 @@ func reconcileControl(currentCluster, kubeCluster *Cluster, kubeClient *kubernet
 	cpChanged := hosts.IsHostListChanged(currentCluster.ControlPlaneHosts, kubeCluster.ControlPlaneHosts)
 	if cpChanged {
 		logrus.Infof("[reconcile] Rolling update nginx hosts with new list of control plane hosts")
-		err := services.RollingUpdateNginxProxy(kubeCluster.ControlPlaneHosts, kubeCluster.WorkerHosts)
+		err := services.RollingUpdateNginxProxy(kubeCluster.ControlPlaneHosts, kubeCluster.WorkerHosts, currentCluster.SystemImages[NginxProxyImage])
 		if err != nil {
 			return fmt.Errorf("Failed to rolling update Nginx hosts with new control plane hosts")
 		}
@@ -103,7 +96,7 @@ func reconcileControl(currentCluster, kubeCluster *Cluster, kubeClient *kubernet
 	return nil
 }
 
-func reconcileHost(toDeleteHost *hosts.Host, worker bool) error {
+func reconcileHost(toDeleteHost *hosts.Host, worker bool, cleanerImage string) error {
 	if err := toDeleteHost.TunnelUp(); err != nil {
 		return fmt.Errorf("Not able to reach the host: %v", err)
 	}
@@ -111,14 +104,14 @@ func reconcileHost(toDeleteHost *hosts.Host, worker bool) error {
 		if err := services.RemoveWorkerPlane([]*hosts.Host{toDeleteHost}, false); err != nil {
 			return fmt.Errorf("Couldn't remove worker plane: %v", err)
 		}
-		if err := toDeleteHost.CleanUpWorkerHost(services.ControlRole); err != nil {
+		if err := toDeleteHost.CleanUpWorkerHost(services.ControlRole, cleanerImage); err != nil {
 			return fmt.Errorf("Not able to clean the host: %v", err)
 		}
 	} else {
 		if err := services.RemoveControlPlane([]*hosts.Host{toDeleteHost}, false); err != nil {
 			return fmt.Errorf("Couldn't remove control plane: %v", err)
 		}
-		if err := toDeleteHost.CleanUpControlHost(services.WorkerRole); err != nil {
+		if err := toDeleteHost.CleanUpControlHost(services.WorkerRole, cleanerImage); err != nil {
 			return fmt.Errorf("Not able to clean the host: %v", err)
 		}
 	}

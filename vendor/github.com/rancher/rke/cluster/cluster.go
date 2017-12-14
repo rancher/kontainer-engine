@@ -30,23 +30,23 @@ type Cluster struct {
 	ClusterDomain                    string
 	ClusterCIDR                      string
 	ClusterDNSServer                 string
+	Dialer                           hosts.Dialer
 }
 
 const (
-	X509AuthenticationProvider   = "x509"
-	DefaultClusterConfig         = "cluster.yml"
-	DefaultServiceClusterIPRange = "10.233.0.0/18"
-	DefaultClusterCIDR           = "10.233.64.0/18"
-	DefaultClusterDNSService     = "10.233.0.3"
-	DefaultClusterDomain         = "cluster.local"
-	DefaultInfraContainerImage   = "gcr.io/google_containers/pause-amd64:3.0"
-	DefaultAuthStrategy          = "x509"
-	DefaultNetworkPlugin         = "flannel"
-	DefaultClusterSSHKeyPath     = "~/.ssh/id_rsa"
-	StateConfigMapName           = "cluster-state"
-	UpdateStateTimeout           = 30
-	GetStateTimeout              = 30
-	KubernetesClientTimeOut      = 30
+	X509AuthenticationProvider = "x509"
+	StateConfigMapName         = "cluster-state"
+	UpdateStateTimeout         = 30
+	GetStateTimeout            = 30
+	KubernetesClientTimeOut    = 30
+	AplineImage                = "alpine"
+	NginxProxyImage            = "nginx_proxy"
+	CertDownloaderImage        = "cert_downloader"
+	KubeDNSImage               = "kubedns_image"
+	DNSMasqImage               = "dnsmasq_image"
+	KubeDNSSidecarImage        = "kubedns_sidecar_image"
+	KubeDNSAutoScalerImage     = "kubedns_autoscaler_image"
+	ServiceSidekickImage       = "service_sidekick_image"
 )
 
 func (c *Cluster) DeployClusterPlanes() error {
@@ -55,24 +55,32 @@ func (c *Cluster) DeployClusterPlanes() error {
 	if err != nil {
 		return fmt.Errorf("[etcd] Failed to bring up Etcd Plane: %v", err)
 	}
-	err = services.RunControlPlane(c.ControlPlaneHosts, c.EtcdHosts, c.Services)
+	err = services.RunControlPlane(c.ControlPlaneHosts,
+		c.EtcdHosts,
+		c.Services,
+		c.SystemImages[ServiceSidekickImage])
 	if err != nil {
 		return fmt.Errorf("[controlPlane] Failed to bring up Control Plane: %v", err)
 	}
-	err = services.RunWorkerPlane(c.ControlPlaneHosts, c.WorkerHosts, c.Services)
+	err = services.RunWorkerPlane(c.ControlPlaneHosts,
+		c.WorkerHosts,
+		c.Services,
+		c.SystemImages[NginxProxyImage],
+		c.SystemImages[ServiceSidekickImage])
 	if err != nil {
 		return fmt.Errorf("[workerPlane] Failed to bring up Worker Plane: %v", err)
 	}
 	return nil
 }
 
-func ParseConfig(clusterFile string) (*Cluster, error) {
+func ParseConfig(clusterFile string, customDialer hosts.Dialer) (*Cluster, error) {
 	logrus.Debugf("Parsing cluster file [%v]", clusterFile)
 	var err error
 	c, err := parseClusterFile(clusterFile)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to parse the cluster file: %v", err)
 	}
+	c.Dialer = customDialer
 	err = c.InvertIndexHosts()
 	if err != nil {
 		return nil, fmt.Errorf("Failed to classify hosts from config file: %v", err)
@@ -126,29 +134,43 @@ func (c *Cluster) setClusterDefaults() {
 			c.Nodes[i].SSHKeyPath = c.SSHKeyPath
 		}
 	}
-	if len(c.Services.KubeAPI.ServiceClusterIPRange) == 0 {
-		c.Services.KubeAPI.ServiceClusterIPRange = DefaultServiceClusterIPRange
+	c.setClusterServicesDefaults()
+	c.setClusterNetworkDefaults()
+	c.setClusterImageDefaults()
+}
+
+func (c *Cluster) setClusterServicesDefaults() {
+	serviceConfigDefaultsMap := map[*string]string{
+		&c.Services.KubeAPI.ServiceClusterIPRange:        DefaultServiceClusterIPRange,
+		&c.Services.KubeController.ServiceClusterIPRange: DefaultServiceClusterIPRange,
+		&c.Services.KubeController.ClusterCIDR:           DefaultClusterCIDR,
+		&c.Services.Kubelet.ClusterDNSServer:             DefaultClusterDNSService,
+		&c.Services.Kubelet.ClusterDomain:                DefaultClusterDomain,
+		&c.Services.Kubelet.InfraContainerImage:          DefaultInfraContainerImage,
+		&c.Authentication.Strategy:                       DefaultAuthStrategy,
 	}
-	if len(c.Services.KubeController.ServiceClusterIPRange) == 0 {
-		c.Services.KubeController.ServiceClusterIPRange = DefaultServiceClusterIPRange
+	for k, v := range serviceConfigDefaultsMap {
+		setDefaultIfEmpty(k, v)
 	}
-	if len(c.Services.KubeController.ClusterCIDR) == 0 {
-		c.Services.KubeController.ClusterCIDR = DefaultClusterCIDR
+}
+
+func (c *Cluster) setClusterImageDefaults() {
+	if c.SystemImages == nil {
+		// don't break if the user didn't define rke_images
+		c.SystemImages = make(map[string]string)
 	}
-	if len(c.Services.Kubelet.ClusterDNSServer) == 0 {
-		c.Services.Kubelet.ClusterDNSServer = DefaultClusterDNSService
+	systemImagesDefaultsMap := map[string]string{
+		AplineImage:            DefaultAplineImage,
+		NginxProxyImage:        DefaultNginxProxyImage,
+		CertDownloaderImage:    DefaultCertDownloaderImage,
+		KubeDNSImage:           DefaultKubeDNSImage,
+		DNSMasqImage:           DefaultDNSMasqImage,
+		KubeDNSSidecarImage:    DefaultKubeDNSSidecarImage,
+		KubeDNSAutoScalerImage: DefaultKubeDNSAutoScalerImage,
+		ServiceSidekickImage:   DefaultServiceSidekickImage,
 	}
-	if len(c.Services.Kubelet.ClusterDomain) == 0 {
-		c.Services.Kubelet.ClusterDomain = DefaultClusterDomain
-	}
-	if len(c.Services.Kubelet.InfraContainerImage) == 0 {
-		c.Services.Kubelet.InfraContainerImage = DefaultInfraContainerImage
-	}
-	if len(c.Authentication.Strategy) == 0 {
-		c.Authentication.Strategy = DefaultAuthStrategy
-	}
-	if len(c.Network.Plugin) == 0 {
-		c.Network.Plugin = DefaultNetworkPlugin
+	for k, v := range systemImagesDefaultsMap {
+		setDefaultIfEmptyMapValue(c.SystemImages, k, v)
 	}
 }
 
@@ -160,26 +182,27 @@ func GetLocalKubeConfig(configPath string) string {
 }
 
 func rebuildLocalAdminConfig(kubeCluster *Cluster) error {
-	logrus.Infof("[reconcile] Rebuilding and update local kube config")
-	var workingConfig string
+	logrus.Infof("[reconcile] Rebuilding and updating local kube config")
+	var workingConfig, newConfig string
 	currentKubeConfig := kubeCluster.Certificates[pki.KubeAdminCommonName]
 	caCrt := kubeCluster.Certificates[pki.CACertName].Certificate
 	for _, cpHost := range kubeCluster.ControlPlaneHosts {
-		newConfig := pki.GetKubeConfigX509WithData(
-			"https://"+cpHost.Address+":6443",
-			pki.KubeAdminCommonName,
-			string(cert.EncodeCertPEM(caCrt)),
-			string(cert.EncodeCertPEM(currentKubeConfig.Certificate)),
-			string(cert.EncodePrivateKeyPEM(currentKubeConfig.Key)))
-
+		if (currentKubeConfig == pki.CertificatePKI{}) {
+			kubeCluster.Certificates = make(map[string]pki.CertificatePKI)
+			newConfig = getLocalAdminConfigWithNewAddress(kubeCluster.LocalKubeConfigPath, cpHost.Address)
+		} else {
+			kubeURL := fmt.Sprintf("https://%s:6443", cpHost.Address)
+			caData := string(cert.EncodeCertPEM(caCrt))
+			crtData := string(cert.EncodeCertPEM(currentKubeConfig.Certificate))
+			keyData := string(cert.EncodePrivateKeyPEM(currentKubeConfig.Key))
+			newConfig = pki.GetKubeConfigX509WithData(kubeURL, pki.KubeAdminCommonName, caData, crtData, keyData)
+		}
 		if err := pki.DeployAdminConfig(newConfig, kubeCluster.LocalKubeConfigPath); err != nil {
 			return fmt.Errorf("Failed to redeploy local admin config with new host")
 		}
 		workingConfig = newConfig
-		if _, err := GetK8sVersion(kubeCluster.LocalKubeConfigPath); err != nil {
-			logrus.Infof("[reconcile] host [%s] is not active master on the cluster", cpHost.Address)
-			continue
-		} else {
+		if _, err := GetK8sVersion(kubeCluster.LocalKubeConfigPath); err == nil {
+			logrus.Infof("[reconcile] host [%s] is active master on the cluster", cpHost.Address)
 			break
 		}
 	}
@@ -204,4 +227,15 @@ func getLocalConfigAddress(localConfigPath string) (string, error) {
 	splittedAdress := strings.Split(config.Host, ":")
 	address := splittedAdress[1]
 	return address[2:], nil
+}
+
+func getLocalAdminConfigWithNewAddress(localConfigPath, cpAddress string) string {
+	config, _ := clientcmd.BuildConfigFromFlags("", localConfigPath)
+	config.Host = fmt.Sprintf("https://%s:6443", cpAddress)
+	return pki.GetKubeConfigX509WithData(
+		"https://"+cpAddress+":6443",
+		pki.KubeAdminCommonName,
+		string(config.CAData),
+		string(config.CertData),
+		string(config.KeyData))
 }

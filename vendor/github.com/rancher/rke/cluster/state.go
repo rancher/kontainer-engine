@@ -38,17 +38,25 @@ func (c *Cluster) GetClusterState() (*Cluster, error) {
 	if _, err = os.Stat(c.LocalKubeConfigPath); !os.IsNotExist(err) {
 		logrus.Infof("[state] Found local kube config file, trying to get state from cluster")
 
+		// to handle if current local admin is down and we need to use new cp from the list
+		if !isLocalConfigWorking(c.LocalKubeConfigPath) {
+			if err := rebuildLocalAdminConfig(c); err != nil {
+				return nil, err
+			}
+		}
+
 		// initiate kubernetes client
 		c.KubeClient, err = k8s.NewClient(c.LocalKubeConfigPath)
 		if err != nil {
 			logrus.Warnf("Failed to initiate new Kubernetes Client: %v", err)
 			return nil, nil
 		}
-		// Get pervious kubernetes state
+		// Get previous kubernetes state
 		currentCluster = getStateFromKubernetes(c.KubeClient, c.LocalKubeConfigPath)
 		// Get previous kubernetes certificates
 		if currentCluster != nil {
 			currentCluster.Certificates, err = getClusterCerts(c.KubeClient)
+			currentCluster.Dialer = c.Dialer
 			if err != nil {
 				return nil, fmt.Errorf("Failed to Get Kubernetes certificates: %v", err)
 			}
