@@ -1,6 +1,54 @@
 package network
 
 func GetCalicoManifest(calicoConfig map[string]string) string {
+	awsIPPool := ""
+	if calicoConfig[CloudProvider] == AWSCloudProvider {
+		awsIPPool = `
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: aws-ippool
+  namespace: kube-system
+data:
+  aws-ippool: |-
+    apiVersion: v1
+    kind: ipPool
+    metadata:
+      cidr: ` + calicoConfig[ClusterCIDR] + `
+    spec:
+      nat-outgoing: true
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: calicoctl
+  namespace: kube-system
+spec:
+  hostNetwork: true
+  restartPolicy: OnFailure
+  containers:
+  - name: calicoctl
+    image: ` + calicoConfig[CalicoctlImage] + `
+    command: ["/bin/sh", "-c", "calicoctl apply -f aws-ippool.yaml"]
+    env:
+    - name: ETCD_ENDPOINTS
+      valueFrom:
+        configMapKeyRef:
+          name: calico-config
+          key: etcd_endpoints
+    volumeMounts:
+    - name: ippool-config
+      mountPath: /root/
+  volumes:
+  - name: ippool-config
+    configMap:
+      name: aws-ippool
+      items:
+        - key: aws-ippool
+          path: aws-ippool.yaml
+        `
+	}
 
 	return `# Calico Version master
 # https://docs.projectcalico.org/master/releases#master
@@ -17,7 +65,7 @@ metadata:
   namespace: kube-system
 data:
   # Configure this with the location of your etcd cluster.
-  etcd_endpoints: "` + calicoConfig["etcdEndpoints"] + `"
+  etcd_endpoints: "` + calicoConfig[EtcdEndpoints] + `"
 
   # Configure the Calico backend to use.
   calico_backend: "bird"
@@ -30,7 +78,7 @@ data:
       "plugins": [
         {
             "type": "calico",
-            "etcd_endpoints": "` + calicoConfig["etcdEndpoints"] + `",
+            "etcd_endpoints": "` + calicoConfig[EtcdEndpoints] + `",
             "etcd_key_file": "",
             "etcd_cert_file": "",
             "etcd_ca_cert_file": "",
@@ -41,13 +89,13 @@ data:
             },
             "policy": {
                 "type": "k8s",
-                "k8s_api_root": "` + calicoConfig["apiRoot"] + `",
-                "k8s_client_certificate": "` + calicoConfig["clientCrt"] + `",
-                "k8s_client_key": "` + calicoConfig["clientKey"] + `",
-                "k8s_certificate_authority": "` + calicoConfig["clientCA"] + `"
+                "k8s_api_root": "` + calicoConfig[APIRoot] + `",
+                "k8s_client_certificate": "` + calicoConfig[ClientCert] + `",
+                "k8s_client_key": "` + calicoConfig[ClientKey] + `",
+                "k8s_certificate_authority": "` + calicoConfig[ClientCA] + `"
             },
             "kubernetes": {
-                "kubeconfig": "` + calicoConfig["kubeCfg"] + `"
+                "kubeconfig": "` + calicoConfig[KubeCfg] + `"
             }
         },
         {
@@ -124,7 +172,7 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v2.6.2
+          image: ` + calicoConfig[NodeImage] + `
           env:
             # The location of the Calico etcd cluster.
             - name: ETCD_ENDPOINTS
@@ -149,7 +197,7 @@ spec:
               value: "ACCEPT"
             # Configure the IP Pool from which Pod IPs will be chosen.
             - name: CALICO_IPV4POOL_CIDR
-              value: "` + calicoConfig["clusterCIDR"] + `"
+              value: "` + calicoConfig[ClusterCIDR] + `"
             - name: CALICO_IPV4POOL_IPIP
               value: "Always"
             # Disable IPv6 on Kubernetes.
@@ -215,7 +263,7 @@ spec:
         # This container installs the Calico CNI binaries
         # and CNI network config file on each node.
         - name: install-cni
-          image: quay.io/calico/cni:v1.11.0
+          image: ` + calicoConfig[CNIImage] + `
           command: ["/install-cni.sh"]
           env:
             # Name of the CNI config file to create.
@@ -304,7 +352,7 @@ spec:
           operator: "Exists"
       containers:
         - name: calico-kube-controllers
-          image: quay.io/calico/kube-controllers:v1.0.0
+          image: ` + calicoConfig[ControllersImage] + `
           env:
             # The location of the Calico etcd cluster.
             - name: ETCD_ENDPOINTS
@@ -371,7 +419,7 @@ spec:
       serviceAccountName: calico-kube-controllers
       containers:
         - name: calico-policy-controller
-          image: quay.io/calico/kube-controllers:v1.0.0
+          image: ` + calicoConfig[ControllersImage] + `
           env:
             # The location of the Calico etcd cluster.
             - name: ETCD_ENDPOINTS
@@ -389,11 +437,11 @@ metadata:
   namespace: kube-system
 
 ---
-
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: calico-node
   namespace: kube-system
+` + awsIPPool + `
 `
 }

@@ -1,6 +1,12 @@
 package network
 
-func GetFlannelManifest(clusterCIDR string) string {
+import "fmt"
+
+func GetFlannelManifest(flannelConfig map[string]string) string {
+	var extraArgs string
+	if len(flannelConfig[FlannelIface]) > 0 {
+		extraArgs = fmt.Sprintf(",--iface=%s", flannelConfig[FlannelIface])
+	}
 	return `
 ---
 kind: ConfigMap
@@ -34,7 +40,7 @@ data:
     }
   net-conf.json: |
     {
-      "Network": "` + clusterCIDR + `",
+      "Network": "` + flannelConfig[ClusterCIDR] + `",
       "Backend": {
         "Type": "vxlan"
       }
@@ -57,7 +63,7 @@ spec:
     spec:
       containers:
       - name: kube-flannel
-        image: quay.io/coreos/flannel:v0.8.0
+        image: ` + flannelConfig[FlannelImage] + `
         imagePullPolicy: IfNotPresent
         resources:
           limits:
@@ -66,7 +72,7 @@ spec:
           requests:
             cpu: 150m
             memory: 64M
-        command: [ "/opt/bin/flanneld", "--ip-masq", "--kube-subnet-mgr" ]
+        command: ["/opt/bin/flanneld","--ip-masq","--kube-subnet-mgr"` + extraArgs + `]
         securityContext:
           privileged: true
         env:
@@ -86,7 +92,7 @@ spec:
         - name: flannel-cfg
           mountPath: /etc/kube-flannel/
       - name: install-cni
-        image: quay.io/coreos/flannel-cni:v0.2.0
+        image: ` + flannelConfig[FlannelCNIImage] + `
         command: ["/install-cni.sh"]
         env:
         # The CNI network config to install on each node.

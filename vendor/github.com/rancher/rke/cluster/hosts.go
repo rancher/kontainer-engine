@@ -37,6 +37,9 @@ func (c *Cluster) InvertIndexHosts() error {
 		newHost := hosts.Host{
 			RKEConfigNode: host,
 		}
+		if err := newHost.RegisterDialer(c.Dialer); err != nil {
+			return fmt.Errorf("Failed to register new Dialer for host [%s]: %v", host.Address, err)
+		}
 		for _, role := range host.Role {
 			logrus.Debugf("Host: " + host.Address + " has role: " + role)
 			switch role {
@@ -59,11 +62,11 @@ func (c *Cluster) InvertIndexHosts() error {
 func (c *Cluster) SetUpHosts() error {
 	if c.Authentication.Strategy == X509AuthenticationProvider {
 		logrus.Infof("[certificates] Deploying kubernetes certificates to Cluster nodes")
-		err := pki.DeployCertificatesOnMasters(c.ControlPlaneHosts, c.Certificates)
+		err := pki.DeployCertificatesOnMasters(c.ControlPlaneHosts, c.Certificates, c.SystemImages[CertDownloaderImage])
 		if err != nil {
 			return err
 		}
-		err = pki.DeployCertificatesOnWorkers(c.WorkerHosts, c.Certificates)
+		err = pki.DeployCertificatesOnWorkers(c.WorkerHosts, c.Certificates, c.SystemImages[CertDownloaderImage])
 		if err != nil {
 			return err
 		}

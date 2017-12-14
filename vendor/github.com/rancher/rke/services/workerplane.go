@@ -6,9 +6,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func RunWorkerPlane(controlHosts []*hosts.Host, workerHosts []*hosts.Host, workerServices v3.RKEConfigServices) error {
+func RunWorkerPlane(controlHosts, workerHosts []*hosts.Host, workerServices v3.RKEConfigServices, nginxProxyImage, sidekickImage string) error {
 	logrus.Infof("[%s] Building up Worker Plane..", WorkerRole)
 	for _, host := range controlHosts {
+		// run sidekick
+		if err := runSidekick(host, sidekickImage); err != nil {
+			return err
+		}
+		// run kubelet
 		// only one master for now
 		if err := runKubelet(host, workerServices.Kubelet); err != nil {
 			return err
@@ -20,9 +25,13 @@ func RunWorkerPlane(controlHosts []*hosts.Host, workerHosts []*hosts.Host, worke
 	for _, host := range workerHosts {
 		// run nginx proxy
 		if !host.IsControl {
-			if err := runNginxProxy(host, controlHosts); err != nil {
+			if err := runNginxProxy(host, controlHosts, nginxProxyImage); err != nil {
 				return err
 			}
+		}
+		// run sidekick
+		if err := runSidekick(host, sidekickImage); err != nil {
+			return err
 		}
 		// run kubelet
 		if err := runKubelet(host, workerServices.Kubelet); err != nil {
@@ -53,6 +62,9 @@ func RemoveWorkerPlane(workerHosts []*hosts.Host, force bool) error {
 			return err
 		}
 		if err := removeNginxProxy(host); err != nil {
+			return err
+		}
+		if err := removeSidekick(host); err != nil {
 			return err
 		}
 		logrus.Infof("[%s] Successfully teared down Worker Plane..", WorkerRole)

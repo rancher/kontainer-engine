@@ -14,7 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func DeployCertificatesOnMasters(cpHosts []*hosts.Host, crtMap map[string]CertificatePKI) error {
+func DeployCertificatesOnMasters(cpHosts []*hosts.Host, crtMap map[string]CertificatePKI, certDownloaderImage string) error {
 	// list of certificates that should be deployed on the masters
 	crtList := []string{
 		CACertName,
@@ -31,7 +31,7 @@ func DeployCertificatesOnMasters(cpHosts []*hosts.Host, crtMap map[string]Certif
 	}
 
 	for i := range cpHosts {
-		err := doRunDeployer(cpHosts[i], env)
+		err := doRunDeployer(cpHosts[i], env, certDownloaderImage)
 		if err != nil {
 			return err
 		}
@@ -39,7 +39,7 @@ func DeployCertificatesOnMasters(cpHosts []*hosts.Host, crtMap map[string]Certif
 	return nil
 }
 
-func DeployCertificatesOnWorkers(workerHosts []*hosts.Host, crtMap map[string]CertificatePKI) error {
+func DeployCertificatesOnWorkers(workerHosts []*hosts.Host, crtMap map[string]CertificatePKI, certDownloaderImage string) error {
 	// list of certificates that should be deployed on the workers
 	crtList := []string{
 		CACertName,
@@ -53,7 +53,7 @@ func DeployCertificatesOnWorkers(workerHosts []*hosts.Host, crtMap map[string]Ce
 	}
 
 	for i := range workerHosts {
-		err := doRunDeployer(workerHosts[i], env)
+		err := doRunDeployer(workerHosts[i], env, certDownloaderImage)
 		if err != nil {
 			return err
 		}
@@ -61,14 +61,12 @@ func DeployCertificatesOnWorkers(workerHosts []*hosts.Host, crtMap map[string]Ce
 	return nil
 }
 
-func doRunDeployer(host *hosts.Host, containerEnv []string) error {
-	logrus.Debugf("[certificates] Pulling Certificate downloader Image on host [%s]", host.Address)
-	err := docker.PullImage(host.DClient, host.Address, CrtDownloaderImage)
-	if err != nil {
+func doRunDeployer(host *hosts.Host, containerEnv []string, certDownloaderImage string) error {
+	if err := docker.UseLocalOrPull(host.DClient, host.Address, certDownloaderImage, CertificatesServiceName); err != nil {
 		return err
 	}
 	imageCfg := &container.Config{
-		Image: CrtDownloaderImage,
+		Image: certDownloaderImage,
 		Env:   containerEnv,
 	}
 	hostCfg := &container.HostConfig{
@@ -87,7 +85,7 @@ func doRunDeployer(host *hosts.Host, containerEnv []string) error {
 	}
 	logrus.Debugf("[certificates] Successfully started Certificate deployer container: %s", resp.ID)
 	for {
-		isDeployerRunning, err := docker.IsContainerRunning(host.DClient, host.Address, CrtDownloaderContainer)
+		isDeployerRunning, err := docker.IsContainerRunning(host.DClient, host.Address, CrtDownloaderContainer, false)
 		if err != nil {
 			return err
 		}
@@ -112,11 +110,11 @@ func DeployAdminConfig(kubeConfig, localConfigPath string) error {
 	return nil
 }
 
-func RemoveAdminConfig(localConfigPath string) error {
+func RemoveAdminConfig(localConfigPath string) {
 	logrus.Infof("Removing local admin Kubeconfig: %s", localConfigPath)
 	if err := os.Remove(localConfigPath); err != nil {
-		return fmt.Errorf("Failed to remove local admin Kubeconfig file: %v", err)
+		logrus.Warningf("Failed to remove local admin Kubeconfig file: %v", err)
+		return
 	}
 	logrus.Infof("Local admin Kubeconfig removed successfully")
-	return nil
 }
