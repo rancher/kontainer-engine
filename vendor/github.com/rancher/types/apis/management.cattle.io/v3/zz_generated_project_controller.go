@@ -16,8 +16,8 @@ import (
 
 var (
 	ProjectGroupVersionKind = schema.GroupVersionKind{
-		Version: "v3",
-		Group:   "management.cattle.io",
+		Version: Version,
+		Group:   GroupName,
 		Kind:    "Project",
 	}
 	ProjectResource = metav1.APIResource{
@@ -60,6 +60,8 @@ type ProjectInterface interface {
 	Watch(opts metav1.ListOptions) (watch.Interface, error)
 	DeleteCollection(deleteOpts *metav1.DeleteOptions, listOpts metav1.ListOptions) error
 	Controller() ProjectController
+	AddSyncHandler(sync ProjectHandlerFunc)
+	AddLifecycle(name string, lifecycle ProjectLifecycle)
 }
 
 type projectLister struct {
@@ -74,7 +76,13 @@ func (l *projectLister) List(namespace string, selector labels.Selector) (ret []
 }
 
 func (l *projectLister) Get(namespace, name string) (*Project, error) {
-	obj, exists, err := l.controller.Informer().GetIndexer().GetByKey(namespace + "/" + name)
+	var key string
+	if namespace != "" {
+		key = namespace + "/" + name
+	} else {
+		key = name
+	}
+	obj, exists, err := l.controller.Informer().GetIndexer().GetByKey(key)
 	if err != nil {
 		return nil, err
 	}
@@ -184,4 +192,13 @@ func (s *projectClient) Watch(opts metav1.ListOptions) (watch.Interface, error) 
 
 func (s *projectClient) DeleteCollection(deleteOpts *metav1.DeleteOptions, listOpts metav1.ListOptions) error {
 	return s.objectClient.DeleteCollection(deleteOpts, listOpts)
+}
+
+func (s *projectClient) AddSyncHandler(sync ProjectHandlerFunc) {
+	s.Controller().AddHandler(sync)
+}
+
+func (s *projectClient) AddLifecycle(name string, lifecycle ProjectLifecycle) {
+	sync := NewProjectLifecycleAdapter(name, s, lifecycle)
+	s.AddSyncHandler(sync)
 }
