@@ -16,8 +16,8 @@ import (
 
 var (
 	PodSecurityPolicyTemplateGroupVersionKind = schema.GroupVersionKind{
-		Version: "v3",
-		Group:   "management.cattle.io",
+		Version: Version,
+		Group:   GroupName,
 		Kind:    "PodSecurityPolicyTemplate",
 	}
 	PodSecurityPolicyTemplateResource = metav1.APIResource{
@@ -60,6 +60,8 @@ type PodSecurityPolicyTemplateInterface interface {
 	Watch(opts metav1.ListOptions) (watch.Interface, error)
 	DeleteCollection(deleteOpts *metav1.DeleteOptions, listOpts metav1.ListOptions) error
 	Controller() PodSecurityPolicyTemplateController
+	AddSyncHandler(sync PodSecurityPolicyTemplateHandlerFunc)
+	AddLifecycle(name string, lifecycle PodSecurityPolicyTemplateLifecycle)
 }
 
 type podSecurityPolicyTemplateLister struct {
@@ -74,7 +76,13 @@ func (l *podSecurityPolicyTemplateLister) List(namespace string, selector labels
 }
 
 func (l *podSecurityPolicyTemplateLister) Get(namespace, name string) (*PodSecurityPolicyTemplate, error) {
-	obj, exists, err := l.controller.Informer().GetIndexer().GetByKey(namespace + "/" + name)
+	var key string
+	if namespace != "" {
+		key = namespace + "/" + name
+	} else {
+		key = name
+	}
+	obj, exists, err := l.controller.Informer().GetIndexer().GetByKey(key)
 	if err != nil {
 		return nil, err
 	}
@@ -184,4 +192,13 @@ func (s *podSecurityPolicyTemplateClient) Watch(opts metav1.ListOptions) (watch.
 
 func (s *podSecurityPolicyTemplateClient) DeleteCollection(deleteOpts *metav1.DeleteOptions, listOpts metav1.ListOptions) error {
 	return s.objectClient.DeleteCollection(deleteOpts, listOpts)
+}
+
+func (s *podSecurityPolicyTemplateClient) AddSyncHandler(sync PodSecurityPolicyTemplateHandlerFunc) {
+	s.Controller().AddHandler(sync)
+}
+
+func (s *podSecurityPolicyTemplateClient) AddLifecycle(name string, lifecycle PodSecurityPolicyTemplateLifecycle) {
+	sync := NewPodSecurityPolicyTemplateLifecycleAdapter(name, s, lifecycle)
+	s.AddSyncHandler(sync)
 }
