@@ -163,35 +163,35 @@ func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 
 // SetDriverOptions implements driver interface
 func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
-	d.Name = getValueFromDriverOptions(driverOptions, generic.StringType, "name").(string)
-	d.ProjectID = getValueFromDriverOptions(driverOptions, generic.StringType, "project-id", "projectId").(string)
-	d.Zone = getValueFromDriverOptions(driverOptions, generic.StringType, "zone").(string)
-	d.NodePoolID = getValueFromDriverOptions(driverOptions, generic.StringType, "nodePool").(string)
-	d.ClusterIpv4Cidr = getValueFromDriverOptions(driverOptions, generic.StringType, "cluster-ipv4-cidr", "clusterIpv4Cidr").(string)
-	d.Description = getValueFromDriverOptions(driverOptions, generic.StringType, "description").(string)
-	d.MasterVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "master-version", "masterVersion").(string)
-	d.NodeVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "node-version", "nodeVersion").(string)
-	d.NodeConfig.DiskSizeGb = getValueFromDriverOptions(driverOptions, generic.IntType, "disk-size-gb", "diskSizeGb").(int64)
-	d.NodeConfig.MachineType = getValueFromDriverOptions(driverOptions, generic.StringType, "machine-type", "machineType").(string)
-	d.CredentialPath = getValueFromDriverOptions(driverOptions, generic.StringType, "gke-credential-path").(string)
-	d.CredentialContent = getValueFromDriverOptions(driverOptions, generic.StringType, "credential").(string)
-	d.EnableAlphaFeature = getValueFromDriverOptions(driverOptions, generic.BoolType, "enable-alpha-feature", "enableAlphaFeature").(bool)
-	d.HorizontalPodAutoscaling = getValueFromDriverOptions(driverOptions, generic.BoolType, "horizontalPodAutoscaling").(bool)
-	d.HTTPLoadBalancing = getValueFromDriverOptions(driverOptions, generic.BoolType, "httpLoadBalancing").(bool)
-	d.KubernetesDashboard = getValueFromDriverOptions(driverOptions, generic.BoolType, "kubernetesDashboard").(bool)
-	d.NetworkPolicyConfig = getValueFromDriverOptions(driverOptions, generic.BoolType, "networkPolicyConfig").(bool)
-	d.NodeConfig.ImageType = getValueFromDriverOptions(driverOptions, generic.StringType, "imageType").(string)
-	d.Network = getValueFromDriverOptions(driverOptions, generic.StringType, "network").(string)
-	d.SubNetwork = getValueFromDriverOptions(driverOptions, generic.StringType, "subNetwork").(string)
-	d.LegacyAbac = getValueFromDriverOptions(driverOptions, generic.BoolType, "legacyAbac").(bool)
+	d.Name = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "name").(string)
+	d.ProjectID = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "project-id", "projectId").(string)
+	d.Zone = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "zone").(string)
+	d.NodePoolID = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "nodePool").(string)
+	d.ClusterIpv4Cidr = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "cluster-ipv4-cidr", "clusterIpv4Cidr").(string)
+	d.Description = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "description").(string)
+	d.MasterVersion = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "master-version", "masterVersion").(string)
+	d.NodeVersion = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "node-version", "nodeVersion").(string)
+	d.NodeConfig.DiskSizeGb = generic.GetValueFromDriverOptions(driverOptions, generic.IntType, "disk-size-gb", "diskSizeGb").(int64)
+	d.NodeConfig.MachineType = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "machine-type", "machineType").(string)
+	d.CredentialPath = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "gke-credential-path").(string)
+	d.CredentialContent = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "credential").(string)
+	d.EnableAlphaFeature = generic.GetValueFromDriverOptions(driverOptions, generic.BoolType, "enable-alpha-feature", "enableAlphaFeature").(bool)
+	d.HorizontalPodAutoscaling = generic.GetValueFromDriverOptions(driverOptions, generic.BoolType, "horizontalPodAutoscaling").(bool)
+	d.HTTPLoadBalancing = generic.GetValueFromDriverOptions(driverOptions, generic.BoolType, "httpLoadBalancing").(bool)
+	d.KubernetesDashboard = generic.GetValueFromDriverOptions(driverOptions, generic.BoolType, "kubernetesDashboard").(bool)
+	d.NetworkPolicyConfig = generic.GetValueFromDriverOptions(driverOptions, generic.BoolType, "networkPolicyConfig").(bool)
+	d.NodeConfig.ImageType = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "imageType").(string)
+	d.Network = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "network").(string)
+	d.SubNetwork = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "subNetwork").(string)
+	d.LegacyAbac = generic.GetValueFromDriverOptions(driverOptions, generic.BoolType, "legacyAbac").(bool)
 	d.Locations = []string{}
-	locations := getValueFromDriverOptions(driverOptions, generic.StringSliceType, "locations").(*generic.StringSlice)
+	locations := generic.GetValueFromDriverOptions(driverOptions, generic.StringSliceType, "locations").(*generic.StringSlice)
 	for _, location := range locations.Value {
 		d.Locations = append(d.Locations, location)
 	}
 
-	d.NodeCount = getValueFromDriverOptions(driverOptions, generic.IntType, "node-count", "nodeCount").(int64)
-	labelValues := getValueFromDriverOptions(driverOptions, generic.StringSliceType, "labels").(*generic.StringSlice)
+	d.NodeCount = generic.GetValueFromDriverOptions(driverOptions, generic.IntType, "node-count", "nodeCount").(int64)
+	labelValues := generic.GetValueFromDriverOptions(driverOptions, generic.StringSliceType, "labels").(*generic.StringSlice)
 	for _, part := range labelValues.Value {
 		kv := strings.Split(part, "=")
 		if len(kv) == 2 {
@@ -214,40 +214,6 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	}
 	// updateConfig
 	return d.validate()
-}
-
-func getValueFromDriverOptions(driverOptions *generic.DriverOptions, optionType string, keys ...string) interface{} {
-	switch optionType {
-	case generic.IntType:
-		for _, key := range keys {
-			if value, ok := driverOptions.IntOptions[key]; ok {
-				return value
-			}
-		}
-		return int64(0)
-	case generic.StringType:
-		for _, key := range keys {
-			if value, ok := driverOptions.StringOptions[key]; ok {
-				return value
-			}
-		}
-		return ""
-	case generic.BoolType:
-		for _, key := range keys {
-			if value, ok := driverOptions.BoolOptions[key]; ok {
-				return value
-			}
-		}
-		return false
-	case generic.StringSliceType:
-		for _, key := range keys {
-			if value, ok := driverOptions.StringSliceOptions[key]; ok {
-				return value
-			}
-		}
-		return &generic.StringSlice{}
-	}
-	return nil
 }
 
 func (d *Driver) validate() error {

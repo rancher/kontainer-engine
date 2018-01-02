@@ -101,3 +101,37 @@ func ConvertToRkeConfig(config string) (v3.RancherKubernetesEngineConfig, error)
 	}
 	return rkeConfig, nil
 }
+
+func GetValueFromDriverOptions(driverOptions *DriverOptions, optionType string, keys ...string) interface{} {
+	switch optionType {
+	case IntType:
+		for _, key := range keys {
+			if value, ok := driverOptions.IntOptions[key]; ok {
+				return value
+			}
+		}
+		return int64(0)
+	case StringType:
+		for _, key := range keys {
+			if value, ok := driverOptions.StringOptions[key]; ok {
+				return value
+			}
+		}
+		return ""
+	case BoolType:
+		for _, key := range keys {
+			if value, ok := driverOptions.BoolOptions[key]; ok {
+				return value
+			}
+		}
+		return false
+	case StringSliceType:
+		for _, key := range keys {
+			if value, ok := driverOptions.StringSliceOptions[key]; ok {
+				return value
+			}
+		}
+		return &StringSlice{}
+	}
+	return nil
+}
