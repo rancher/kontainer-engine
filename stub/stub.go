@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rancher/kontainer-engine/cluster"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
@@ -14,6 +15,8 @@ import (
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
@@ -94,7 +97,9 @@ func flatten(data map[string]interface{}, driverOptions *rpcDriver.DriverOptions
 	}
 }
 
-type controllerPersistStore struct{}
+type controllerPersistStore struct {
+	clusterClient v3.ClusterInterface
+}
 
 // no-op
 func (c controllerPersistStore) Check(name string) (bool, error) {
@@ -113,7 +118,22 @@ func (c controllerPersistStore) Get(name string) (cluster.Cluster, error) {
 
 // no-op
 func (c controllerPersistStore) PersistStatus(cluster cluster.Cluster, status string) error {
-	return nil
+	cls, err := c.clusterClient.Get(cluster.Name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if cls.Status.Conditions == nil {
+		cls.Status.Conditions = []v3.ClusterCondition{}
+	}
+	now := time.Now().Format(time.RFC3339)
+	cls.Status.Conditions = append(cls.Status.Conditions, v3.ClusterCondition{
+		Type:               v3.ClusterConditionType(status),
+		Status:             v1.ConditionTrue,
+		LastTransitionTime: now,
+		LastUpdateTime:     now,
+	})
+	_, err = c.clusterClient.Update(cls)
+	return err
 }
 
 func toMap(obj interface{}, format string) (map[string]interface{}, error) {
@@ -141,7 +161,7 @@ func toMap(obj interface{}, format string) (map[string]interface{}, error) {
 	return nil, nil
 }
 
-func convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
+func convertCluster(name string, spec v3.ClusterSpec, clusterClient v3.ClusterInterface) (cluster.Cluster, error) {
 	// todo: decide whether we need a driver field
 	driverName := ""
 	if spec.AzureKubernetesServiceConfig != nil {
@@ -160,7 +180,9 @@ func convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
 		clusterSpec: spec,
 		clusterName: name,
 	}
-	persistStore := controllerPersistStore{}
+	persistStore := controllerPersistStore{
+		clusterClient: clusterClient,
+	}
 	clusterPlugin, err := cluster.NewCluster(driverName, pluginAddr, name, configGetter, persistStore)
 	if err != nil {
 		return cluster.Cluster{}, err
@@ -169,8 +191,8 @@ func convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
 }
 
 // Create creates the stub for cluster manager to call
-func Create(name string, clusterSpec v3.ClusterSpec) (string, string, string, error) {
-	cls, err := convertCluster(name, clusterSpec)
+func Create(name string, clusterSpec v3.ClusterSpec, clusterClient v3.ClusterInterface) (string, string, string, error) {
+	cls, err := convertCluster(name, clusterSpec, clusterClient)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -185,8 +207,8 @@ func Create(name string, clusterSpec v3.ClusterSpec) (string, string, string, er
 }
 
 // Update creates the stub for cluster manager to call
-func Update(name string, clusterSpec v3.ClusterSpec) (string, string, string, error) {
-	cls, err := convertCluster(name, clusterSpec)
+func Update(name string, clusterSpec v3.ClusterSpec, clusterClient v3.ClusterInterface) (string, string, string, error) {
+	cls, err := convertCluster(name, clusterSpec, clusterClient)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -201,8 +223,8 @@ func Update(name string, clusterSpec v3.ClusterSpec) (string, string, string, er
 }
 
 // Remove removes stub for cluster manager to call
-func Remove(name string, clusterSpec v3.ClusterSpec) error {
-	cls, err := convertCluster(name, clusterSpec)
+func Remove(name string, clusterSpec v3.ClusterSpec, clusterClient v3.ClusterInterface) error {
+	cls, err := convertCluster(name, clusterSpec, clusterClient)
 	if err != nil {
 		return err
 	}
