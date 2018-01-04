@@ -3,16 +3,14 @@ package aks
 import (
 	"strings"
 
-	// "github.com/Azure/azure-sdk-for-go/profiles/latest/containerservice/mgmt/containerservice"
-	// "github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2017-09-30/containerservice"
-
 	generic "github.com/rancher/kontainer-engine/driver"
 	"fmt"
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/utils"
-	"github.com/Azure/azure-sdk-for-go/arm/containerservice"
-	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2017-08-31/containerservice"
 	"os"
+	"context"
+	"github.com/Azure/go-autorest/autorest/to"
 )
 
 type Driver struct {
@@ -38,6 +36,12 @@ type Driver struct {
 	AgentVMSize string
 	// Version of Kubernetes specified when creating the managed cluster
 	KubernetesVersion string
+	// Path to the public key to use for SSH into cluster
+	SSHPublicKeyPath string
+	// Kubernetes Master DNS prefix (must be unique within Azure)
+	MasterDNSPrefix string
+	// Kubernetes admin username
+	AdminUsername string
 }
 
 func NewDriver() *Driver {
@@ -90,6 +94,19 @@ func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 		Type:  generic.StringType,
 		Usage: "Version of Kubernetes specified when creating the managed cluster",
 	}
+	driverFlag.Options["public-key"] = &generic.Flag{
+		Type:  generic.StringType,
+		Usage: "SSH public key to use for the cluster",
+	}
+	driverFlag.Options["master-dns-prefix"] = &generic.Flag{
+		Type:  generic.StringType,
+		Usage: "DNS prefix to use for the master",
+	}
+	driverFlag.Options["admin-username"] = &generic.Flag{
+		Type:  generic.StringType,
+		Usage: "Admin username to use for the cluster",
+	}
+
 	return &driverFlag, nil
 }
 
@@ -123,6 +140,9 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 	d.SubscriptionID = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "subscription-id").(string)
 	d.ResourceGroup = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "resource-group").(string)
 	d.AgentPoolFQDN = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "node-pool-fqdn").(string)
+	d.MasterDNSPrefix = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "master-dns-prefix").(string)
+	d.SSHPublicKeyPath = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "public-key").(string)
+	d.AdminUsername = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "admin-username").(string)
 	tagValues := generic.GetValueFromDriverOptions(driverOptions, generic.StringSliceType).(*generic.StringSlice)
 	for _, part := range tagValues.Value {
 		kv := strings.Split(part, "=")
@@ -130,38 +150,54 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 			d.Tag[kv[0]] = kv[1]
 		}
 	}
+	return d.validate()
+}
+
+func (d *Driver) validate() error {
+	if d.Name == "" {
+		return fmt.Errorf("cluster name is required")
+	}
+
+	//if d.ResourceGroup == "" {
+	//	return fmt.Errorf("resource group is required")
+	//}
+
+	//if d.SSHPublicKeyPath == "" {
+	//	return fmt.Errorf("path to ssh public key is required")
+	//}
+
 	return nil
 }
 
 // Create implements driver interface
 func (d *Driver) Create() error {
-	// todo: implement
-	fmt.Println("Hello Azure")
-
 	subscriptionId := os.Getenv("AZURE_SUBSCRIPTION_ID")
-
 	authorizer, err := utils.GetAuthorizer(azure.PublicCloud)
 
 	if err != nil {
 		return err
 	}
 
-	client := containerservice.NewContainerServicesClient(subscriptionId)
+	client := containerservice.NewManagedClustersClient(subscriptionId)
 	client.Authorizer = authorizer
-	resultChan, errChan := client.CreateOrUpdate("kube", "go-sdk-kube-cluster-4", containerservice.ContainerService{
+
+	// publicKey, err := ioutil.ReadFile(d.SSHPublicKeyPath)
+
+	if err != nil {
+		return err
+	}
+
+	myMap := make(map[string]*string)
+
+	ctx := context.Background()
+	_, err = client.CreateOrUpdate(ctx, "kube", "my-kubey-clsuter-1111", containerservice.ManagedCluster{
+		ID:       to.StringPtr("my-id"),
 		Location: to.StringPtr("eastus"),
-		Properties: &containerservice.Properties{
-			MasterProfile: &containerservice.MasterProfile{
-				DNSPrefix: to.StringPtr("kube-master-5u48932u543758473598"),
-			},
-			AgentPoolProfiles: &[]containerservice.AgentPoolProfile{
-				{
-					Name:      to.StringPtr("my-kube-agent-pool-4"),
-					DNSPrefix: to.StringPtr("kube-agent-574390817598479584749"),
-				},
-			},
+		Tags:     &myMap,
+		ManagedClusterProperties: &containerservice.ManagedClusterProperties{
+			DNSPrefix: to.StringPtr("my-super-kuby-prefix-1111"),
 			LinuxProfile: &containerservice.LinuxProfile{
-				AdminUsername: to.StringPtr("adminschmadmin2"),
+				AdminUsername: to.StringPtr("ohadminmyadmin"),
 				SSH: &containerservice.SSHConfiguration{
 					PublicKeys: &[]containerservice.SSHPublicKey{
 						{
@@ -170,16 +206,23 @@ func (d *Driver) Create() error {
 					},
 				},
 			},
+			AgentPoolProfiles: &[]containerservice.AgentPoolProfile{
+				{
+					DNSPrefix: to.StringPtr("my-super-kuby-prefix"),
+					Name:      to.StringPtr("kubagentpool"),
+					VMSize:    containerservice.StandardA0,
+				},
+			},
+			ServicePrincipalProfile: &containerservice.ServicePrincipalProfile{
+				ClientID: to.StringPtr(os.Getenv("AZURE_CLIENT_ID")),
+				Secret:   to.StringPtr(os.Getenv("AZURE_CLIENT_SECRET")),
+			},
 		},
-	}, nil)
-
-	err = <-errChan
+	})
 
 	if err != nil {
 		return err
 	}
-
-	fmt.Println(<-resultChan)
 
 	return nil
 }
