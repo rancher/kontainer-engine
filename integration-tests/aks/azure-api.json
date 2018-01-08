@@ -15,26 +15,11 @@
         },
         "response": {
           "status": 200,
-          "body": "{\"pollingMethod\":\"AsyncOperation\",\"uri\":\"https://management.azure.com/subscriptions/21fb2263-e750-43bd-b71c-5bf32f343af7/providers/Microsoft.ContainerService/locations/eastus/operations/35e1988c-213c-42cf-973d-e772dfd69563?api-version=2017-08-31\",\"state\":\"InProgress\",\"code\":\"\",\"message\":\"\"}",
+          "body": "{\"message\": \"doesn't matter what this returns, we don't check it\"}",
           "encodedBody": false,
           "headers": {
-            "Access-Control-Allow-Origin": [
-              "*"
-            ],
             "Content-Type": [
               "application/json"
-            ],
-            "Date": [
-              "Fri, 05 Jan 2018 20:16:06 GMT"
-            ],
-            "Hoverfly": [
-              "Was-Here"
-            ],
-            "Server": [
-              "Google Frontend"
-            ],
-            "X-Cloud-Trace-Context": [
-              "c8f418fd1b4ec024bfc6daae2b981015"
             ]
           },
           "templated": false
@@ -54,26 +39,11 @@
         },
         "response": {
           "status": 200,
-          "body": "{\"id\":\"/subscriptions/subid1/resourcegroups/rg1/providers/Microsoft.ContainerService/managedClusters/clustername1\",\"properties\": {\"provisioningState\":\"Succeeded\"}}",
+          "body": "{\"properties\": {\"provisioningState\":\"Succeeded\"}}",
           "encodedBody": false,
           "headers": {
-            "Access-Control-Allow-Origin": [
-              "*"
-            ],
             "Content-Type": [
               "application/json"
-            ],
-            "Date": [
-              "Fri, 05 Jan 2018 20:16:06 GMT"
-            ],
-            "Hoverfly": [
-              "Was-Here"
-            ],
-            "Server": [
-              "Google Frontend"
-            ],
-            "X-Cloud-Trace-Context": [
-              "c8f418fd1b4ec024bfc6daae2b981015"
             ]
           },
           "templated": false
