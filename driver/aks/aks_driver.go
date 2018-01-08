@@ -189,18 +189,6 @@ func (d *Driver) validate() error {
 		return fmt.Errorf("path to ssh public key is required")
 	}
 
-	if d.AdminUsername == "" {
-		return fmt.Errorf("admin username is required")
-	}
-
-	if d.AgentDnsPrefix == "" {
-		return fmt.Errorf("agent dns prefix is required")
-	}
-
-	if d.AgentPoolName == "" {
-		return fmt.Errorf("agent pool name is required")
-	}
-
 	if d.ClientID == "" {
 		return fmt.Errorf("client id is required")
 	}
@@ -214,6 +202,24 @@ func (d *Driver) validate() error {
 	}
 
 	return nil
+}
+
+func safeSlice(toSlice string, index int) string {
+	size := len(toSlice)
+
+	if index >= size {
+		index = size - 1
+	}
+
+	return toSlice[:index]
+}
+
+func (d *Driver) getDefaultDNSPrefix() string {
+	namePart := safeSlice(d.Name, 10)
+	groupPart := safeSlice(d.ResourceGroup, 16)
+	subscriptionPart := safeSlice(d.SubscriptionID, 6)
+
+	return fmt.Sprintf("%v-%v-%v", namePart, groupPart, subscriptionPart)
 }
 
 const failedStatus = "Failed"
@@ -240,17 +246,22 @@ func (d *Driver) Create() error {
 
 	masterDNSPrefix := d.MasterDNSPrefix
 	if masterDNSPrefix == "" {
-		masterDNSPrefix = d.Name
+		masterDNSPrefix = d.getDefaultDNSPrefix() + "-master"
 	}
 
 	agentDNSPrefix := d.AgentDnsPrefix
 	if agentDNSPrefix == "" {
-		agentDNSPrefix = d.Name + "-agent"
+		agentDNSPrefix = d.getDefaultDNSPrefix() + "-agent"
 	}
 
 	agentPoolName := d.AgentPoolName
 	if agentPoolName == "" {
-		agentPoolName = d.Name + "-agent-pool"
+		agentPoolName = "agentpool0"
+	}
+
+	adminUsername := d.AdminUsername
+	if adminUsername == "" {
+		adminUsername = "azureuser"
 	}
 
 	client.Authorizer = authorizer
@@ -272,7 +283,7 @@ func (d *Driver) Create() error {
 		ManagedClusterProperties: &containerservice.ManagedClusterProperties{
 			DNSPrefix: to.StringPtr(masterDNSPrefix),
 			LinuxProfile: &containerservice.LinuxProfile{
-				AdminUsername: to.StringPtr(d.AdminUsername),
+				AdminUsername: to.StringPtr(adminUsername),
 				SSH: &containerservice.SSHConfiguration{
 					PublicKeys: &[]containerservice.SSHPublicKey{
 						{
@@ -284,7 +295,7 @@ func (d *Driver) Create() error {
 			AgentPoolProfiles: &[]containerservice.AgentPoolProfile{
 				{
 					DNSPrefix: to.StringPtr(agentDNSPrefix),
-					Name:      to.StringPtr(d.AgentPoolName),
+					Name:      to.StringPtr(agentPoolName),
 					VMSize:    containerservice.StandardA0,
 				},
 			},
