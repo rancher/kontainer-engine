@@ -7,12 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"io/ioutil"
+
 	generic "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/norman/event"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
 	raw "google.golang.org/api/container/v1"
-	"io/ioutil"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -262,7 +264,7 @@ func (d *Driver) validate() error {
 }
 
 // Create implements driver interface
-func (d *Driver) Create() error {
+func (d *Driver) Create(logger event.Logger) error {
 	svc, err := d.getServiceClient()
 	if err != nil {
 		return err

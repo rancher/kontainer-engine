@@ -3,6 +3,7 @@ package drivers
 import (
 	"net"
 
+	"github.com/rancher/norman/event"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -25,7 +26,7 @@ type Driver interface {
 	SetDriverOptions(driverOptions *DriverOptions) error
 
 	// Create creates the cluster
-	Create() error
+	Create(logger event.Logger) error
 
 	// Update updates the cluster
 	Update() error
@@ -71,7 +72,7 @@ func (s *GrpcServer) SetDriverOptions(ctx context.Context, in *DriverOptions) (*
 
 // Create implements grpc method
 func (s *GrpcServer) Create(ctx context.Context, in *Empty) (*Empty, error) {
-	return &Empty{}, s.driver.Create()
+	return &Empty{}, s.driver.Create(nil)
 }
 
 // Update implements grpc method

@@ -171,7 +171,7 @@ func convertCluster(clusterObj v3.Cluster, logger event.Logger) (cluster.Cluster
 
 // Create creates the stub for cluster manager to call
 func Create(clusterObj v3.Cluster, logger event.Logger) (string, string, string, error) {
-	cls, err := convertCluster(clusterObj, logger)
+	cls, err := convertCluster(clusterObj, lo)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -187,7 +187,7 @@ func Create(clusterObj v3.Cluster, logger event.Logger) (string, string, string,
 
 // Update creates the stub for cluster manager to call
 func Update(clusterObj v3.Cluster, looger event.Logger) (string, string, string, error) {
-	cls, err := convertCluster(clusterObj, logger)
+	cls, err := convertCluster(name, clusterSpec)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -203,7 +203,7 @@ func Update(clusterObj v3.Cluster, looger event.Logger) (string, string, string,
 
 // Remove removes stub for cluster manager to call
 func Remove(clusterObj v3.Cluster, logger event.Logger) error {
-	cls, err := convertCluster(clusterObj, logger)
+	cls, err := convertCluster(name, clusterSpec)
 	if err != nil {
 		return err
 	}

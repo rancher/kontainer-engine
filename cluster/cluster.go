@@ -71,7 +71,7 @@ type ConfigGetter interface {
 // Driver defines how a cluster should be created and managed. Different drivers represents different providers.
 type Driver interface {
 	// Create creates a cluster
-	Create() error
+	Create(logger event.Logger) error
 
 	// Update updates a cluster
 	Update() error
@@ -145,7 +145,7 @@ func (c *Cluster) createInner() error {
 		return err
 	}
 	// create cluster
-	if err := c.Driver.Create(); err != nil {
+	if err := c.Driver.Create(c.EventLogger); err != nil {
 		return err
 	}
 
