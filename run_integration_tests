@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+set -e
+
+# clean local home directory
+# Remove home directory from previous run
+if [ -e ./.home ]; then
+            rm -r ./.home
+fi
+
+# Set home to current directory so test clusters don't pollute dev workstation or CI server
+mkdir .home
+chmod 755 .home
+HOME=./.home
+
+# removing existing binary if it exists
+if [ -e kontainer-engine ]
+then
+    rm kontainer-engine
+fi
+
+# build binary
+go build
+
+# collect test file paths
+TESTS=$(find integration-tests/ -name *.bats)
+
+# start hoverfly
+hoverctl start webserver
+
+# run tests
+bats $TESTS && hoverctl stop || hoverctl stop
