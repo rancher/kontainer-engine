@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	generic "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/norman/event"
 	"github.com/rancher/rke/cmd"
 )
 
@@ -27,6 +28,8 @@ type Driver struct {
 	ClientKey string
 	// Cluster info
 	ClusterInfo generic.ClusterInfo
+	// Cluster event logger
+	ClusterEventLogger event.Logger
 }
 
 // NewDriver creates a new rke driver
