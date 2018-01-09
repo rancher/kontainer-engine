@@ -11,6 +11,7 @@ import (
 	"github.com/rancher/kontainer-engine/cluster"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/plugin"
+	"github.com/rancher/norman/event"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -141,14 +142,14 @@ func toMap(obj interface{}, format string) (map[string]interface{}, error) {
 	return nil, nil
 }
 
-func convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
+func convertCluster(clusterObj v3.Cluster, logger event.Logger) (cluster.Cluster, error) {
 	// todo: decide whether we need a driver field
 	driverName := ""
-	if spec.AzureKubernetesServiceConfig != nil {
+	if clusterObj.Spec.AzureKubernetesServiceConfig != nil {
 		driverName = "aks"
-	} else if spec.GoogleKubernetesEngineConfig != nil {
+	} else if clusterObj.Spec.GoogleKubernetesEngineConfig != nil {
 		driverName = "gke"
-	} else if spec.RancherKubernetesEngineConfig != nil {
+	} else if clusterObj.Spec.RancherKubernetesEngineConfig != nil {
 		driverName = "rke"
 	}
 	if driverName == "" {
@@ -157,11 +158,11 @@ func convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
 	pluginAddr := pluginAddress[driverName]
 	configGetter := controllerConfigGetter{
 		driverName:  driverName,
-		clusterSpec: spec,
-		clusterName: name,
+		clusterSpec: clusterObj.Spec,
+		clusterName: clusterObj.Name,
 	}
 	persistStore := controllerPersistStore{}
-	clusterPlugin, err := cluster.NewCluster(driverName, pluginAddr, name, configGetter, persistStore)
+	clusterPlugin, err := cluster.NewCluster(driverName, pluginAddr, clusterObj.Name, configGetter, persistStore, logger)
 	if err != nil {
 		return cluster.Cluster{}, err
 	}
@@ -169,8 +170,8 @@ func convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
 }
 
 // Create creates the stub for cluster manager to call
-func Create(name string, clusterSpec v3.ClusterSpec) (string, string, string, error) {
-	cls, err := convertCluster(name, clusterSpec)
+func Create(clusterObj v3.Cluster, logger event.Logger) (string, string, string, error) {
+	cls, err := convertCluster(clusterObj, lo)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -185,7 +186,7 @@ func Create(name string, clusterSpec v3.ClusterSpec) (string, string, string, er
 }
 
 // Update creates the stub for cluster manager to call
-func Update(name string, clusterSpec v3.ClusterSpec) (string, string, string, error) {
+func Update(clusterObj v3.Cluster, looger event.Logger) (string, string, string, error) {
 	cls, err := convertCluster(name, clusterSpec)
 	if err != nil {
 		return "", "", "", err
@@ -201,7 +202,7 @@ func Update(name string, clusterSpec v3.ClusterSpec) (string, string, string, er
 }
 
 // Remove removes stub for cluster manager to call
-func Remove(name string, clusterSpec v3.ClusterSpec) error {
+func Remove(clusterObj v3.Cluster, logger event.Logger) error {
 	cls, err := convertCluster(name, clusterSpec)
 	if err != nil {
 		return err

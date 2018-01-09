@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	generic "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/norman/event"
 	"github.com/rancher/rke/cmd"
 )
 
@@ -27,6 +28,8 @@ type Driver struct {
 	ClientKey string
 	// Cluster info
 	ClusterInfo generic.ClusterInfo
+	// Cluster event logger
+	ClusterEventLogger event.Logger
 }
 
 // NewDriver creates a new rke driver
@@ -74,12 +77,12 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 }
 
 // Create creates the rke cluster
-func (d *Driver) Create() error {
+func (d *Driver) Create(logger event.Logger) error {
 	rkeConfig, err := generic.ConvertToRkeConfig(d.ConfigYaml)
 	if err != nil {
 		return err
 	}
-	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(&rkeConfig, nil, nil)
+	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(&rkeConfig, nil, nil, logger)
 	if err != nil {
 		return err
 	}
@@ -96,7 +99,7 @@ func (d *Driver) Update() error {
 	if err != nil {
 		return err
 	}
-	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(&rkeConfig, nil, nil)
+	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(&rkeConfig, nil, nil, nil)
 	if err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/rancher/norman/event"
 	"google.golang.org/grpc"
 )
 
@@ -27,7 +28,7 @@ type GrpcClient struct {
 }
 
 // Create call grpc create
-func (rpc *GrpcClient) Create() error {
+func (rpc *GrpcClient) Create(logger event.Logger) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 	defer cancel()
 	_, err := rpc.client.Create(ctx, &Empty{})

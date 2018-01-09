@@ -2,6 +2,7 @@ package cluster
 
 import (
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/norman/event"
 	"github.com/sirupsen/logrus"
 )
 
@@ -51,6 +52,7 @@ type Cluster struct {
 	PersistStore PersistStore `json:"-" yaml:"-"`
 
 	ConfigGetter ConfigGetter `json:"-" yaml:"-"`
+	EventLogger  event.Logger `json:"-" yaml:"-"`
 }
 
 // PersistStore defines the interface for persist options like check and store
@@ -69,7 +71,7 @@ type ConfigGetter interface {
 // Driver defines how a cluster should be created and managed. Different drivers represents different providers.
 type Driver interface {
 	// Create creates a cluster
-	Create() error
+	Create(logger event.Logger) error
 
 	// Update updates a cluster
 	Update() error
@@ -143,7 +145,7 @@ func (c *Cluster) createInner() error {
 		return err
 	}
 	// create cluster
-	if err := c.Driver.Create(); err != nil {
+	if err := c.Driver.Create(c.EventLogger); err != nil {
 		return err
 	}
 
@@ -230,7 +232,7 @@ func (c *Cluster) Store() error {
 }
 
 // NewCluster create a cluster interface to do operations
-func NewCluster(driverName, addr, name string, configGetter ConfigGetter, persistStore PersistStore) (*Cluster, error) {
+func NewCluster(driverName, addr, name string, configGetter ConfigGetter, persistStore PersistStore, logger event.Logger) (*Cluster, error) {
 	rpcClient, err := rpcDriver.NewClient(driverName, addr)
 	if err != nil {
 		return nil, err
@@ -241,6 +243,7 @@ func NewCluster(driverName, addr, name string, configGetter ConfigGetter, persis
 		Name:         name,
 		ConfigGetter: configGetter,
 		PersistStore: persistStore,
+		EventLogger:  logger,
 	}, nil
 }
 
