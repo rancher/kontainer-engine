@@ -1,6 +1,7 @@
 package v3
 
 import (
+	"github.com/rancher/norman/condition"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -9,15 +10,17 @@ type ClusterConditionType string
 
 const (
 	// ClusterConditionReady Cluster ready to serve API (healthy when true, unehalthy when false)
-	ClusterConditionReady = "Ready"
+	ClusterConditionReady condition.Cond = "Ready"
 	// ClusterConditionProvisioned Cluster is provisioned
-	ClusterConditionProvisioned = "Provisioned"
-	// ClusterConditionUpdating Cluster is being updating (upgrading, scaling up)
-	ClusterConditionUpdating = "Updating"
+	ClusterConditionProvisioned condition.Cond = "Provisioned"
 	// ClusterConditionNoDiskPressure true when all cluster nodes have sufficient disk
-	ClusterConditionNoDiskPressure = "NoDiskPressure"
+	ClusterConditionNoDiskPressure condition.Cond = "NoDiskPressure"
 	// ClusterConditionNoMemoryPressure true when all cluster nodes have sufficient memory
-	ClusterConditionNoMemoryPressure = "NoMemoryPressure"
+	ClusterConditionNoMemoryPressure condition.Cond = "NoMemoryPressure"
+	// ClusterConditionconditionDefautlProjectCreated true when default project has been created
+	ClusterConditionconditionDefautlProjectCreated condition.Cond = "DefaultProjectCreated"
+	// ClusterConditionDefaultNamespaceAssigned true when cluster's default namespace has been initially assigned
+	ClusterConditionDefaultNamespaceAssigned condition.Cond = "DefaultNamespaceAssigned"
 	// More conditions can be added if unredlying controllers request it
 )
 
@@ -77,6 +80,8 @@ type ClusterCondition struct {
 	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
 	// The reason for the condition's last transition.
 	Reason string `json:"reason,omitempty"`
+	// Human-readable message indicating details about last transition
+	Message string `json:"message,omitempty"`
 }
 
 type GoogleKubernetesEngineConfig struct {
