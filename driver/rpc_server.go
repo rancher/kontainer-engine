@@ -21,23 +21,17 @@ type Driver interface {
 	// GetDriverUpdateOptions returns cli flags that are used in update
 	GetDriverUpdateOptions() (*DriverFlags, error)
 
-	// SetDriverOptions set the driver options into plugin. String, bool, int and stringslice are currently four supported types.
-	SetDriverOptions(driverOptions *DriverOptions) error
-
 	// Create creates the cluster
-	Create() error
+	Create(opts *DriverOptions) (*ClusterInfo, error)
 
 	// Update updates the cluster
-	Update() error
-
-	// Get retrieve the cluster and return cluster info
-	Get() (*ClusterInfo, error)
+	Update(clusterInfo *ClusterInfo, opts *DriverOptions) (*ClusterInfo, error)
 
 	// PostCheck does post action after provisioning
-	PostCheck() error
+	PostCheck(clusterInfo *ClusterInfo) (*ClusterInfo, error)
 
 	// Remove removes the cluster
-	Remove() error
+	Remove(clusterInfo *ClusterInfo) error
 }
 
 // GrpcServer defines the server struct
@@ -64,33 +58,23 @@ func (s *GrpcServer) GetDriverUpdateOptions(ctx context.Context, in *Empty) (*Dr
 	return s.driver.GetDriverUpdateOptions()
 }
 
-// SetDriverOptions implements grpc method
-func (s *GrpcServer) SetDriverOptions(ctx context.Context, in *DriverOptions) (*Empty, error) {
-	return &Empty{}, s.driver.SetDriverOptions(in)
-}
-
 // Create implements grpc method
-func (s *GrpcServer) Create(ctx context.Context, in *Empty) (*Empty, error) {
-	return &Empty{}, s.driver.Create()
+func (s *GrpcServer) Create(ctx context.Context, opts *DriverOptions) (*ClusterInfo, error) {
+	return s.driver.Create(opts)
 }
 
 // Update implements grpc method
-func (s *GrpcServer) Update(ctx context.Context, in *Empty) (*Empty, error) {
-	return &Empty{}, s.driver.Update()
+func (s *GrpcServer) Update(ctx context.Context, update *UpdateRequest) (*ClusterInfo, error) {
+	return s.driver.Update(update.ClusterInfo, update.DriverOptions)
 }
 
-// Get implements grpc method
-func (s *GrpcServer) Get(cont context.Context, in *Empty) (*ClusterInfo, error) {
-	return s.driver.Get()
-}
-
-func (s *GrpcServer) PostCheck(cont context.Context, in *Empty) (*Empty, error) {
-	return &Empty{}, s.driver.PostCheck()
+func (s *GrpcServer) PostCheck(ctx context.Context, clusterInfo *ClusterInfo) (*ClusterInfo, error) {
+	return s.driver.PostCheck(clusterInfo)
 }
 
 // Remove implements grpc method
-func (s *GrpcServer) Remove(ctx context.Context, in *Empty) (*Empty, error) {
-	return &Empty{}, s.driver.Remove()
+func (s *GrpcServer) Remove(ctx context.Context, clusterInfo *ClusterInfo) (*Empty, error) {
+	return &Empty{}, s.driver.Remove(clusterInfo)
 }
 
 // Serve serves a grpc server

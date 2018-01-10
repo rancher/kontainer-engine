@@ -27,46 +27,33 @@ type GrpcClient struct {
 }
 
 // Create call grpc create
-func (rpc *GrpcClient) Create() error {
+func (rpc *GrpcClient) Create(opts *DriverOptions) (*ClusterInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 	defer cancel()
-	_, err := rpc.client.Create(ctx, &Empty{})
-	return err
+	return rpc.client.Create(ctx, opts)
 }
 
 // Update call grpc update
-func (rpc *GrpcClient) Update() error {
+func (rpc *GrpcClient) Update(clusterInfo *ClusterInfo, opts *DriverOptions) (*ClusterInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
 	defer cancel()
-	_, err := rpc.client.Update(ctx, &Empty{})
-	return err
+	return rpc.client.Update(ctx, &UpdateRequest{
+		ClusterInfo:   clusterInfo,
+		DriverOptions: opts,
+	})
 }
 
-// Get call grpc get
-func (rpc *GrpcClient) Get() ClusterInfo {
+func (rpc *GrpcClient) PostCheck(clusterInfo *ClusterInfo) (*ClusterInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
-	info, err := rpc.client.Get(ctx, &Empty{})
-	if err != nil {
-		return ClusterInfo{}
-	}
-	return *info
-}
-
-func (rpc *GrpcClient) PostCheck() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
-	defer cancel()
-	if _, err := rpc.client.PostCheck(ctx, &Empty{}); err != nil {
-		return err
-	}
-	return nil
+	return rpc.client.PostCheck(ctx, clusterInfo)
 }
 
 // Remove call grpc remove
-func (rpc *GrpcClient) Remove() error {
+func (rpc *GrpcClient) Remove(clusterInfo *ClusterInfo) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 	defer cancel()
-	_, err := rpc.client.Remove(ctx, &Empty{})
+	_, err := rpc.client.Remove(ctx, clusterInfo)
 	return err
 }
 
@@ -90,14 +77,6 @@ func (rpc *GrpcClient) GetDriverUpdateOptions() (DriverFlags, error) {
 		return DriverFlags{}, err
 	}
 	return *flags, nil
-}
-
-// SetDriverOptions set the driver options
-func (rpc *GrpcClient) SetDriverOptions(options DriverOptions) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
-	defer cancel()
-	_, err := rpc.client.SetDriverOptions(ctx, &options)
-	return err
 }
 
 // DriverName returns the driver name

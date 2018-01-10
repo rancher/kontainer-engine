@@ -3,13 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"os"
-
-	"path/filepath"
-
 	"github.com/rancher/kontainer-engine/store"
-	"github.com/rancher/kontainer-engine/utils"
-	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
 
@@ -30,49 +24,45 @@ func RmCommand() cli.Command {
 }
 
 func rmCluster(ctx *cli.Context) error {
+	var lastErr error
+
 	for _, name := range ctx.Args() {
 		if name == "" || name == "--help" {
 			return cli.ShowCommandHelp(ctx, "remove")
 		}
 		clusters, err := store.GetAllClusterFromStore()
 		if err != nil {
-			return err
+			lastErr = err
+			continue
 		}
 		cluster, ok := clusters[name]
 		if !ok {
-			return fmt.Errorf("cluster %v can't be found", name)
+			lastErr = fmt.Errorf("cluster %v can't be found", name)
+			continue
 		}
 		rpcClient, _, err := runRPCDriver(cluster.DriverName)
 		if err != nil {
-			return err
+			lastErr = err
+			continue
 		}
 		configGetter := cliConfigGetter{
 			name: name,
 			ctx:  ctx,
 		}
 		cluster.ConfigGetter = configGetter
-		cluster.PersistStore = cliPersistStore{}
+		cluster.PersistStore = store.CLIPersistStore{}
 		cluster.Driver = rpcClient
 		if err := cluster.Remove(); err != nil {
-			if !ctx.Bool("force") {
-				return err
+			if ctx.Bool("force") {
+				cluster.PersistStore.Remove(name)
+			} else {
+				lastErr = err
+				continue
 			}
 		}
-		clusterFilePath := filepath.Join(utils.HomeDir(), "clusters", cluster.Name)
-		logrus.Debugf("Deleting cluster storage path %v", clusterFilePath)
-		if err := os.RemoveAll(clusterFilePath); err != nil && !os.IsNotExist(err) {
-			return err
-		}
 
-		config, err := getConfigFromFile()
-		if err != nil {
-			return err
-		}
-		deleteConfigByName(&config, name)
-		if err := setConfigToFile(config); err != nil {
-			return err
-		}
 		fmt.Println(cluster.Name)
 	}
-	return nil
+
+	return lastErr
 }

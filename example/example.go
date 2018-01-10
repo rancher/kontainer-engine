@@ -6,7 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/rancher/kontainer-engine/stub"
+	"github.com/rancher/kontainer-engine/service"
+	"github.com/rancher/kontainer-engine/store"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 )
@@ -32,14 +33,19 @@ func main() {
 	spec := v3.ClusterSpec{
 		GoogleKubernetesEngineConfig: gkeSpec,
 	}
-	endpoint, token, cert, err := stub.Create("daishan-test", spec)
+
+	// You should really implement your own store
+	store := store.CLIPersistStore{}
+	service := service.NewEngineService(store)
+
+	endpoint, token, cert, err := service.Create("daishan-test", spec)
 	if err != nil {
 		logrus.Fatal(err)
 	}
 	fmt.Println(endpoint)
 	fmt.Println(token)
 	fmt.Println(cert)
-	err = stub.Remove("daishan-test", spec)
+	err = service.Remove("daishan-test", spec)
 	if err != nil {
 		logrus.Fatal(err)
 	}

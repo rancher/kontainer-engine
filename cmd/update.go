@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-
 	"os"
 
 	generic "github.com/rancher/kontainer-engine/driver"
@@ -99,7 +98,7 @@ func updateCluster(ctx *cli.Context) error {
 		ctx:  ctx,
 	}
 	cluster.ConfigGetter = configGetter
-	cluster.PersistStore = cliPersistStore{}
+	cluster.PersistStore = store.CLIPersistStore{}
 	cluster.Driver = rpcClient
 	return cluster.Update()
 }

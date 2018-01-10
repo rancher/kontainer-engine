@@ -1,21 +1,13 @@
 package cmd
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"os"
-	"strings"
-
-	"path/filepath"
-
-	"io/ioutil"
 	"strconv"
-
-	"fmt"
+	"strings"
 
 	"github.com/rancher/kontainer-engine/cluster"
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
-	"github.com/rancher/kontainer-engine/utils"
+	"github.com/rancher/kontainer-engine/store"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -51,7 +43,7 @@ func createWapper(ctx *cli.Context) error {
 
 	driverName := flagHackLookup("--driver")
 	if driverName == "" {
-		persistStore := cliPersistStore{}
+		persistStore := store.CLIPersistStore{}
 		// ingore the error as we only care if cluster.name is present
 		cls, _ := persistStore.Get(os.Args[len(os.Args)-1])
 		if cls.DriverName != "" {
@@ -122,82 +114,8 @@ func (c cliConfigGetter) GetConfig() (rpcDriver.DriverOptions, error) {
 	return driverOpts, nil
 }
 
-type cliPersistStore struct{}
-
-func (c cliPersistStore) Check(name string) (bool, error) {
-	path := filepath.Join(utils.HomeDir(), "clusters", name)
-	if _, err := os.Stat(filepath.Join(path, defaultConfigName)); os.IsNotExist(err) {
-		return false, nil
-	}
-	cls := cluster.Cluster{}
-	data, err := ioutil.ReadFile(filepath.Join(path, defaultConfigName))
-	if err != nil {
-		return false, err
-	}
-	if err := json.Unmarshal(data, &cls); err != nil {
-		return false, err
-	}
-	if cls.Status != cluster.Running {
-		return false, nil
-	}
-	return true, nil
-}
-
-func (c cliPersistStore) Get(name string) (cluster.Cluster, error) {
-	path := filepath.Join(utils.HomeDir(), "clusters", name)
-	if _, err := os.Stat(filepath.Join(path, defaultConfigName)); os.IsNotExist(err) {
-		return cluster.Cluster{}, fmt.Errorf("%s not found", name)
-	}
-	cls := cluster.Cluster{}
-	data, err := ioutil.ReadFile(filepath.Join(path, defaultConfigName))
-	if err != nil {
-		return cluster.Cluster{}, err
-	}
-	if err := json.Unmarshal(data, &cls); err != nil {
-		return cluster.Cluster{}, err
-	}
-	return cls, nil
-}
-
-func (c cliPersistStore) Store(cls cluster.Cluster) error {
-	// store kube config file
-	if err := storeConfig(cls); err != nil {
-		return err
-	}
-	// store json config file
-	fileDir := filepath.Join(utils.HomeDir(), "clusters", cls.Name)
-	for k, v := range map[string]string{
-		cls.RootCACert:        caPem,
-		cls.ClientKey:         clientKey,
-		cls.ClientCertificate: clientCert,
-	} {
-		data, err := base64.StdEncoding.DecodeString(k)
-		if err != nil {
-			return err
-		}
-		if err := utils.WriteToFile(data, filepath.Join(fileDir, v)); err != nil {
-			return err
-		}
-	}
-	data, err := json.Marshal(cls)
-	if err != nil {
-		return err
-	}
-	return utils.WriteToFile(data, filepath.Join(fileDir, defaultConfigName))
-}
-
-func (c cliPersistStore) PersistStatus(cluster cluster.Cluster, status string) error {
-	fileDir := filepath.Join(utils.HomeDir(), "clusters", cluster.Name)
-	cluster.Status = status
-	data, err := json.Marshal(cluster)
-	if err != nil {
-		return err
-	}
-	return utils.WriteToFile(data, filepath.Join(fileDir, defaultConfigName))
-}
-
 func create(ctx *cli.Context) error {
-	persistStore := cliPersistStore{}
+	persistStore := store.CLIPersistStore{}
 	addr := ctx.GlobalString("plugin-listen-addr")
 	name := ""
 	if ctx.NArg() > 0 {

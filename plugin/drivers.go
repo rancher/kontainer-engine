@@ -16,7 +16,7 @@ var (
 )
 
 // Run starts a driver plugin in a go routine, and send its listen address back to addrChan
-func Run(driverName string, addrChan chan string) error {
+func Run(driverName string, addrChan chan string) (rpcDriver.Driver, error) {
 	var driver rpcDriver.Driver
 	switch driverName {
 	case "gke":
@@ -28,10 +28,10 @@ func Run(driverName string, addrChan chan string) error {
 	}
 	if BuiltInDrivers[driverName] {
 		go startRPCServer(rpcDriver.NewServer(driver, addrChan))
-		return nil
+		return driver, nil
 	}
 	logrus.Fatal("driver not supported")
-	return nil
+	return driver, nil
 }
 
 func startRPCServer(server rpcDriver.RPCServer) {
