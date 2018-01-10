@@ -1,4 +1,4 @@
-package cmd
+package store
 
 type kubeConfig struct {
 	APIVersion     string          `yaml:"apiVersion,omitempty"`

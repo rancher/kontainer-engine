@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/rancher/kontainer-engine/store"
-	"github.com/rancher/kontainer-engine/utils"
 	"github.com/urfave/cli"
 )
 
@@ -23,25 +20,5 @@ func env(ctx *cli.Context) error {
 		return cli.ShowCommandHelp(ctx, "env")
 	}
 
-	clusters, err := store.GetAllClusterFromStore()
-	if err != nil {
-		return err
-	}
-	_, ok := clusters[name]
-	if !ok {
-		return fmt.Errorf("cluster %v can't be found", name)
-	}
-	config, err := getConfigFromFile()
-	if err != nil {
-		return err
-	}
-	config.CurrentContext = name
-	if err := setConfigToFile(config); err != nil {
-		return err
-	}
-
-	configFile := utils.KubeConfigFilePath()
-	fmt.Printf("Current context is set to %s\n", name)
-	fmt.Printf("run `export KUBECONFIG=%v` or `--kubeconfig %s` to use the config file\n", configFile, configFile)
-	return nil
+	return store.CLIPersistStore{}.SetEnv(name)
 }

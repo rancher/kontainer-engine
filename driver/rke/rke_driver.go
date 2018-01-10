@@ -1,32 +1,23 @@
 package rke
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"strings"
 
+	generic "github.com/rancher/kontainer-engine/driver"
+	rpcDriver "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/rke/cmd"
+	"github.com/rancher/rke/hosts"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-
-	generic "github.com/rancher/kontainer-engine/driver"
-	"github.com/rancher/rke/cmd"
 )
 
 // Driver is the struct of rke driver
 type Driver struct {
-	// The string representation of Config Yaml
-	ConfigYaml string
-	// Kubernetes master endpoint
-	Endpoint string
-	// Root certificates
-	RootCA string
-	// Client certificates
-	ClientCert string
-	// Client key
-	ClientKey string
-	// Cluster info
-	ClusterInfo generic.ClusterInfo
+	DockerDialer hosts.DialerFactory
 }
 
 // NewDriver creates a new rke driver
@@ -59,102 +50,120 @@ func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 }
 
 // SetDriverOptions sets the drivers options to rke driver
-func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
+func getYAML(driverOptions *generic.DriverOptions) (string, error) {
 	// first look up the file path then look up raw rkeConfig
 	if path, ok := driverOptions.StringOptions["config-file-path"]; ok {
 		data, err := ioutil.ReadFile(path)
 		if err != nil {
-			return err
+			return "", err
 		}
-		d.ConfigYaml = string(data)
-		return nil
+		return string(data), nil
 	}
-	d.ConfigYaml = driverOptions.StringOptions["rkeConfig"]
-	return nil
+	return driverOptions.StringOptions["rkeConfig"], nil
 }
 
 // Create creates the rke cluster
-func (d *Driver) Create() error {
-	rkeConfig, err := generic.ConvertToRkeConfig(d.ConfigYaml)
+func (d *Driver) Create(opts *rpcDriver.DriverOptions) (*rpcDriver.ClusterInfo, error) {
+	yaml, err := getYAML(opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(&rkeConfig, nil, nil)
+
+	rkeConfig, err := generic.ConvertToRkeConfig(yaml)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	d.Endpoint = APIURL
-	d.RootCA = caCrt
-	d.ClientCert = clientCert
-	d.ClientKey = clientKey
-	return nil
+
+	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(context.Background(), &rkeConfig, d.DockerDialer, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &rpcDriver.ClusterInfo{
+		Metadata: map[string]string{
+			"Endpoint":   APIURL,
+			"RootCA":     caCrt,
+			"ClientCert": clientCert,
+			"ClientKey":  clientKey,
+			"Config":     yaml,
+		},
+	}, nil
 }
 
 // Update updates the rke cluster
-func (d *Driver) Update() error {
-	rkeConfig, err := generic.ConvertToRkeConfig(d.ConfigYaml)
+func (d *Driver) Update(clusterInfo *rpcDriver.ClusterInfo, opts *rpcDriver.DriverOptions) (*rpcDriver.ClusterInfo, error) {
+	yaml, err := getYAML(opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(&rkeConfig, nil, nil)
-	if err != nil {
-		return err
-	}
-	d.Endpoint = APIURL
-	d.RootCA = caCrt
-	d.ClientCert = clientCert
-	d.ClientKey = clientKey
-	return nil
-}
 
-// Get retrieve the cluster info by name
-func (d *Driver) Get() (*generic.ClusterInfo, error) {
-	return &d.ClusterInfo, nil
+	rkeConfig, err := generic.ConvertToRkeConfig(yaml)
+	if err != nil {
+		return nil, err
+	}
+
+	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(context.Background(), &rkeConfig, d.DockerDialer, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if clusterInfo.Metadata == nil {
+		clusterInfo.Metadata = map[string]string{}
+	}
+
+	clusterInfo.Metadata["Endpoint"] = APIURL
+	clusterInfo.Metadata["RootCA"] = caCrt
+	clusterInfo.Metadata["ClientCert"] = clientCert
+	clusterInfo.Metadata["ClientKey"] = clientKey
+	clusterInfo.Metadata["Config"] = yaml
+
+	return clusterInfo, nil
 }
 
 // PostCheck does post action
-func (d *Driver) PostCheck() error {
-	info := &generic.ClusterInfo{}
-	info.Endpoint = d.Endpoint
-	info.ClientCertificate = base64.StdEncoding.EncodeToString([]byte(d.ClientCert))
-	info.ClientKey = base64.StdEncoding.EncodeToString([]byte(d.ClientKey))
-	info.RootCaCertificate = base64.StdEncoding.EncodeToString([]byte(d.RootCA))
+func (d *Driver) PostCheck(info *rpcDriver.ClusterInfo) (*rpcDriver.ClusterInfo, error) {
+	info.Endpoint = info.Metadata["Endpoint"]
+	info.ClientCertificate = base64.StdEncoding.EncodeToString([]byte(info.Metadata["ClientCert"]))
+	info.ClientKey = base64.StdEncoding.EncodeToString([]byte(info.Metadata["ClientKey"]))
+	info.RootCaCertificate = base64.StdEncoding.EncodeToString([]byte(info.Metadata["RootCA"]))
 
-	host := d.Endpoint
+	host := info.Endpoint
 	if !strings.HasPrefix(host, "https://") {
 		host = fmt.Sprintf("https://%s", host)
 	}
 	config := &rest.Config{
 		Host: host,
 		TLSClientConfig: rest.TLSClientConfig{
-			CAData:   []byte(d.RootCA),
-			CertData: []byte(d.ClientCert),
-			KeyData:  []byte(d.ClientKey),
+			CAData:   []byte(info.RootCaCertificate),
+			CertData: []byte(info.ClientCertificate),
+			KeyData:  []byte(info.ClientKey),
 		},
 	}
+
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
 	serverVersion, err := clientset.DiscoveryClient.ServerVersion()
 	if err != nil {
-		return fmt.Errorf("Failed to get Kubernetes server version: %v", err)
+		return nil, fmt.Errorf("failed to get Kubernetes server version: %v", err)
 	}
+
 	token, err := generic.GenerateServiceAccountToken(clientset)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
 	info.Version = serverVersion.GitVersion
 	info.ServiceAccountToken = token
-	d.ClusterInfo = *info
-	return nil
+	return info, nil
 }
 
 // Remove removes the cluster
-func (d *Driver) Remove() error {
-	rkeConfig, err := generic.ConvertToRkeConfig(d.ConfigYaml)
+func (d *Driver) Remove(clusterInfo *rpcDriver.ClusterInfo) error {
+	rkeConfig, err := generic.ConvertToRkeConfig(clusterInfo.Metadata["Config"])
 	if err != nil {
 		return err
 	}
-	return cmd.ClusterRemove(&rkeConfig, nil)
+	return cmd.ClusterRemove(context.Background(), &rkeConfig, d.DockerDialer)
 }

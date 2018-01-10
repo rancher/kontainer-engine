@@ -1,4 +1,4 @@
-package stub
+package service
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 
 	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
-	"gopkg.in/check.v1"
+	check "gopkg.in/check.v1"
 )
 
 // Hook up gocheck into the "go test" runner.
