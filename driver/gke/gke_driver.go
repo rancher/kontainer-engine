@@ -2,17 +2,21 @@ package gke
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	generic "github.com/rancher/kontainer-engine/driver"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	raw "google.golang.org/api/container/v1"
-	"io/ioutil"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -24,6 +28,10 @@ const (
 
 // Driver defines the struct of gke driver
 type Driver struct {
+	sync.Mutex
+}
+
+type state struct {
 	// ProjectID is the ID of your project to use when creating a cluster
 	ProjectID string
 	// The zone to launch the cluster
@@ -48,8 +56,6 @@ type Driver struct {
 	CredentialPath string
 	// The content of the credential
 	CredentialContent string
-	// the temp file of the credential
-	TempCredentialPath string
 	// Enable alpha feature
 	EnableAlphaFeature bool
 	// Configuration for the HTTP (L7) load balancing controller addon
@@ -76,14 +82,7 @@ type Driver struct {
 
 // NewDriver creates a gke Driver
 func NewDriver() *Driver {
-	return &Driver{
-		NodeConfig: &raw.NodeConfig{
-			Labels: map[string]string{},
-		},
-		ClusterInfo: generic.ClusterInfo{
-			Metadata: map[string]string{},
-		},
-	}
+	return &Driver{}
 }
 
 // GetDriverCreateOptions implements driver interface
@@ -162,7 +161,15 @@ func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
 }
 
 // SetDriverOptions implements driver interface
-func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
+func getStateFromOpts(driverOptions *generic.DriverOptions) (state, error) {
+	d := state{
+		NodeConfig: &raw.NodeConfig{
+			Labels: map[string]string{},
+		},
+		ClusterInfo: generic.ClusterInfo{
+			Metadata: map[string]string{},
+		},
+	}
 	d.Name = getValueFromDriverOptions(driverOptions, generic.StringType, "name").(string)
 	d.ProjectID = getValueFromDriverOptions(driverOptions, generic.StringType, "project-id", "projectId").(string)
 	d.Zone = getValueFromDriverOptions(driverOptions, generic.StringType, "zone").(string)
@@ -198,22 +205,7 @@ func (d *Driver) SetDriverOptions(driverOptions *generic.DriverOptions) error {
 			d.NodeConfig.Labels[kv[0]] = kv[1]
 		}
 	}
-	if d.CredentialPath != "" {
-		os.Setenv(defaultCredentialEnv, d.CredentialPath)
-	}
-	if d.CredentialContent != "" {
-		file, err := ioutil.TempFile("", "credential-file")
-		if err != nil {
-			return err
-		}
-		if err := ioutil.WriteFile(file.Name(), []byte(d.CredentialContent), 0755); err != nil {
-			return err
-		}
-		os.Setenv(defaultCredentialEnv, file.Name())
-		d.TempCredentialPath = file.Name()
-	}
-	// updateConfig
-	return d.validate()
+	return d, d.validate()
 }
 
 func getValueFromDriverOptions(driverOptions *generic.DriverOptions, optionType string, keys ...string) interface{} {
@@ -250,183 +242,280 @@ func getValueFromDriverOptions(driverOptions *generic.DriverOptions, optionType 
 	return nil
 }
 
-func (d *Driver) validate() error {
-	if d.ProjectID == "" {
+func (s *state) validate() error {
+	if s.ProjectID == "" {
 		return fmt.Errorf("project ID is required")
-	} else if d.Zone == "" {
+	} else if s.Zone == "" {
 		return fmt.Errorf("zone is required")
-	} else if d.Name == "" {
+	} else if s.Name == "" {
 		return fmt.Errorf("cluster name is required")
 	}
 	return nil
 }
 
 // Create implements driver interface
-func (d *Driver) Create() error {
-	svc, err := d.getServiceClient()
+func (d *Driver) Create(opts *generic.DriverOptions) (*generic.ClusterInfo, error) {
+	state, err := getStateFromOpts(opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	operation, err := svc.Projects.Zones.Clusters.Create(d.ProjectID, d.Zone, d.generateClusterCreateRequest()).Context(context.Background()).Do()
+
+	svc, err := d.getServiceClient(state)
+	if err != nil {
+		return nil, err
+	}
+
+	operation, err := svc.Projects.Zones.Clusters.Create(state.ProjectID, state.Zone, d.generateClusterCreateRequest(state)).Context(context.Background()).Do()
 	if err != nil && !strings.Contains(err.Error(), "alreadyExists") {
-		return err
+		return nil, err
 	}
+
 	if err == nil {
-		logrus.Debugf("Cluster %s create is called for project %s and zone %s. Status Code %v", d.Name, d.ProjectID, d.Zone, operation.HTTPStatusCode)
+		logrus.Debugf("Cluster %s create is called for project %s and zone %s. Status Code %v", state.Name, state.ProjectID, state.Zone, operation.HTTPStatusCode)
 	}
-	return d.waitCluster(svc)
+
+	if err := d.waitCluster(svc, &state); err != nil {
+		return nil, err
+	}
+
+	info := &generic.ClusterInfo{}
+	return info, storeState(info, state)
 }
 
-// Update implements driver interface
-func (d *Driver) Update() error {
-	svc, err := d.getServiceClient()
+func storeState(info *generic.ClusterInfo, state state) error {
+	bytes, err := json.Marshal(state)
 	if err != nil {
 		return err
 	}
-	logrus.Debugf("Updating config. MasterVersion: %s, NodeVersion: %s, NodeCount: %v", d.MasterVersion, d.NodeVersion, d.NodeCount)
-	if d.NodePoolID == "" {
-		cluster, err := svc.Projects.Zones.Clusters.Get(d.ProjectID, d.Zone, d.Name).Context(context.Background()).Do()
-		if err != nil {
-			return err
-		}
-		d.NodePoolID = cluster.NodePools[0].Name
+	if info.Metadata == nil {
+		info.Metadata = map[string]string{}
 	}
-
-	if d.MasterVersion != "" {
-		logrus.Infof("Updating master to %v", d.MasterVersion)
-		operation, err := svc.Projects.Zones.Clusters.Update(d.ProjectID, d.Zone, d.Name, &raw.UpdateClusterRequest{
-			Update: &raw.ClusterUpdate{
-				DesiredMasterVersion: d.MasterVersion,
-			},
-		}).Context(context.Background()).Do()
-		if err != nil {
-			return err
-		}
-		logrus.Debugf("Cluster %s update is called for project %s and zone %s. Status Code %v", d.Name, d.ProjectID, d.Zone, operation.HTTPStatusCode)
-		if err := d.waitCluster(svc); err != nil {
-			return err
-		}
-	}
-
-	if d.NodeVersion != "" {
-		logrus.Infof("Updating node version to %v", d.NodeVersion)
-		operation, err := svc.Projects.Zones.Clusters.NodePools.Update(d.ProjectID, d.Zone, d.Name, d.NodePoolID, &raw.UpdateNodePoolRequest{
-			NodeVersion: d.NodeVersion,
-		}).Context(context.Background()).Do()
-		if err != nil {
-			return err
-		}
-		logrus.Debugf("Nodepool %s update is called for project %s, zone %s and cluster %s. Status Code %v", d.NodePoolID, d.ProjectID, d.Zone, d.Name, operation.HTTPStatusCode)
-		if err := d.waitNodePool(svc); err != nil {
-			return err
-		}
-	}
-
-	if d.NodeCount != 0 {
-		logrus.Infof("Updating node number to %v", d.NodeCount)
-		operation, err := svc.Projects.Zones.Clusters.NodePools.SetSize(d.ProjectID, d.Zone, d.Name, d.NodePoolID, &raw.SetNodePoolSizeRequest{
-			NodeCount: d.NodeCount,
-		}).Context(context.Background()).Do()
-		if err != nil {
-			return err
-		}
-		logrus.Debugf("Nodepool %s setSize is called for project %s, zone %s and cluster %s. Status Code %v", d.NodePoolID, d.ProjectID, d.Zone, d.Name, operation.HTTPStatusCode)
-		if err := d.waitCluster(svc); err != nil {
-			return err
-		}
-	}
+	info.Metadata["state"] = string(bytes)
+	info.Metadata["project-id"] = state.ProjectID
+	info.Metadata["zone"] = state.Zone
 	return nil
 }
 
-func (d *Driver) generateClusterCreateRequest() *raw.CreateClusterRequest {
+func getState(info *generic.ClusterInfo) (state, error) {
+	state := state{}
+	// ignore error
+	err := json.Unmarshal([]byte(info.Metadata["state"]), &state)
+	return state, err
+}
+
+// Update implements driver interface
+func (d *Driver) Update(info *generic.ClusterInfo, opts *generic.DriverOptions) (*generic.ClusterInfo, error) {
+	state, err := getState(info)
+	if err != nil {
+		return nil, err
+	}
+
+	newState, err := getStateFromOpts(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	svc, err := d.getServiceClient(state)
+	if err != nil {
+		return nil, err
+	}
+
+	if state.NodePoolID == "" {
+		cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(context.Background()).Do()
+		if err != nil {
+			return nil, err
+		}
+		state.NodePoolID = cluster.NodePools[0].Name
+	}
+
+	logrus.Debugf("Updating config. MasterVersion: %s, NodeVersion: %s, NodeCount: %v", state.MasterVersion, state.NodeVersion, state.NodeCount)
+
+	if newState.MasterVersion != "" {
+		logrus.Infof("Updating master to %v", newState.MasterVersion)
+		operation, err := svc.Projects.Zones.Clusters.Update(state.ProjectID, state.Zone, state.Name, &raw.UpdateClusterRequest{
+			Update: &raw.ClusterUpdate{
+				DesiredMasterVersion: newState.MasterVersion,
+			},
+		}).Context(context.Background()).Do()
+		if err != nil {
+			return nil, err
+		}
+		logrus.Debugf("Cluster %s update is called for project %s and zone %s. Status Code %v", state.Name, state.ProjectID, state.Zone, operation.HTTPStatusCode)
+		if err := d.waitCluster(svc, &state); err != nil {
+			return nil, err
+		}
+		state.MasterVersion = newState.MasterVersion
+	}
+
+	if newState.NodeVersion != "" {
+		logrus.Infof("Updating node version to %v", newState.NodeVersion)
+		operation, err := svc.Projects.Zones.Clusters.NodePools.Update(state.ProjectID, state.Zone, state.Name, state.NodePoolID, &raw.UpdateNodePoolRequest{
+			NodeVersion: state.NodeVersion,
+		}).Context(context.Background()).Do()
+		if err != nil {
+			return nil, err
+		}
+		logrus.Debugf("Nodepool %s update is called for project %s, zone %s and cluster %s. Status Code %v", state.NodePoolID, state.ProjectID, state.Zone, state.Name, operation.HTTPStatusCode)
+		if err := d.waitNodePool(svc, &state); err != nil {
+			return nil, err
+		}
+		state.NodeVersion = newState.NodeVersion
+	}
+
+	if newState.NodeCount != 0 {
+		logrus.Infof("Updating node number to %v", newState.NodeCount)
+		operation, err := svc.Projects.Zones.Clusters.NodePools.SetSize(state.ProjectID, state.Zone, state.Name, state.NodePoolID, &raw.SetNodePoolSizeRequest{
+			NodeCount: newState.NodeCount,
+		}).Context(context.Background()).Do()
+		if err != nil {
+			return nil, err
+		}
+		logrus.Debugf("Nodepool %s setSize is called for project %s, zone %s and cluster %s. Status Code %v", state.NodePoolID, state.ProjectID, state.Zone, state.Name, operation.HTTPStatusCode)
+		if err := d.waitCluster(svc, &state); err != nil {
+			return nil, err
+		}
+	}
+
+	return info, storeState(info, state)
+}
+
+func (d *Driver) generateClusterCreateRequest(state state) *raw.CreateClusterRequest {
 	request := raw.CreateClusterRequest{
 		Cluster: &raw.Cluster{},
 	}
-	request.Cluster.Name = d.Name
-	request.Cluster.Zone = d.Zone
-	request.Cluster.InitialClusterVersion = d.MasterVersion
-	request.Cluster.InitialNodeCount = d.NodeCount
-	request.Cluster.ClusterIpv4Cidr = d.ClusterIpv4Cidr
-	request.Cluster.Description = d.Description
-	request.Cluster.EnableKubernetesAlpha = d.EnableAlphaFeature
+	request.Cluster.Name = state.Name
+	request.Cluster.Zone = state.Zone
+	request.Cluster.InitialClusterVersion = state.MasterVersion
+	request.Cluster.InitialNodeCount = state.NodeCount
+	request.Cluster.ClusterIpv4Cidr = state.ClusterIpv4Cidr
+	request.Cluster.Description = state.Description
+	request.Cluster.EnableKubernetesAlpha = state.EnableAlphaFeature
 	request.Cluster.AddonsConfig = &raw.AddonsConfig{
-		HttpLoadBalancing:        &raw.HttpLoadBalancing{Disabled: !d.HTTPLoadBalancing},
-		HorizontalPodAutoscaling: &raw.HorizontalPodAutoscaling{Disabled: !d.HorizontalPodAutoscaling},
-		KubernetesDashboard:      &raw.KubernetesDashboard{Disabled: !d.KubernetesDashboard},
-		NetworkPolicyConfig:      &raw.NetworkPolicyConfig{Disabled: !d.NetworkPolicyConfig},
+		HttpLoadBalancing:        &raw.HttpLoadBalancing{Disabled: !state.HTTPLoadBalancing},
+		HorizontalPodAutoscaling: &raw.HorizontalPodAutoscaling{Disabled: !state.HorizontalPodAutoscaling},
+		KubernetesDashboard:      &raw.KubernetesDashboard{Disabled: !state.KubernetesDashboard},
+		NetworkPolicyConfig:      &raw.NetworkPolicyConfig{Disabled: !state.NetworkPolicyConfig},
 	}
-	request.Cluster.Network = d.Network
-	request.Cluster.Subnetwork = d.SubNetwork
+	request.Cluster.Network = state.Network
+	request.Cluster.Subnetwork = state.SubNetwork
 	request.Cluster.LegacyAbac = &raw.LegacyAbac{
-		Enabled: d.LegacyAbac,
+		Enabled: state.LegacyAbac,
 	}
 	request.Cluster.MasterAuth = &raw.MasterAuth{
 		Username: "admin",
 	}
-	request.Cluster.NodeConfig = d.NodeConfig
+	request.Cluster.NodeConfig = state.NodeConfig
 	return &request
 }
 
-// Get implements driver interface
-func (d *Driver) Get() (*generic.ClusterInfo, error) {
-	d.ClusterInfo.Metadata["project-id"] = d.ProjectID
-	d.ClusterInfo.Metadata["zone"] = d.Zone
-	d.ClusterInfo.Metadata["gke-credential-path"] = os.Getenv(defaultCredentialEnv)
-	return &d.ClusterInfo, nil
-}
-
-func (d *Driver) PostCheck() error {
-	svc, err := d.getServiceClient()
-	if err != nil {
-		return err
-	}
-	cluster, err := svc.Projects.Zones.Clusters.Get(d.ProjectID, d.Zone, d.Name).Context(context.Background()).Do()
-	if err != nil {
-		return err
-	}
-	d.ClusterInfo.Endpoint = cluster.Endpoint
-	d.ClusterInfo.Version = cluster.CurrentMasterVersion
-	d.ClusterInfo.Username = cluster.MasterAuth.Username
-	d.ClusterInfo.Password = cluster.MasterAuth.Password
-	d.ClusterInfo.RootCaCertificate = cluster.MasterAuth.ClusterCaCertificate
-	d.ClusterInfo.ClientCertificate = cluster.MasterAuth.ClientCertificate
-	d.ClusterInfo.ClientKey = cluster.MasterAuth.ClientKey
-	d.ClusterInfo.NodeCount = cluster.CurrentNodeCount
-	d.ClusterInfo.Metadata["nodePool"] = cluster.NodePools[0].Name
-	serviceAccountToken, err := generateServiceAccountTokenForGke(cluster)
-	if err != nil {
-		return err
-	}
-	d.ClusterInfo.ServiceAccountToken = serviceAccountToken
-	// clean up the default credential temp file
-	os.RemoveAll(d.TempCredentialPath)
-	return nil
-}
-
-// Remove implements driver interface
-func (d *Driver) Remove() error {
-	svc, err := d.getServiceClient()
-	if err != nil {
-		return err
-	}
-	logrus.Debugf("Removing cluster %v from project %v, zone %v", d.Name, d.ProjectID, d.Zone)
-	operation, err := svc.Projects.Zones.Clusters.Delete(d.ProjectID, d.Zone, d.Name).Context(context.Background()).Do()
-	if err != nil && !strings.Contains(err.Error(), "notFound") {
-		return err
-	} else if err == nil {
-		logrus.Debugf("Cluster %v delete is called. Status Code %v", d.Name, operation.HTTPStatusCode)
-	} else {
-		logrus.Debugf("Cluster %s doesn't exist", d.Name)
-	}
-	os.RemoveAll(d.TempCredentialPath)
-	return nil
-}
-
-func (d *Driver) getServiceClient() (*raw.Service, error) {
-	client, err := google.DefaultClient(context.Background(), raw.CloudPlatformScope)
+func (d *Driver) PostCheck(info *generic.ClusterInfo) (*generic.ClusterInfo, error) {
+	state, err := getState(info)
 	if err != nil {
 		return nil, err
 	}
+
+	svc, err := d.getServiceClient(state)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := d.waitCluster(svc, &state); err != nil {
+		return nil, err
+	}
+
+	cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(context.Background()).Do()
+	if err != nil {
+		return nil, err
+	}
+
+	info.Endpoint = cluster.Endpoint
+	info.Version = cluster.CurrentMasterVersion
+	info.Username = cluster.MasterAuth.Username
+	info.Password = cluster.MasterAuth.Password
+	info.RootCaCertificate = cluster.MasterAuth.ClusterCaCertificate
+	info.ClientCertificate = cluster.MasterAuth.ClientCertificate
+	info.ClientKey = cluster.MasterAuth.ClientKey
+	info.NodeCount = cluster.CurrentNodeCount
+	info.Metadata["nodePool"] = cluster.NodePools[0].Name
+	serviceAccountToken, err := generateServiceAccountTokenForGke(cluster)
+	if err != nil {
+		return nil, err
+	}
+	info.ServiceAccountToken = serviceAccountToken
+	return info, nil
+}
+
+// Remove implements driver interface
+func (d *Driver) Remove(info *generic.ClusterInfo) error {
+	state, err := getState(info)
+	if err != nil {
+		return err
+	}
+
+	svc, err := d.getServiceClient(state)
+	if err != nil {
+		return err
+	}
+
+	logrus.Debugf("Removing cluster %v from project %v, zone %v", state.Name, state.ProjectID, state.Zone)
+	operation, err := svc.Projects.Zones.Clusters.Delete(state.ProjectID, state.Zone, state.Name).Context(context.Background()).Do()
+	if err != nil && !strings.Contains(err.Error(), "notFound") {
+		return err
+	} else if err == nil {
+		logrus.Debugf("Cluster %v delete is called. Status Code %v", state.Name, operation.HTTPStatusCode)
+	} else {
+		logrus.Debugf("Cluster %s doesn't exist", state.Name)
+	}
+	return nil
+}
+
+func (d *Driver) getServiceClient(state state) (*raw.Service, error) {
+	// The google SDK has no sane way to pass in a TokenSource give all the different types (user, service account, etc)
+	// So we actually set an environment variable and then unset it
+	d.Lock()
+	locked := true
+	setEnv := false
+	cleanup := func() {
+		if setEnv {
+			os.Unsetenv(defaultCredentialEnv)
+		}
+
+		if locked {
+			d.Unlock()
+			locked = false
+		}
+	}
+	defer cleanup()
+
+	if state.CredentialPath != "" {
+		setEnv = true
+		os.Setenv(defaultCredentialEnv, state.CredentialPath)
+	}
+	if state.CredentialContent != "" {
+		file, err := ioutil.TempFile("", "credential-file")
+		if err != nil {
+			return nil, err
+		}
+		defer os.Remove(file.Name())
+		defer file.Close()
+
+		if _, err := io.Copy(file, strings.NewReader(state.CredentialContent)); err != nil {
+			return nil, err
+		}
+
+		setEnv = true
+		os.Setenv(defaultCredentialEnv, file.Name())
+	}
+
+	ts, err := google.DefaultTokenSource(context.Background(), raw.CloudPlatformScope)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unlocks
+	cleanup()
+
+	client := oauth2.NewClient(context.Background(), ts)
 	service, err := raw.New(client)
 	if err != nil {
 		return nil, err
@@ -460,38 +549,38 @@ func generateServiceAccountTokenForGke(cluster *raw.Cluster) (string, error) {
 	return generic.GenerateServiceAccountToken(clientset)
 }
 
-func (d *Driver) waitCluster(svc *raw.Service) error {
+func (d *Driver) waitCluster(svc *raw.Service, state *state) error {
 	lastMsg := ""
 	for {
-		cluster, err := svc.Projects.Zones.Clusters.Get(d.ProjectID, d.Zone, d.Name).Context(context.TODO()).Do()
+		cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(context.TODO()).Do()
 		if err != nil {
 			return err
 		}
 		if cluster.Status == runningStatus {
-			logrus.Infof("Cluster %v is running", d.Name)
+			logrus.Infof("Cluster %v is running", state.Name)
 			return nil
 		}
 		if cluster.Status != lastMsg {
-			logrus.Infof("%v cluster %v......", strings.ToLower(cluster.Status), d.Name)
+			logrus.Infof("%v cluster %v......", strings.ToLower(cluster.Status), state.Name)
 			lastMsg = cluster.Status
 		}
 		time.Sleep(time.Second * 5)
 	}
 }
 
-func (d *Driver) waitNodePool(svc *raw.Service) error {
+func (d *Driver) waitNodePool(svc *raw.Service, state *state) error {
 	lastMsg := ""
 	for {
-		nodepool, err := svc.Projects.Zones.Clusters.NodePools.Get(d.ProjectID, d.Zone, d.Name, d.NodePoolID).Context(context.TODO()).Do()
+		nodepool, err := svc.Projects.Zones.Clusters.NodePools.Get(state.ProjectID, state.Zone, state.Name, state.NodePoolID).Context(context.TODO()).Do()
 		if err != nil {
 			return err
 		}
 		if nodepool.Status == runningStatus {
-			logrus.Infof("Nodepool %v is running", d.Name)
+			logrus.Infof("Nodepool %v is running", state.Name)
 			return nil
 		}
 		if nodepool.Status != lastMsg {
-			logrus.Infof("%v nodepool %v......", strings.ToLower(nodepool.Status), d.NodePoolID)
+			logrus.Infof("%v nodepool %v......", strings.ToLower(nodepool.Status), state.NodePoolID)
 			lastMsg = nodepool.Status
 		}
 		time.Sleep(time.Second * 5)

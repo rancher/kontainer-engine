@@ -1,7 +1,4 @@
-/*
-Package stub can only be imported if it is running as a library. The init function will start all the driver plugin servers
-*/
-package stub
+package service
 
 import (
 	"encoding/json"
@@ -18,6 +15,7 @@ import (
 
 var (
 	pluginAddress = map[string]string{}
+	Drivers       = map[string]rpcDriver.Driver{}
 )
 
 func init() {
@@ -25,7 +23,11 @@ func init() {
 		for driver := range plugin.BuiltInDrivers {
 			logrus.Infof("Activating driver %s", driver)
 			addr := make(chan string)
-			plugin.Run(driver, addr)
+			rpcDriver, err := plugin.Run(driver, addr)
+			if err != nil {
+				panic(err)
+			}
+			Drivers[driver] = rpcDriver
 			listenAddr := <-addr
 			pluginAddress[driver] = listenAddr
 			logrus.Infof("Activating driver %s done", driver)
@@ -94,28 +96,6 @@ func flatten(data map[string]interface{}, driverOptions *rpcDriver.DriverOptions
 	}
 }
 
-type controllerPersistStore struct{}
-
-// no-op
-func (c controllerPersistStore) Check(name string) (bool, error) {
-	return false, nil
-}
-
-// no-op
-func (c controllerPersistStore) Store(cluster cluster.Cluster) error {
-	return nil
-}
-
-// no-op
-func (c controllerPersistStore) Get(name string) (cluster.Cluster, error) {
-	return cluster.Cluster{}, nil
-}
-
-// no-op
-func (c controllerPersistStore) PersistStatus(cluster cluster.Cluster, status string) error {
-	return nil
-}
-
 func toMap(obj interface{}, format string) (map[string]interface{}, error) {
 	if format == "json" {
 		data, err := json.Marshal(obj)
@@ -141,7 +121,17 @@ func toMap(obj interface{}, format string) (map[string]interface{}, error) {
 	return nil, nil
 }
 
-func convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
+type EngineService struct {
+	store cluster.PersistStore
+}
+
+func NewEngineService(store cluster.PersistStore) *EngineService {
+	return &EngineService{
+		store: store,
+	}
+}
+
+func (e *EngineService) convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
 	// todo: decide whether we need a driver field
 	driverName := ""
 	if spec.AzureKubernetesServiceConfig != nil {
@@ -160,8 +150,7 @@ func convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
 		clusterSpec: spec,
 		clusterName: name,
 	}
-	persistStore := controllerPersistStore{}
-	clusterPlugin, err := cluster.NewCluster(driverName, pluginAddr, name, configGetter, persistStore)
+	clusterPlugin, err := cluster.NewCluster(driverName, pluginAddr, name, configGetter, e.store)
 	if err != nil {
 		return cluster.Cluster{}, err
 	}
@@ -169,8 +158,8 @@ func convertCluster(name string, spec v3.ClusterSpec) (cluster.Cluster, error) {
 }
 
 // Create creates the stub for cluster manager to call
-func Create(name string, clusterSpec v3.ClusterSpec) (string, string, string, error) {
-	cls, err := convertCluster(name, clusterSpec)
+func (e *EngineService) Create(name string, clusterSpec v3.ClusterSpec) (string, string, string, error) {
+	cls, err := e.convertCluster(name, clusterSpec)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -185,8 +174,8 @@ func Create(name string, clusterSpec v3.ClusterSpec) (string, string, string, er
 }
 
 // Update creates the stub for cluster manager to call
-func Update(name string, clusterSpec v3.ClusterSpec) (string, string, string, error) {
-	cls, err := convertCluster(name, clusterSpec)
+func (e *EngineService) Update(name string, clusterSpec v3.ClusterSpec) (string, string, string, error) {
+	cls, err := e.convertCluster(name, clusterSpec)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -201,8 +190,8 @@ func Update(name string, clusterSpec v3.ClusterSpec) (string, string, string, er
 }
 
 // Remove removes stub for cluster manager to call
-func Remove(name string, clusterSpec v3.ClusterSpec) error {
-	cls, err := convertCluster(name, clusterSpec)
+func (e *EngineService) Remove(name string, clusterSpec v3.ClusterSpec) error {
+	cls, err := e.convertCluster(name, clusterSpec)
 	if err != nil {
 		return err
 	}

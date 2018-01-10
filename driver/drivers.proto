@@ -3,14 +3,12 @@ syntax = "proto3";
 package drivers;
 
 service Driver {
-    rpc Create (Empty) returns (Empty) {}
-    rpc Update(Empty) returns (Empty) {}
-    rpc Get(Empty) returns (ClusterInfo) {}
-    rpc PostCheck(Empty) returns (Empty) {}
-    rpc Remove (Empty) returns (Empty) {}
+    rpc Create (DriverOptions) returns (ClusterInfo) {}
+    rpc Update(UpdateRequest) returns (ClusterInfo) {}
+    rpc PostCheck(ClusterInfo) returns (ClusterInfo) {}
+    rpc Remove (ClusterInfo) returns (Empty) {}
     rpc GetDriverCreateOptions (Empty) returns (DriverFlags) {}
     rpc GetDriverUpdateOptions (Empty) returns (DriverFlags) {}
-    rpc SetDriverOptions (DriverOptions) returns (Empty) {}
 }
 
 message Empty {
@@ -62,4 +60,9 @@ message ClusterInfo {
     int64 node_count = 9;
 
     map<string, string> metadata = 10;
+}
+
+message UpdateRequest {
+    ClusterInfo cluster_info = 1;
+    DriverOptions driver_options = 2;
 }
