@@ -16,6 +16,7 @@ type Catalog struct {
 }
 
 type CatalogSpec struct {
+	Description string `json:"description"`
 	URL         string `json:"url,omitempty"`
 	Branch      string `json:"branch,omitempty"`
 	CatalogKind string `json:"catalogKind,omitempty"`
@@ -77,6 +78,7 @@ type TemplateVersion struct {
 }
 
 type TemplateVersionSpec struct {
+	ExternalID            string            `json:"externalId,omitempty"`
 	Revision              *int              `json:"revision,omitempty"`
 	Version               string            `json:"version,omitempty"`
 	MinimumRancherVersion string            `json:"minimumRancherVersion,omitempty" yaml:"minimum_rancher_version,omitempty"`
