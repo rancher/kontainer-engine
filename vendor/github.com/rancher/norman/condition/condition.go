@@ -6,6 +6,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/rancher/norman/controller"
+	err2 "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -38,6 +39,29 @@ func (c Cond) IsUnknown(obj runtime.Object) bool {
 func (c Cond) Reason(obj runtime.Object, reason string) {
 	cond := findOrCreateCond(obj, string(c))
 	getFieldValue(cond, "Reason").SetString(reason)
+}
+
+func (c Cond) Message(obj runtime.Object, message string) {
+	cond := findOrCreateCond(obj, string(c))
+	getFieldValue(cond, "Message").SetString(message)
+}
+
+func (c Cond) GetMessage(obj runtime.Object) string {
+	cond := findOrCreateCond(obj, string(c))
+	return getFieldValue(cond, "Message").String()
+}
+
+func (c Cond) ReasonAndMessageFromError(obj runtime.Object, err error) {
+	if err2.IsConflict(err) {
+		return
+	}
+	cond := findOrCreateCond(obj, string(c))
+	getFieldValue(cond, "Message").SetString(err.Error())
+	if ce, ok := err.(*conditionError); ok {
+		getFieldValue(cond, "Reason").SetString(ce.reason)
+	} else {
+		getFieldValue(cond, "Reason").SetString("Error")
+	}
 	touchTS(cond)
 }
 
@@ -65,14 +89,39 @@ func (c Cond) Once(obj runtime.Object, f func() (runtime.Object, error)) (runtim
 
 	if err != nil {
 		c.False(obj)
-		c.Reason(obj, err.Error())
+		c.ReasonAndMessageFromError(obj, err)
 		return obj, err
 	}
 	c.True(obj)
 	return obj, nil
 }
 
-func (c Cond) Do(obj runtime.Object, f func() (runtime.Object, error)) error {
+func (c Cond) DoUntilTrue(obj runtime.Object, f func() (runtime.Object, error)) (runtime.Object, error) {
+	if c.IsTrue(obj) {
+		return obj, nil
+	}
+
+	c.Unknown(obj)
+	newObj, err := f()
+	if newObj != nil {
+		obj = newObj
+	}
+
+	if err != nil {
+		c.ReasonAndMessageFromError(obj, err)
+		return obj, err
+	}
+	c.True(obj)
+	c.Reason(obj, "")
+	c.Message(obj, "")
+	return obj, nil
+}
+
+func (c Cond) Do(obj runtime.Object, f func() (runtime.Object, error)) (runtime.Object, error) {
+	return c.do(obj, f)
+}
+
+func (c Cond) do(obj runtime.Object, f func() (runtime.Object, error)) (runtime.Object, error) {
 	c.Unknown(obj)
 	newObj, err := f()
 	if newObj != nil {
@@ -81,11 +130,13 @@ func (c Cond) Do(obj runtime.Object, f func() (runtime.Object, error)) error {
 
 	if err != nil {
 		c.False(obj)
-		c.Reason(obj, err.Error())
-		return err
+		c.ReasonAndMessageFromError(obj, err)
+		return obj, err
 	}
 	c.True(obj)
-	return nil
+	c.Reason(obj, "")
+	c.Message(obj, "")
+	return obj, nil
 }
 
 func touchTS(value reflect.Value) {
@@ -151,4 +202,20 @@ func getFieldValue(v reflect.Value, name ...string) reflect.Value {
 		return field
 	}
 	return getFieldValue(field, name[1:]...)
+}
+
+func Error(reason string, err error) error {
+	return &conditionError{
+		reason:  reason,
+		message: err.Error(),
+	}
+}
+
+type conditionError struct {
+	reason  string
+	message string
+}
+
+func (e *conditionError) Error() string {
+	return e.message
 }
