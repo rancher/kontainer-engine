@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"context"
+
 	"github.com/rancher/kontainer-engine/service"
 	"github.com/rancher/kontainer-engine/store"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
@@ -38,14 +40,14 @@ func main() {
 	store := store.CLIPersistStore{}
 	service := service.NewEngineService(store)
 
-	endpoint, token, cert, err := service.Create("daishan-test", spec)
+	endpoint, token, cert, err := service.Create(context.Background(), "daishan-test", spec)
 	if err != nil {
 		logrus.Fatal(err)
 	}
 	fmt.Println(endpoint)
 	fmt.Println(token)
 	fmt.Println(cert)
-	err = service.Remove("daishan-test", spec)
+	err = service.Remove(context.Background(), "daishan-test", spec)
 	if err != nil {
 		logrus.Fatal(err)
 	}

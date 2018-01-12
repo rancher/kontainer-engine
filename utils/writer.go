@@ -1,14 +1,13 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/json"
 	"html/template"
-	"os"
-	"text/tabwriter"
-
-	"bytes"
 	"io"
+	"os"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/urfave/cli"
 )

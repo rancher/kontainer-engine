@@ -1,10 +1,13 @@
 package cluster
 
 import (
+	"context"
 	"fmt"
 
-	rpcDriver "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/kontainer-engine/logstream"
+	"github.com/rancher/kontainer-engine/types"
 	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/api/errors"
 )
 
 const (
@@ -19,7 +22,7 @@ const (
 // Cluster represents a kubernetes cluster
 type Cluster struct {
 	// The cluster driver to provision cluster
-	Driver Driver `json:"-"`
+	Driver types.Driver `json:"-"`
 	// The name of the cluster driver
 	DriverName string `json:"driverName,omitempty" yaml:"driver_name,omitempty"`
 	// The name of the cluster
@@ -53,6 +56,8 @@ type Cluster struct {
 	PersistStore PersistStore `json:"-" yaml:"-"`
 
 	ConfigGetter ConfigGetter `json:"-" yaml:"-"`
+
+	Logger logstream.Logger `json:"-" yaml:"-"`
 }
 
 // PersistStore defines the interface for persist options like check and store
@@ -66,36 +71,12 @@ type PersistStore interface {
 
 // ConfigGetter defines the interface for getting the driver options.
 type ConfigGetter interface {
-	GetConfig() (rpcDriver.DriverOptions, error)
-}
-
-// Driver defines how a cluster should be created and managed. Different drivers represents different providers.
-type Driver interface {
-	// Create creates a cluster
-	Create(opts *rpcDriver.DriverOptions) (*rpcDriver.ClusterInfo, error)
-
-	// Update updates a cluster
-	Update(clusterInfo *rpcDriver.ClusterInfo, opts *rpcDriver.DriverOptions) (*rpcDriver.ClusterInfo, error)
-
-	// PostCheck does post action after provisioning
-	PostCheck(clusterInfo *rpcDriver.ClusterInfo) (*rpcDriver.ClusterInfo, error)
-
-	// Remove removes a cluster
-	Remove(clusterInfo *rpcDriver.ClusterInfo) error
-
-	// DriverName returns the driver name
-	DriverName() string
-
-	// Get driver create options flags for creating clusters
-	GetDriverCreateOptions() (rpcDriver.DriverFlags, error)
-
-	// Get driver update options flags for updating cluster
-	GetDriverUpdateOptions() (rpcDriver.DriverFlags, error)
+	GetConfig() (types.DriverOptions, error)
 }
 
 // Create creates a cluster
-func (c *Cluster) Create() error {
-	if err := c.createInner(); err != nil {
+func (c *Cluster) Create(ctx context.Context) error {
+	if err := c.createInner(ctx); err != nil {
 		if err := c.PersistStore.PersistStatus(*c, Error); err != nil {
 			return err
 		}
@@ -104,7 +85,7 @@ func (c *Cluster) Create() error {
 	return c.PersistStore.PersistStatus(*c, Running)
 }
 
-func (c *Cluster) create() error {
+func (c *Cluster) create(ctx context.Context) error {
 	if c.Status == PostCheck {
 		return nil
 	}
@@ -129,7 +110,7 @@ func (c *Cluster) create() error {
 	}
 
 	// create cluster
-	info, err := c.Driver.Create(&driverOpts)
+	info, err := c.Driver.Create(ctx, &driverOpts)
 	if err != nil {
 		return err
 	}
@@ -138,13 +119,13 @@ func (c *Cluster) create() error {
 	return nil
 }
 
-func (c *Cluster) postCheck() error {
+func (c *Cluster) postCheck(ctx context.Context) error {
 	if err := c.PersistStore.PersistStatus(*c, PostCheck); err != nil {
 		return err
 	}
 
 	// receive cluster info back
-	info, err := c.Driver.PostCheck(toInfo(c))
+	info, err := c.Driver.PostCheck(ctx, toInfo(c))
 	if err != nil {
 		return err
 	}
@@ -155,7 +136,7 @@ func (c *Cluster) postCheck() error {
 	return c.Store()
 }
 
-func (c *Cluster) createInner() error {
+func (c *Cluster) createInner(ctx context.Context) error {
 	// check if it is already created
 	c.restore()
 
@@ -169,15 +150,15 @@ func (c *Cluster) createInner() error {
 		return nil
 	}
 
-	if err := c.create(); err != nil {
+	if err := c.create(ctx); err != nil {
 		return err
 	}
 
-	return c.postCheck()
+	return c.postCheck(ctx)
 }
 
 // Update updates a cluster
-func (c *Cluster) Update() error {
+func (c *Cluster) Update(ctx context.Context) error {
 	if err := c.restore(); err != nil {
 		return err
 	}
@@ -206,17 +187,17 @@ func (c *Cluster) Update() error {
 	}
 
 	info := toInfo(c)
-	info, err = c.Driver.Update(info, &driverOpts)
+	info, err = c.Driver.Update(ctx, info, &driverOpts)
 	if err != nil {
 		return err
 	}
 
 	transformClusterInfo(c, info)
 
-	return c.postCheck()
+	return c.postCheck(ctx)
 }
 
-func transformClusterInfo(c *Cluster, clusterInfo *rpcDriver.ClusterInfo) {
+func transformClusterInfo(c *Cluster, clusterInfo *types.ClusterInfo) {
 	c.ClientCertificate = clusterInfo.ClientCertificate
 	c.ClientKey = clusterInfo.ClientKey
 	c.RootCACert = clusterInfo.RootCaCertificate
@@ -229,8 +210,8 @@ func transformClusterInfo(c *Cluster, clusterInfo *rpcDriver.ClusterInfo) {
 	c.ServiceAccountToken = clusterInfo.ServiceAccountToken
 }
 
-func toInfo(c *Cluster) *rpcDriver.ClusterInfo {
-	return &rpcDriver.ClusterInfo{
+func toInfo(c *Cluster) *types.ClusterInfo {
+	return &types.ClusterInfo{
 		ClientCertificate:   c.ClientCertificate,
 		ClientKey:           c.ClientKey,
 		RootCaCertificate:   c.RootCACert,
@@ -245,13 +226,15 @@ func toInfo(c *Cluster) *rpcDriver.ClusterInfo {
 }
 
 // Remove removes a cluster
-func (c *Cluster) Remove() error {
+func (c *Cluster) Remove(ctx context.Context) error {
 	defer c.PersistStore.Remove(c.Name)
-	if err := c.restore(); err != nil {
+	if err := c.restore(); errors.IsNotFound(err) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 
-	return c.Driver.Remove(toInfo(c))
+	return c.Driver.Remove(ctx, toInfo(c))
 }
 
 func (c *Cluster) getState() (string, error) {
@@ -275,7 +258,7 @@ func (c *Cluster) restore() error {
 
 // NewCluster create a cluster interface to do operations
 func NewCluster(driverName, addr, name string, configGetter ConfigGetter, persistStore PersistStore) (*Cluster, error) {
-	rpcClient, err := rpcDriver.NewClient(driverName, addr)
+	rpcClient, err := types.NewClient(driverName, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +272,7 @@ func NewCluster(driverName, addr, name string, configGetter ConfigGetter, persis
 }
 
 func FromCluster(cluster *Cluster, addr string, configGetter ConfigGetter, persistStore PersistStore) (*Cluster, error) {
-	rpcClient, err := rpcDriver.NewClient(cluster.DriverName, addr)
+	rpcClient, err := types.NewClient(cluster.DriverName, addr)
 	if err != nil {
 		return nil, err
 	}

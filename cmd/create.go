@@ -1,22 +1,16 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/rancher/kontainer-engine/cluster"
-	rpcDriver "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/store"
+	"github.com/rancher/kontainer-engine/types"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-)
-
-const (
-	caPem             = "ca.pem"
-	clientKey         = "key.pem"
-	clientCert        = "cert.pem"
-	defaultConfigName = "config.json"
 )
 
 // CreateCommand defines the create command
@@ -57,7 +51,7 @@ func createWapper(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	driverFlags, err := rpcClient.GetDriverCreateOptions()
+	driverFlags, err := rpcClient.GetDriverCreateOptions(context.Background())
 	if err != nil {
 		return err
 	}
@@ -108,7 +102,7 @@ type cliConfigGetter struct {
 	ctx  *cli.Context
 }
 
-func (c cliConfigGetter) GetConfig() (rpcDriver.DriverOptions, error) {
+func (c cliConfigGetter) GetConfig() (types.DriverOptions, error) {
 	driverOpts := getDriverOpts(c.ctx)
 	driverOpts.StringOptions["name"] = c.name
 	return driverOpts, nil
@@ -133,7 +127,7 @@ func create(ctx *cli.Context) error {
 		if err != nil {
 			return err
 		}
-		return cls.Create()
+		return cls.Create(context.Background())
 	}
 	// if cluster doesn't exist then we try to create a new one
 	driverName := ctx.String("driver")
@@ -150,7 +144,7 @@ func create(ctx *cli.Context) error {
 		logrus.Error("Cluster name is required")
 		return cli.ShowCommandHelp(ctx, "create")
 	}
-	return cls.Create()
+	return cls.Create(context.Background())
 }
 
 func lookUpDebugFlag() bool {
@@ -162,7 +156,7 @@ func lookUpDebugFlag() bool {
 	return false
 }
 
-func getDriverFlags(opts rpcDriver.DriverFlags) []cli.Flag {
+func getDriverFlags(opts *types.DriverFlags) []cli.Flag {
 	flags := []cli.Flag{}
 	for k, v := range opts.Options {
 		switch v.Type {

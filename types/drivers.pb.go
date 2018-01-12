@@ -16,7 +16,7 @@ It has these top-level messages:
 	ClusterInfo
 	UpdateRequest
 */
-package drivers
+package types
 
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"

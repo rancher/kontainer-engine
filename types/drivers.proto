@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package drivers;
+package types;
 
 service Driver {
     rpc Create (DriverOptions) returns (ClusterInfo) {}
