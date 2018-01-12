@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	rpcDriver "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/kontainer-engine/types"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	check "gopkg.in/check.v1"
 )
@@ -39,11 +39,11 @@ func (s *StubTestSuite) TestFlatten(c *check.C) {
 	if err != nil {
 		c.Fatal(err)
 	}
-	driverOptions := rpcDriver.DriverOptions{
+	driverOptions := types.DriverOptions{
 		BoolOptions:        make(map[string]bool),
 		StringOptions:      make(map[string]string),
 		IntOptions:         make(map[string]int64),
-		StringSliceOptions: make(map[string]*rpcDriver.StringSlice),
+		StringSliceOptions: make(map[string]*types.StringSlice),
 	}
 	flatten(opts, &driverOptions)
 	fmt.Println(driverOptions)
@@ -60,7 +60,7 @@ func (s *StubTestSuite) TestFlatten(c *check.C) {
 		"diskSizeGb": 50,
 		"nodeCount":  3,
 	}
-	stringSliceResult := map[string]rpcDriver.StringSlice{
+	stringSliceResult := map[string]types.StringSlice{
 		"labels": {
 			Value: []string{"foo=bar"},
 		},

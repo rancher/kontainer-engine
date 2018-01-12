@@ -7,8 +7,8 @@ import (
 	"io/ioutil"
 	"strings"
 
-	generic "github.com/rancher/kontainer-engine/driver"
-	rpcDriver "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/kontainer-engine/drivers"
+	"github.com/rancher/kontainer-engine/types"
 	"github.com/rancher/rke/cmd"
 	"github.com/rancher/rke/hosts"
 	"k8s.io/client-go/kubernetes"
@@ -26,31 +26,31 @@ func NewDriver() *Driver {
 }
 
 // GetDriverCreateOptions returns create flags for rke driver
-func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
-	driverFlag := generic.DriverFlags{
-		Options: make(map[string]*generic.Flag),
+func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags, error) {
+	driverFlag := types.DriverFlags{
+		Options: make(map[string]*types.Flag),
 	}
-	driverFlag.Options["config-file-path"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["config-file-path"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "the path to the config file",
 	}
 	return &driverFlag, nil
 }
 
 // GetDriverUpdateOptions returns update flags for rke driver
-func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
-	driverFlag := generic.DriverFlags{
-		Options: make(map[string]*generic.Flag),
+func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags, error) {
+	driverFlag := types.DriverFlags{
+		Options: make(map[string]*types.Flag),
 	}
-	driverFlag.Options["config-file-path"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["config-file-path"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "the path to the config file",
 	}
 	return &driverFlag, nil
 }
 
 // SetDriverOptions sets the drivers options to rke driver
-func getYAML(driverOptions *generic.DriverOptions) (string, error) {
+func getYAML(driverOptions *types.DriverOptions) (string, error) {
 	// first look up the file path then look up raw rkeConfig
 	if path, ok := driverOptions.StringOptions["config-file-path"]; ok {
 		data, err := ioutil.ReadFile(path)
@@ -63,22 +63,23 @@ func getYAML(driverOptions *generic.DriverOptions) (string, error) {
 }
 
 // Create creates the rke cluster
-func (d *Driver) Create(opts *rpcDriver.DriverOptions) (*rpcDriver.ClusterInfo, error) {
+func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions) (*types.ClusterInfo, error) {
 	yaml, err := getYAML(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	rkeConfig, err := generic.ConvertToRkeConfig(yaml)
+	rkeConfig, err := drivers.ConvertToRkeConfig(yaml)
 	if err != nil {
 		return nil, err
 	}
 
-	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(context.Background(), &rkeConfig, d.DockerDialer, nil)
+	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(ctx, &rkeConfig, d.DockerDialer, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &rpcDriver.ClusterInfo{
+
+	return &types.ClusterInfo{
 		Metadata: map[string]string{
 			"Endpoint":   APIURL,
 			"RootCA":     caCrt,
@@ -90,18 +91,18 @@ func (d *Driver) Create(opts *rpcDriver.DriverOptions) (*rpcDriver.ClusterInfo, 
 }
 
 // Update updates the rke cluster
-func (d *Driver) Update(clusterInfo *rpcDriver.ClusterInfo, opts *rpcDriver.DriverOptions) (*rpcDriver.ClusterInfo, error) {
+func (d *Driver) Update(ctx context.Context, clusterInfo *types.ClusterInfo, opts *types.DriverOptions) (*types.ClusterInfo, error) {
 	yaml, err := getYAML(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	rkeConfig, err := generic.ConvertToRkeConfig(yaml)
+	rkeConfig, err := drivers.ConvertToRkeConfig(yaml)
 	if err != nil {
 		return nil, err
 	}
 
-	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(context.Background(), &rkeConfig, d.DockerDialer, nil)
+	APIURL, caCrt, clientCert, clientKey, err := cmd.ClusterUp(ctx, &rkeConfig, d.DockerDialer, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +121,7 @@ func (d *Driver) Update(clusterInfo *rpcDriver.ClusterInfo, opts *rpcDriver.Driv
 }
 
 // PostCheck does post action
-func (d *Driver) PostCheck(info *rpcDriver.ClusterInfo) (*rpcDriver.ClusterInfo, error) {
+func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types.ClusterInfo, error) {
 	info.Endpoint = info.Metadata["Endpoint"]
 	info.ClientCertificate = base64.StdEncoding.EncodeToString([]byte(info.Metadata["ClientCert"]))
 	info.ClientKey = base64.StdEncoding.EncodeToString([]byte(info.Metadata["ClientKey"]))
@@ -149,7 +150,7 @@ func (d *Driver) PostCheck(info *rpcDriver.ClusterInfo) (*rpcDriver.ClusterInfo,
 		return nil, fmt.Errorf("failed to get Kubernetes server version: %v", err)
 	}
 
-	token, err := generic.GenerateServiceAccountToken(clientset)
+	token, err := drivers.GenerateServiceAccountToken(clientset)
 	if err != nil {
 		return nil, err
 	}
@@ -160,10 +161,10 @@ func (d *Driver) PostCheck(info *rpcDriver.ClusterInfo) (*rpcDriver.ClusterInfo,
 }
 
 // Remove removes the cluster
-func (d *Driver) Remove(clusterInfo *rpcDriver.ClusterInfo) error {
-	rkeConfig, err := generic.ConvertToRkeConfig(clusterInfo.Metadata["Config"])
+func (d *Driver) Remove(ctx context.Context, clusterInfo *types.ClusterInfo) error {
+	rkeConfig, err := drivers.ConvertToRkeConfig(clusterInfo.Metadata["Config"])
 	if err != nil {
 		return err
 	}
-	return cmd.ClusterRemove(context.Background(), &rkeConfig, d.DockerDialer)
+	return cmd.ClusterRemove(ctx, &rkeConfig, d.DockerDialer)
 }

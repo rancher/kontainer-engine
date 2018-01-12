@@ -11,7 +11,9 @@ import (
 	"sync"
 	"time"
 
-	generic "github.com/rancher/kontainer-engine/driver"
+	"github.com/rancher/kontainer-engine/drivers"
+	"github.com/rancher/kontainer-engine/types"
+	"github.com/rancher/rke/log"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
@@ -77,7 +79,7 @@ type state struct {
 	// NodePool id
 	NodePoolID string
 	// cluster info
-	ClusterInfo generic.ClusterInfo
+	ClusterInfo types.ClusterInfo
 }
 
 // NewDriver creates a gke Driver
@@ -86,119 +88,119 @@ func NewDriver() *Driver {
 }
 
 // GetDriverCreateOptions implements driver interface
-func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
-	driverFlag := generic.DriverFlags{
-		Options: make(map[string]*generic.Flag),
+func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags, error) {
+	driverFlag := types.DriverFlags{
+		Options: make(map[string]*types.Flag),
 	}
-	driverFlag.Options["project-id"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["project-id"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "the ID of your project to use when creating a cluster",
 	}
-	driverFlag.Options["zone"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["zone"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "The zone to launch the cluster",
 		Value: "us-central1-a",
 	}
-	driverFlag.Options["gke-credential-path"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["gke-credential-path"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "the path to the credential json file(example: $HOME/key.json)",
 	}
-	driverFlag.Options["cluster-ipv4-cidr"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["cluster-ipv4-cidr"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "The IP address range of the container pods",
 	}
-	driverFlag.Options["description"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["description"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "An optional description of this cluster",
 	}
-	driverFlag.Options["master-version"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["master-version"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "The kubernetes master version",
 	}
-	driverFlag.Options["node-count"] = &generic.Flag{
-		Type:  generic.IntType,
+	driverFlag.Options["node-count"] = &types.Flag{
+		Type:  types.IntType,
 		Usage: "The number of nodes to create in this cluster",
 		Value: "3",
 	}
-	driverFlag.Options["disk-size-gb"] = &generic.Flag{
-		Type:  generic.IntType,
+	driverFlag.Options["disk-size-gb"] = &types.Flag{
+		Type:  types.IntType,
 		Usage: "Size of the disk attached to each node",
 		Value: "100",
 	}
-	driverFlag.Options["labels"] = &generic.Flag{
-		Type:  generic.StringSliceType,
+	driverFlag.Options["labels"] = &types.Flag{
+		Type:  types.StringSliceType,
 		Usage: "The map of Kubernetes labels (key/value pairs) to be applied to each node",
 	}
-	driverFlag.Options["machine-type"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["machine-type"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "The machine type of a Google Compute Engine",
 	}
-	driverFlag.Options["enable-alpha-feature"] = &generic.Flag{
-		Type:  generic.BoolType,
+	driverFlag.Options["enable-alpha-feature"] = &types.Flag{
+		Type:  types.BoolType,
 		Usage: "To enable kubernetes alpha feature",
 	}
 	return &driverFlag, nil
 }
 
 // GetDriverUpdateOptions implements driver interface
-func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
-	driverFlag := generic.DriverFlags{
-		Options: make(map[string]*generic.Flag),
+func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags, error) {
+	driverFlag := types.DriverFlags{
+		Options: make(map[string]*types.Flag),
 	}
-	driverFlag.Options["node-count"] = &generic.Flag{
-		Type:  generic.IntType,
+	driverFlag.Options["node-count"] = &types.Flag{
+		Type:  types.IntType,
 		Usage: "The node number for your cluster to update. 0 means no updates",
 	}
-	driverFlag.Options["master-version"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["master-version"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "The kubernetes master version to update",
 	}
-	driverFlag.Options["node-version"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["node-version"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "The kubernetes node version to update",
 	}
 	return &driverFlag, nil
 }
 
 // SetDriverOptions implements driver interface
-func getStateFromOpts(driverOptions *generic.DriverOptions) (state, error) {
+func getStateFromOpts(driverOptions *types.DriverOptions) (state, error) {
 	d := state{
 		NodeConfig: &raw.NodeConfig{
 			Labels: map[string]string{},
 		},
-		ClusterInfo: generic.ClusterInfo{
+		ClusterInfo: types.ClusterInfo{
 			Metadata: map[string]string{},
 		},
 	}
-	d.Name = getValueFromDriverOptions(driverOptions, generic.StringType, "name").(string)
-	d.ProjectID = getValueFromDriverOptions(driverOptions, generic.StringType, "project-id", "projectId").(string)
-	d.Zone = getValueFromDriverOptions(driverOptions, generic.StringType, "zone").(string)
-	d.NodePoolID = getValueFromDriverOptions(driverOptions, generic.StringType, "nodePool").(string)
-	d.ClusterIpv4Cidr = getValueFromDriverOptions(driverOptions, generic.StringType, "cluster-ipv4-cidr", "clusterIpv4Cidr").(string)
-	d.Description = getValueFromDriverOptions(driverOptions, generic.StringType, "description").(string)
-	d.MasterVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "master-version", "masterVersion").(string)
-	d.NodeVersion = getValueFromDriverOptions(driverOptions, generic.StringType, "node-version", "nodeVersion").(string)
-	d.NodeConfig.DiskSizeGb = getValueFromDriverOptions(driverOptions, generic.IntType, "disk-size-gb", "diskSizeGb").(int64)
-	d.NodeConfig.MachineType = getValueFromDriverOptions(driverOptions, generic.StringType, "machine-type", "machineType").(string)
-	d.CredentialPath = getValueFromDriverOptions(driverOptions, generic.StringType, "gke-credential-path").(string)
-	d.CredentialContent = getValueFromDriverOptions(driverOptions, generic.StringType, "credential").(string)
-	d.EnableAlphaFeature = getValueFromDriverOptions(driverOptions, generic.BoolType, "enable-alpha-feature", "enableAlphaFeature").(bool)
-	d.HorizontalPodAutoscaling = getValueFromDriverOptions(driverOptions, generic.BoolType, "horizontalPodAutoscaling").(bool)
-	d.HTTPLoadBalancing = getValueFromDriverOptions(driverOptions, generic.BoolType, "httpLoadBalancing").(bool)
-	d.KubernetesDashboard = getValueFromDriverOptions(driverOptions, generic.BoolType, "kubernetesDashboard").(bool)
-	d.NetworkPolicyConfig = getValueFromDriverOptions(driverOptions, generic.BoolType, "networkPolicyConfig").(bool)
-	d.NodeConfig.ImageType = getValueFromDriverOptions(driverOptions, generic.StringType, "imageType").(string)
-	d.Network = getValueFromDriverOptions(driverOptions, generic.StringType, "network").(string)
-	d.SubNetwork = getValueFromDriverOptions(driverOptions, generic.StringType, "subNetwork").(string)
-	d.LegacyAbac = getValueFromDriverOptions(driverOptions, generic.BoolType, "legacyAbac").(bool)
+	d.Name = getValueFromDriverOptions(driverOptions, types.StringType, "name").(string)
+	d.ProjectID = getValueFromDriverOptions(driverOptions, types.StringType, "project-id", "projectId").(string)
+	d.Zone = getValueFromDriverOptions(driverOptions, types.StringType, "zone").(string)
+	d.NodePoolID = getValueFromDriverOptions(driverOptions, types.StringType, "nodePool").(string)
+	d.ClusterIpv4Cidr = getValueFromDriverOptions(driverOptions, types.StringType, "cluster-ipv4-cidr", "clusterIpv4Cidr").(string)
+	d.Description = getValueFromDriverOptions(driverOptions, types.StringType, "description").(string)
+	d.MasterVersion = getValueFromDriverOptions(driverOptions, types.StringType, "master-version", "masterVersion").(string)
+	d.NodeVersion = getValueFromDriverOptions(driverOptions, types.StringType, "node-version", "nodeVersion").(string)
+	d.NodeConfig.DiskSizeGb = getValueFromDriverOptions(driverOptions, types.IntType, "disk-size-gb", "diskSizeGb").(int64)
+	d.NodeConfig.MachineType = getValueFromDriverOptions(driverOptions, types.StringType, "machine-type", "machineType").(string)
+	d.CredentialPath = getValueFromDriverOptions(driverOptions, types.StringType, "gke-credential-path").(string)
+	d.CredentialContent = getValueFromDriverOptions(driverOptions, types.StringType, "credential").(string)
+	d.EnableAlphaFeature = getValueFromDriverOptions(driverOptions, types.BoolType, "enable-alpha-feature", "enableAlphaFeature").(bool)
+	d.HorizontalPodAutoscaling = getValueFromDriverOptions(driverOptions, types.BoolType, "horizontalPodAutoscaling").(bool)
+	d.HTTPLoadBalancing = getValueFromDriverOptions(driverOptions, types.BoolType, "httpLoadBalancing").(bool)
+	d.KubernetesDashboard = getValueFromDriverOptions(driverOptions, types.BoolType, "kubernetesDashboard").(bool)
+	d.NetworkPolicyConfig = getValueFromDriverOptions(driverOptions, types.BoolType, "networkPolicyConfig").(bool)
+	d.NodeConfig.ImageType = getValueFromDriverOptions(driverOptions, types.StringType, "imageType").(string)
+	d.Network = getValueFromDriverOptions(driverOptions, types.StringType, "network").(string)
+	d.SubNetwork = getValueFromDriverOptions(driverOptions, types.StringType, "subNetwork").(string)
+	d.LegacyAbac = getValueFromDriverOptions(driverOptions, types.BoolType, "legacyAbac").(bool)
 	d.Locations = []string{}
-	locations := getValueFromDriverOptions(driverOptions, generic.StringSliceType, "locations").(*generic.StringSlice)
+	locations := getValueFromDriverOptions(driverOptions, types.StringSliceType, "locations").(*types.StringSlice)
 	for _, location := range locations.Value {
 		d.Locations = append(d.Locations, location)
 	}
 
-	d.NodeCount = getValueFromDriverOptions(driverOptions, generic.IntType, "node-count", "nodeCount").(int64)
-	labelValues := getValueFromDriverOptions(driverOptions, generic.StringSliceType, "labels").(*generic.StringSlice)
+	d.NodeCount = getValueFromDriverOptions(driverOptions, types.IntType, "node-count", "nodeCount").(int64)
+	labelValues := getValueFromDriverOptions(driverOptions, types.StringSliceType, "labels").(*types.StringSlice)
 	for _, part := range labelValues.Value {
 		kv := strings.Split(part, "=")
 		if len(kv) == 2 {
@@ -208,36 +210,36 @@ func getStateFromOpts(driverOptions *generic.DriverOptions) (state, error) {
 	return d, d.validate()
 }
 
-func getValueFromDriverOptions(driverOptions *generic.DriverOptions, optionType string, keys ...string) interface{} {
+func getValueFromDriverOptions(driverOptions *types.DriverOptions, optionType string, keys ...string) interface{} {
 	switch optionType {
-	case generic.IntType:
+	case types.IntType:
 		for _, key := range keys {
 			if value, ok := driverOptions.IntOptions[key]; ok {
 				return value
 			}
 		}
 		return int64(0)
-	case generic.StringType:
+	case types.StringType:
 		for _, key := range keys {
 			if value, ok := driverOptions.StringOptions[key]; ok {
 				return value
 			}
 		}
 		return ""
-	case generic.BoolType:
+	case types.BoolType:
 		for _, key := range keys {
 			if value, ok := driverOptions.BoolOptions[key]; ok {
 				return value
 			}
 		}
 		return false
-	case generic.StringSliceType:
+	case types.StringSliceType:
 		for _, key := range keys {
 			if value, ok := driverOptions.StringSliceOptions[key]; ok {
 				return value
 			}
 		}
-		return &generic.StringSlice{}
+		return &types.StringSlice{}
 	}
 	return nil
 }
@@ -254,18 +256,18 @@ func (s *state) validate() error {
 }
 
 // Create implements driver interface
-func (d *Driver) Create(opts *generic.DriverOptions) (*generic.ClusterInfo, error) {
+func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions) (*types.ClusterInfo, error) {
 	state, err := getStateFromOpts(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	svc, err := d.getServiceClient(state)
+	svc, err := d.getServiceClient(ctx, state)
 	if err != nil {
 		return nil, err
 	}
 
-	operation, err := svc.Projects.Zones.Clusters.Create(state.ProjectID, state.Zone, d.generateClusterCreateRequest(state)).Context(context.Background()).Do()
+	operation, err := svc.Projects.Zones.Clusters.Create(state.ProjectID, state.Zone, d.generateClusterCreateRequest(state)).Context(ctx).Do()
 	if err != nil && !strings.Contains(err.Error(), "alreadyExists") {
 		return nil, err
 	}
@@ -274,15 +276,15 @@ func (d *Driver) Create(opts *generic.DriverOptions) (*generic.ClusterInfo, erro
 		logrus.Debugf("Cluster %s create is called for project %s and zone %s. Status Code %v", state.Name, state.ProjectID, state.Zone, operation.HTTPStatusCode)
 	}
 
-	if err := d.waitCluster(svc, &state); err != nil {
+	if err := d.waitCluster(ctx, svc, &state); err != nil {
 		return nil, err
 	}
 
-	info := &generic.ClusterInfo{}
+	info := &types.ClusterInfo{}
 	return info, storeState(info, state)
 }
 
-func storeState(info *generic.ClusterInfo, state state) error {
+func storeState(info *types.ClusterInfo, state state) error {
 	bytes, err := json.Marshal(state)
 	if err != nil {
 		return err
@@ -296,7 +298,7 @@ func storeState(info *generic.ClusterInfo, state state) error {
 	return nil
 }
 
-func getState(info *generic.ClusterInfo) (state, error) {
+func getState(info *types.ClusterInfo) (state, error) {
 	state := state{}
 	// ignore error
 	err := json.Unmarshal([]byte(info.Metadata["state"]), &state)
@@ -304,7 +306,7 @@ func getState(info *generic.ClusterInfo) (state, error) {
 }
 
 // Update implements driver interface
-func (d *Driver) Update(info *generic.ClusterInfo, opts *generic.DriverOptions) (*generic.ClusterInfo, error) {
+func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *types.DriverOptions) (*types.ClusterInfo, error) {
 	state, err := getState(info)
 	if err != nil {
 		return nil, err
@@ -315,13 +317,13 @@ func (d *Driver) Update(info *generic.ClusterInfo, opts *generic.DriverOptions) 
 		return nil, err
 	}
 
-	svc, err := d.getServiceClient(state)
+	svc, err := d.getServiceClient(ctx, state)
 	if err != nil {
 		return nil, err
 	}
 
 	if state.NodePoolID == "" {
-		cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(context.Background()).Do()
+		cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
@@ -331,47 +333,47 @@ func (d *Driver) Update(info *generic.ClusterInfo, opts *generic.DriverOptions) 
 	logrus.Debugf("Updating config. MasterVersion: %s, NodeVersion: %s, NodeCount: %v", state.MasterVersion, state.NodeVersion, state.NodeCount)
 
 	if newState.MasterVersion != "" {
-		logrus.Infof("Updating master to %v", newState.MasterVersion)
+		log.Infof(ctx, "Updating master to %v", newState.MasterVersion)
 		operation, err := svc.Projects.Zones.Clusters.Update(state.ProjectID, state.Zone, state.Name, &raw.UpdateClusterRequest{
 			Update: &raw.ClusterUpdate{
 				DesiredMasterVersion: newState.MasterVersion,
 			},
-		}).Context(context.Background()).Do()
+		}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
 		logrus.Debugf("Cluster %s update is called for project %s and zone %s. Status Code %v", state.Name, state.ProjectID, state.Zone, operation.HTTPStatusCode)
-		if err := d.waitCluster(svc, &state); err != nil {
+		if err := d.waitCluster(ctx, svc, &state); err != nil {
 			return nil, err
 		}
 		state.MasterVersion = newState.MasterVersion
 	}
 
 	if newState.NodeVersion != "" {
-		logrus.Infof("Updating node version to %v", newState.NodeVersion)
+		log.Infof(ctx, "Updating node version to %v", newState.NodeVersion)
 		operation, err := svc.Projects.Zones.Clusters.NodePools.Update(state.ProjectID, state.Zone, state.Name, state.NodePoolID, &raw.UpdateNodePoolRequest{
 			NodeVersion: state.NodeVersion,
-		}).Context(context.Background()).Do()
+		}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
 		logrus.Debugf("Nodepool %s update is called for project %s, zone %s and cluster %s. Status Code %v", state.NodePoolID, state.ProjectID, state.Zone, state.Name, operation.HTTPStatusCode)
-		if err := d.waitNodePool(svc, &state); err != nil {
+		if err := d.waitNodePool(ctx, svc, &state); err != nil {
 			return nil, err
 		}
 		state.NodeVersion = newState.NodeVersion
 	}
 
 	if newState.NodeCount != 0 {
-		logrus.Infof("Updating node number to %v", newState.NodeCount)
+		log.Infof(ctx, "Updating node number to %v", newState.NodeCount)
 		operation, err := svc.Projects.Zones.Clusters.NodePools.SetSize(state.ProjectID, state.Zone, state.Name, state.NodePoolID, &raw.SetNodePoolSizeRequest{
 			NodeCount: newState.NodeCount,
-		}).Context(context.Background()).Do()
+		}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
 		logrus.Debugf("Nodepool %s setSize is called for project %s, zone %s and cluster %s. Status Code %v", state.NodePoolID, state.ProjectID, state.Zone, state.Name, operation.HTTPStatusCode)
-		if err := d.waitCluster(svc, &state); err != nil {
+		if err := d.waitCluster(ctx, svc, &state); err != nil {
 			return nil, err
 		}
 	}
@@ -408,22 +410,22 @@ func (d *Driver) generateClusterCreateRequest(state state) *raw.CreateClusterReq
 	return &request
 }
 
-func (d *Driver) PostCheck(info *generic.ClusterInfo) (*generic.ClusterInfo, error) {
+func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types.ClusterInfo, error) {
 	state, err := getState(info)
 	if err != nil {
 		return nil, err
 	}
 
-	svc, err := d.getServiceClient(state)
+	svc, err := d.getServiceClient(ctx, state)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := d.waitCluster(svc, &state); err != nil {
+	if err := d.waitCluster(ctx, svc, &state); err != nil {
 		return nil, err
 	}
 
-	cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(context.Background()).Do()
+	cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
@@ -446,19 +448,19 @@ func (d *Driver) PostCheck(info *generic.ClusterInfo) (*generic.ClusterInfo, err
 }
 
 // Remove implements driver interface
-func (d *Driver) Remove(info *generic.ClusterInfo) error {
+func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 	state, err := getState(info)
 	if err != nil {
 		return err
 	}
 
-	svc, err := d.getServiceClient(state)
+	svc, err := d.getServiceClient(ctx, state)
 	if err != nil {
 		return err
 	}
 
 	logrus.Debugf("Removing cluster %v from project %v, zone %v", state.Name, state.ProjectID, state.Zone)
-	operation, err := svc.Projects.Zones.Clusters.Delete(state.ProjectID, state.Zone, state.Name).Context(context.Background()).Do()
+	operation, err := svc.Projects.Zones.Clusters.Delete(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
 	if err != nil && !strings.Contains(err.Error(), "notFound") {
 		return err
 	} else if err == nil {
@@ -469,7 +471,7 @@ func (d *Driver) Remove(info *generic.ClusterInfo) error {
 	return nil
 }
 
-func (d *Driver) getServiceClient(state state) (*raw.Service, error) {
+func (d *Driver) getServiceClient(ctx context.Context, state state) (*raw.Service, error) {
 	// The google SDK has no sane way to pass in a TokenSource give all the different types (user, service account, etc)
 	// So we actually set an environment variable and then unset it
 	d.Lock()
@@ -507,7 +509,7 @@ func (d *Driver) getServiceClient(state state) (*raw.Service, error) {
 		os.Setenv(defaultCredentialEnv, file.Name())
 	}
 
-	ts, err := google.DefaultTokenSource(context.Background(), raw.CloudPlatformScope)
+	ts, err := google.DefaultTokenSource(ctx, raw.CloudPlatformScope)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +517,7 @@ func (d *Driver) getServiceClient(state state) (*raw.Service, error) {
 	// Unlocks
 	cleanup()
 
-	client := oauth2.NewClient(context.Background(), ts)
+	client := oauth2.NewClient(ctx, ts)
 	service, err := raw.New(client)
 	if err != nil {
 		return nil, err
@@ -546,10 +548,10 @@ func generateServiceAccountTokenForGke(cluster *raw.Cluster) (string, error) {
 		return "", err
 	}
 
-	return generic.GenerateServiceAccountToken(clientset)
+	return drivers.GenerateServiceAccountToken(clientset)
 }
 
-func (d *Driver) waitCluster(svc *raw.Service, state *state) error {
+func (d *Driver) waitCluster(ctx context.Context, svc *raw.Service, state *state) error {
 	lastMsg := ""
 	for {
 		cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(context.TODO()).Do()
@@ -557,30 +559,30 @@ func (d *Driver) waitCluster(svc *raw.Service, state *state) error {
 			return err
 		}
 		if cluster.Status == runningStatus {
-			logrus.Infof("Cluster %v is running", state.Name)
+			log.Infof(ctx, "Cluster %v is running", state.Name)
 			return nil
 		}
 		if cluster.Status != lastMsg {
-			logrus.Infof("%v cluster %v......", strings.ToLower(cluster.Status), state.Name)
+			log.Infof(ctx, "%v cluster %v......", strings.ToLower(cluster.Status), state.Name)
 			lastMsg = cluster.Status
 		}
 		time.Sleep(time.Second * 5)
 	}
 }
 
-func (d *Driver) waitNodePool(svc *raw.Service, state *state) error {
+func (d *Driver) waitNodePool(ctx context.Context, svc *raw.Service, state *state) error {
 	lastMsg := ""
 	for {
-		nodepool, err := svc.Projects.Zones.Clusters.NodePools.Get(state.ProjectID, state.Zone, state.Name, state.NodePoolID).Context(context.TODO()).Do()
+		nodepool, err := svc.Projects.Zones.Clusters.NodePools.Get(state.ProjectID, state.Zone, state.Name, state.NodePoolID).Context(ctx).Do()
 		if err != nil {
 			return err
 		}
 		if nodepool.Status == runningStatus {
-			logrus.Infof("Nodepool %v is running", state.Name)
+			log.Infof(ctx, "Nodepool %v is running", state.Name)
 			return nil
 		}
 		if nodepool.Status != lastMsg {
-			logrus.Infof("%v nodepool %v......", strings.ToLower(nodepool.Status), state.NodePoolID)
+			log.Infof(ctx, "%v nodepool %v......", strings.ToLower(nodepool.Status), state.NodePoolID)
 			lastMsg = nodepool.Status
 		}
 		time.Sleep(time.Second * 5)

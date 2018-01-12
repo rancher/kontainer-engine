@@ -1,12 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 
-	generic "github.com/rancher/kontainer-engine/driver"
 	"github.com/rancher/kontainer-engine/store"
+	"github.com/rancher/kontainer-engine/types"
 	"github.com/urfave/cli"
 )
 
@@ -51,7 +52,7 @@ func updateWrapper(ctx *cli.Context) error {
 		return err
 	}
 
-	driverFlags, err := rpcClient.GetDriverUpdateOptions()
+	driverFlags, err := rpcClient.GetDriverUpdateOptions(context.Background())
 	if err != nil {
 		return err
 	}
@@ -89,7 +90,7 @@ func updateCluster(ctx *cli.Context) error {
 		return fmt.Errorf("cluster %v can't be found", name)
 	}
 	addr := ctx.GlobalString("plugin-listen-addr")
-	rpcClient, err := generic.NewClient(cluster.DriverName, addr)
+	rpcClient, err := types.NewClient(cluster.DriverName, addr)
 	if err != nil {
 		return err
 	}
@@ -100,5 +101,5 @@ func updateCluster(ctx *cli.Context) error {
 	cluster.ConfigGetter = configGetter
 	cluster.PersistStore = store.CLIPersistStore{}
 	cluster.Driver = rpcClient
-	return cluster.Update()
+	return cluster.Update(context.Background())
 }
