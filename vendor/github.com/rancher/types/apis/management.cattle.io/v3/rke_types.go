@@ -18,7 +18,9 @@ type RancherKubernetesEngineConfig struct {
 	// Authorization mode configuration used in the cluster
 	Authorization AuthzConfig `yaml:"authorization" json:"authorization,omitempty"`
 	// Enable/disable strict docker version checking
-	EnforceDockerVersion bool `yaml:"enforce_docker_version" json:"enforceDockerVersion"`
+	IgnoreDockerVersion bool `yaml:"ignore_docker_version" json:"ignoreDockerVersion"`
+	// Kubernetes version to use (overrides individual Images)
+	Version string `yaml:"kubernetesVersion"`
 }
 
 type RKEConfigNode struct {
@@ -29,7 +31,7 @@ type RKEConfigNode struct {
 	// Optional - Internal address that will be used for components communication
 	InternalAddress string `yaml:"internal_address" json:"internalAddress,omitempty"`
 	// Node role in kubernetes cluster (controlplane, worker, or etcd)
-	Role []string `yaml:"role" json:"role,omitempty"`
+	Role []string `yaml:"role" json:"role,omitempty" norman:"type=array[enum],options=etcd|worker|controlplane"`
 	// Optional - Hostname of the node
 	HostnameOverride string `yaml:"hostname_override" json:"hostnameOverride,omitempty"`
 	// SSH usesr that will be used by RKE

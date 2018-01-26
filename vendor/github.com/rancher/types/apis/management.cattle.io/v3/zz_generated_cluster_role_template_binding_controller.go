@@ -46,6 +46,7 @@ type ClusterRoleTemplateBindingController interface {
 	Informer() cache.SharedIndexInformer
 	Lister() ClusterRoleTemplateBindingLister
 	AddHandler(name string, handler ClusterRoleTemplateBindingHandlerFunc)
+	AddClusterScopedHandler(name, clusterName string, handler ClusterRoleTemplateBindingHandlerFunc)
 	Enqueue(namespace, name string)
 	Sync(ctx context.Context) error
 	Start(ctx context.Context, threadiness int) error
@@ -54,17 +55,19 @@ type ClusterRoleTemplateBindingController interface {
 type ClusterRoleTemplateBindingInterface interface {
 	ObjectClient() *clientbase.ObjectClient
 	Create(*ClusterRoleTemplateBinding) (*ClusterRoleTemplateBinding, error)
-	GetNamespace(name, namespace string, opts metav1.GetOptions) (*ClusterRoleTemplateBinding, error)
+	GetNamespaced(namespace, name string, opts metav1.GetOptions) (*ClusterRoleTemplateBinding, error)
 	Get(name string, opts metav1.GetOptions) (*ClusterRoleTemplateBinding, error)
 	Update(*ClusterRoleTemplateBinding) (*ClusterRoleTemplateBinding, error)
 	Delete(name string, options *metav1.DeleteOptions) error
-	DeleteNamespace(name, namespace string, options *metav1.DeleteOptions) error
+	DeleteNamespaced(namespace, name string, options *metav1.DeleteOptions) error
 	List(opts metav1.ListOptions) (*ClusterRoleTemplateBindingList, error)
 	Watch(opts metav1.ListOptions) (watch.Interface, error)
 	DeleteCollection(deleteOpts *metav1.DeleteOptions, listOpts metav1.ListOptions) error
 	Controller() ClusterRoleTemplateBindingController
 	AddHandler(name string, sync ClusterRoleTemplateBindingHandlerFunc)
 	AddLifecycle(name string, lifecycle ClusterRoleTemplateBindingLifecycle)
+	AddClusterScopedHandler(name, clusterName string, sync ClusterRoleTemplateBindingHandlerFunc)
+	AddClusterScopedLifecycle(name, clusterName string, lifecycle ClusterRoleTemplateBindingLifecycle)
 }
 
 type clusterRoleTemplateBindingLister struct {
@@ -117,6 +120,24 @@ func (c *clusterRoleTemplateBindingController) AddHandler(name string, handler C
 		if !exists {
 			return handler(key, nil)
 		}
+		return handler(key, obj.(*ClusterRoleTemplateBinding))
+	})
+}
+
+func (c *clusterRoleTemplateBindingController) AddClusterScopedHandler(name, cluster string, handler ClusterRoleTemplateBindingHandlerFunc) {
+	c.GenericController.AddHandler(name, func(key string) error {
+		obj, exists, err := c.Informer().GetStore().GetByKey(key)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return handler(key, nil)
+		}
+
+		if !controller.ObjectInCluster(cluster, obj) {
+			return nil
+		}
+
 		return handler(key, obj.(*ClusterRoleTemplateBinding))
 	})
 }
@@ -175,8 +196,8 @@ func (s *clusterRoleTemplateBindingClient) Get(name string, opts metav1.GetOptio
 	return obj.(*ClusterRoleTemplateBinding), err
 }
 
-func (s *clusterRoleTemplateBindingClient) GetNamespace(name, namespace string, opts metav1.GetOptions) (*ClusterRoleTemplateBinding, error) {
-	obj, err := s.objectClient.GetNamespace(name, namespace, opts)
+func (s *clusterRoleTemplateBindingClient) GetNamespaced(namespace, name string, opts metav1.GetOptions) (*ClusterRoleTemplateBinding, error) {
+	obj, err := s.objectClient.GetNamespaced(namespace, name, opts)
 	return obj.(*ClusterRoleTemplateBinding), err
 }
 
@@ -189,8 +210,8 @@ func (s *clusterRoleTemplateBindingClient) Delete(name string, options *metav1.D
 	return s.objectClient.Delete(name, options)
 }
 
-func (s *clusterRoleTemplateBindingClient) DeleteNamespace(name, namespace string, options *metav1.DeleteOptions) error {
-	return s.objectClient.DeleteNamespace(name, namespace, options)
+func (s *clusterRoleTemplateBindingClient) DeleteNamespaced(namespace, name string, options *metav1.DeleteOptions) error {
+	return s.objectClient.DeleteNamespaced(namespace, name, options)
 }
 
 func (s *clusterRoleTemplateBindingClient) List(opts metav1.ListOptions) (*ClusterRoleTemplateBindingList, error) {
@@ -217,6 +238,15 @@ func (s *clusterRoleTemplateBindingClient) AddHandler(name string, sync ClusterR
 }
 
 func (s *clusterRoleTemplateBindingClient) AddLifecycle(name string, lifecycle ClusterRoleTemplateBindingLifecycle) {
-	sync := NewClusterRoleTemplateBindingLifecycleAdapter(name, s, lifecycle)
+	sync := NewClusterRoleTemplateBindingLifecycleAdapter(name, false, s, lifecycle)
 	s.AddHandler(name, sync)
+}
+
+func (s *clusterRoleTemplateBindingClient) AddClusterScopedHandler(name, clusterName string, sync ClusterRoleTemplateBindingHandlerFunc) {
+	s.Controller().AddClusterScopedHandler(name, clusterName, sync)
+}
+
+func (s *clusterRoleTemplateBindingClient) AddClusterScopedLifecycle(name, clusterName string, lifecycle ClusterRoleTemplateBindingLifecycle) {
+	sync := NewClusterRoleTemplateBindingLifecycleAdapter(name+"_"+clusterName, true, s, lifecycle)
+	s.AddClusterScopedHandler(name, clusterName, sync)
 }

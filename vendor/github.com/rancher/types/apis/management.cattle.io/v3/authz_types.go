@@ -56,15 +56,15 @@ type GlobalRole struct {
 	DisplayName string              `json:"displayName,omitempty" norman:"required"`
 	Description string              `json:"description"`
 	Rules       []rbacv1.PolicyRule `json:"rules,omitempty"`
-	Builtin     bool                `json:"builtin"`
+	Builtin     bool                `json:"builtin" norman:"nocreate,noupdate"`
 }
 
 type GlobalRoleBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Subject        rbacv1.Subject `json:"subject,omitempty"`
-	GlobalRoleName string         `json:"globalRoleName,omitempty" norman:"type=reference[globalRole]"`
+	UserName       string `json:"userName,omitempty" norman:"required,type=reference[user]"`
+	GlobalRoleName string `json:"globalRoleName,omitempty" norman:"required,type=reference[globalRole]"`
 }
 
 type RoleTemplate struct {
@@ -74,9 +74,10 @@ type RoleTemplate struct {
 	DisplayName       string              `json:"displayName,omitempty" norman:"required"`
 	Description       string              `json:"description"`
 	Rules             []rbacv1.PolicyRule `json:"rules,omitempty"`
-	Builtin           bool                `json:"builtin"`
+	Builtin           bool                `json:"builtin" norman:"nocreate,noupdate"`
 	External          bool                `json:"external"`
 	Hidden            bool                `json:"hidden"`
+	Context           string              `json:"context" norman:"type=string,options=project|cluster"`
 	RoleTemplateNames []string            `json:"roleTemplateNames,omitempty" norman:"type=array[reference[roleTemplate]]"`
 }
 
@@ -93,10 +94,9 @@ type ProjectRoleTemplateBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Subject rbacv1.Subject `json:"subject,omitempty"`
-
-	ProjectName      string `json:"projectName,omitempty" norman:"type=reference[project]"`
-	RoleTemplateName string `json:"roleTemplateName,omitempty" norman:"type=reference[roleTemplate]"`
+	UserName         string `json:"userName,omitempty" norman:"required,type=reference[user]"`
+	ProjectName      string `json:"projectName,omitempty" norman:"required,type=reference[project]"`
+	RoleTemplateName string `json:"roleTemplateName,omitempty" norman:"required,type=reference[roleTemplate]"`
 }
 
 type ClusterRoleTemplateBinding struct {
@@ -104,8 +104,7 @@ type ClusterRoleTemplateBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Subject rbacv1.Subject `json:"subject,omitempty"`
-
-	ClusterName      string `json:"clusterName,omitempty" norman:"type=reference[cluster]"`
-	RoleTemplateName string `json:"roleTemplateName,omitempty" norman:"type=reference[roleTemplate]"`
+	UserName         string `json:"userName,omitempty" norman:"required,type=reference[user]"`
+	ClusterName      string `json:"clusterName,omitempty" norman:"required,type=reference[cluster]"`
+	RoleTemplateName string `json:"roleTemplateName,omitempty" norman:"required,type=reference[roleTemplate]"`
 }

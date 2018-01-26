@@ -17,6 +17,7 @@ const (
 	ClusterConditionProvisioned condition.Cond = "Provisioned"
 	ClusterConditionUpdated     condition.Cond = "Updated"
 	ClusterConditionRemoved     condition.Cond = "Removed"
+	ClusterConditionRegistered  condition.Cond = "Registered"
 	// ClusterConditionNoDiskPressure true when all cluster nodes have sufficient disk
 	ClusterConditionNoDiskPressure condition.Cond = "NoDiskPressure"
 	// ClusterConditionNoMemoryPressure true when all cluster nodes have sufficient memory
@@ -46,11 +47,22 @@ type ClusterSpec struct {
 	DisplayName                          string                         `json:"displayName"`
 	Description                          string                         `json:"description"`
 	Internal                             bool                           `json:"internal" norman:"nocreate,noupdate"`
+	ImportedConfig                       *ImportedConfig                `json:"importedConfig" norman:"noupdate"`
+	EmbeddedConfig                       *K8sServerConfig               `json:"embeddedConfig" norman:"noupdate"`
 	GoogleKubernetesEngineConfig         *GoogleKubernetesEngineConfig  `json:"googleKubernetesEngineConfig,omitempty"`
 	AzureKubernetesServiceConfig         *AzureKubernetesServiceConfig  `json:"azureKubernetesServiceConfig,omitempty"`
 	RancherKubernetesEngineConfig        *RancherKubernetesEngineConfig `json:"rancherKubernetesEngineConfig,omitempty"`
 	DefaultPodSecurityPolicyTemplateName string                         `json:"defaultPodSecurityPolicyTemplateName,omitempty" norman:"type=reference[podSecurityPolicyTemplate]"`
 	DefaultClusterRoleForProjectMembers  string                         `json:"defaultClusterRoleForProjectMembers,omitempty" norman:"type=reference[roleTemplate]"`
+}
+
+type ImportedConfig struct {
+	KubeConfig string `json:"kubeConfig"`
+}
+
+type K8sServerConfig struct {
+	AdmissionControllers []string `json:"admissionControllers,omitempty"`
+	ServiceNetCIDR       string   `json:"serviceNetCidr,omitempty"`
 }
 
 type ClusterStatus struct {
@@ -94,15 +106,15 @@ type ClusterCondition struct {
 
 type GoogleKubernetesEngineConfig struct {
 	// ProjectID is the ID of your project to use when creating a cluster
-	ProjectID string `json:"projectId,omitempty"`
+	ProjectID string `json:"projectId,omitempty" norman:"required"`
 	// The zone to launch the cluster
-	Zone string `json:"zone,omitempty"`
+	Zone string `json:"zone,omitempty" norman:"required"`
 	// The IP address range of the container pods
 	ClusterIpv4Cidr string `json:"clusterIpv4Cidr,omitempty"`
 	// An optional description of this cluster
 	Description string `json:"description,omitempty"`
 	// The number of nodes in this cluster
-	NodeCount int64 `json:"nodeCount,omitempty"`
+	NodeCount int64 `json:"nodeCount,omitempty" norman:"required"`
 	// Size of the disk attached to each node
 	DiskSizeGb int64 `json:"diskSizeGb,omitempty"`
 	// The name of a Google Compute Engine
@@ -115,7 +127,7 @@ type GoogleKubernetesEngineConfig struct {
 	// to each node.
 	Labels map[string]string `json:"labels,omitempty"`
 	// The content of the credential file(key.json)
-	Credential string `json:"credential,omitempty"`
+	Credential string `json:"credential,omitempty" norman:"required"`
 	// Enable alpha feature
 	EnableAlphaFeature bool `json:"enableAlphaFeature,omitempty"`
 	// Configuration for the HTTP (L7) load balancing controller addon
