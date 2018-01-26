@@ -39,7 +39,7 @@
         },
         "response": {
           "status": 200,
-          "body": "{\"properties\": {\"provisioningState\":\"Succeeded\"}}",
+          "body": "{\"properties\": {\"provisioningState\":\"Succeeded\", \"kubernetesVersion\":\"1.8.2\", \"agentPoolProfiles\": [{\"count\":3}]}}",
           "encodedBody": false,
           "headers": {
             "Content-Type": [

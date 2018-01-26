@@ -1,11 +1,11 @@
 package plugin
 
 import (
+	"github.com/rancher/kontainer-engine/drivers/aks"
 	"github.com/rancher/kontainer-engine/drivers/gke"
 	"github.com/rancher/kontainer-engine/drivers/rke"
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/sirupsen/logrus"
-	"github.com/rancher/kontainer-engine/driver/aks"
 )
 
 var (

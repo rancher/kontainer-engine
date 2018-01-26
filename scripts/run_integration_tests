@@ -25,5 +25,11 @@ go build
 # collect test file paths
 TESTS=$(find integration-tests/ -name *.bats)
 
+# start mock services
+hoverctl start webserver > /dev/null 2>&1
+hoverctl import ./integration-tests/aks/azure-api.json > /dev/null 2>&1
+
 # run tests
-bats $TESTS
+bats $TESTS || hoverctl stop > /dev/null 2>&1
+
+hoverctl stop > /dev/null 2>&1

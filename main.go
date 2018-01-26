@@ -58,6 +58,10 @@ func main() {
 		cmd.LsCommand(),
 		cmd.RmCommand(),
 		cmd.EnvCommand(),
+		cmd.GetVersionCommand(),
+		cmd.SetVersionCommand(),
+		cmd.GetClusterSizeCommand(),
+		cmd.SetClusterSizeCommand(),
 	}
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{
