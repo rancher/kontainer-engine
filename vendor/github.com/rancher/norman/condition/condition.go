@@ -20,6 +20,14 @@ func (c Cond) IsTrue(obj runtime.Object) bool {
 	return getStatus(obj, string(c)) == "True"
 }
 
+func (c Cond) LastUpdated(obj runtime.Object, ts string) {
+	setTS(obj, string(c), ts)
+}
+
+func (c Cond) GetLastUpdated(obj runtime.Object) string {
+	return getTS(obj, string(c))
+}
+
 func (c Cond) False(obj runtime.Object) {
 	setStatus(obj, string(c), "False")
 }
@@ -28,8 +36,20 @@ func (c Cond) IsFalse(obj runtime.Object) bool {
 	return getStatus(obj, string(c)) == "False"
 }
 
+func (c Cond) GetStatus(obj runtime.Object) string {
+	return getStatus(obj, string(c))
+}
+
 func (c Cond) Unknown(obj runtime.Object) {
 	setStatus(obj, string(c), "Unknown")
+}
+
+func (c Cond) CreateUnknownIfNotExists(obj runtime.Object) {
+	condSlice := getValue(obj, "Status", "Conditions")
+	cond := findCond(condSlice, string(c))
+	if cond == nil {
+		c.Unknown(obj)
+	}
 }
 
 func (c Cond) IsUnknown(obj runtime.Object) bool {
@@ -41,14 +61,23 @@ func (c Cond) Reason(obj runtime.Object, reason string) {
 	getFieldValue(cond, "Reason").SetString(reason)
 }
 
+func (c Cond) SetMessageIfBlank(obj runtime.Object, message string) {
+	if c.GetMessage(obj) == "" {
+		c.Message(obj, message)
+	}
+}
+
 func (c Cond) Message(obj runtime.Object, message string) {
 	cond := findOrCreateCond(obj, string(c))
-	getFieldValue(cond, "Message").SetString(message)
+	setValue(cond, "Message", message)
 }
 
 func (c Cond) GetMessage(obj runtime.Object) string {
-	cond := findOrCreateCond(obj, string(c))
-	return getFieldValue(cond, "Message").String()
+	cond := findOrNotCreateCond(obj, string(c))
+	if cond == nil {
+		return ""
+	}
+	return getFieldValue(*cond, "Message").String()
 }
 
 func (c Cond) ReasonAndMessageFromError(obj runtime.Object, err error) {
@@ -56,18 +85,20 @@ func (c Cond) ReasonAndMessageFromError(obj runtime.Object, err error) {
 		return
 	}
 	cond := findOrCreateCond(obj, string(c))
-	getFieldValue(cond, "Message").SetString(err.Error())
+	setValue(cond, "Message", err.Error())
 	if ce, ok := err.(*conditionError); ok {
-		getFieldValue(cond, "Reason").SetString(ce.reason)
+		setValue(cond, "Reason", ce.reason)
 	} else {
-		getFieldValue(cond, "Reason").SetString("Error")
+		setValue(cond, "Reason", "Error")
 	}
-	touchTS(cond)
 }
 
 func (c Cond) GetReason(obj runtime.Object) string {
-	cond := findOrCreateCond(obj, string(c))
-	return getFieldValue(cond, "Reason").String()
+	cond := findOrNotCreateCond(obj, string(c))
+	if cond == nil {
+		return ""
+	}
+	return getFieldValue(*cond, "Reason").String()
 }
 
 func (c Cond) Once(obj runtime.Object, f func() (runtime.Object, error)) (runtime.Object, error) {
@@ -77,23 +108,7 @@ func (c Cond) Once(obj runtime.Object, f func() (runtime.Object, error)) (runtim
 		}
 	}
 
-	if c.IsTrue(obj) {
-		return obj, nil
-	}
-
-	c.Unknown(obj)
-	newObj, err := f()
-	if newObj != nil && !reflect.ValueOf(newObj).IsNil() {
-		obj = newObj
-	}
-
-	if err != nil {
-		c.False(obj)
-		c.ReasonAndMessageFromError(obj, err)
-		return obj, err
-	}
-	c.True(obj)
-	return obj, nil
+	return c.DoUntilTrue(obj, f)
 }
 
 func (c Cond) DoUntilTrue(obj runtime.Object, f func() (runtime.Object, error)) (runtime.Object, error) {
@@ -101,20 +116,7 @@ func (c Cond) DoUntilTrue(obj runtime.Object, f func() (runtime.Object, error)) 
 		return obj, nil
 	}
 
-	c.Unknown(obj)
-	newObj, err := f()
-	if newObj != nil && !reflect.ValueOf(newObj).IsNil() {
-		obj = newObj
-	}
-
-	if err != nil {
-		c.ReasonAndMessageFromError(obj, err)
-		return obj, err
-	}
-	c.True(obj)
-	c.Reason(obj, "")
-	c.Message(obj, "")
-	return obj, nil
+	return c.do(obj, f)
 }
 
 func (c Cond) Do(obj runtime.Object, f func() (runtime.Object, error)) (runtime.Object, error) {
@@ -122,14 +124,41 @@ func (c Cond) Do(obj runtime.Object, f func() (runtime.Object, error)) (runtime.
 }
 
 func (c Cond) do(obj runtime.Object, f func() (runtime.Object, error)) (runtime.Object, error) {
-	c.Unknown(obj)
+	status := c.GetStatus(obj)
+	ts := c.GetLastUpdated(obj)
+	reason := c.GetReason(obj)
+	message := c.GetMessage(obj)
+
+	obj, err := c.doInternal(obj, f)
+
+	// This is to prevent non stop flapping of states and update
+	if status == c.GetStatus(obj) &&
+		reason == c.GetReason(obj) &&
+		message == c.GetMessage(obj) {
+		c.LastUpdated(obj, ts)
+	}
+
+	return obj, err
+}
+
+func (c Cond) doInternal(obj runtime.Object, f func() (runtime.Object, error)) (runtime.Object, error) {
+	if !c.IsFalse(obj) {
+		c.Unknown(obj)
+	}
+
 	newObj, err := f()
 	if newObj != nil && !reflect.ValueOf(newObj).IsNil() {
 		obj = newObj
 	}
 
 	if err != nil {
-		c.False(obj)
+		if _, ok := err.(*controller.ForgetError); ok {
+			if c.IsFalse(obj) {
+				c.Unknown(obj)
+			}
+		} else {
+			c.False(obj)
+		}
 		c.ReasonAndMessageFromError(obj, err)
 		return obj, err
 	}
@@ -145,14 +174,42 @@ func touchTS(value reflect.Value) {
 }
 
 func getStatus(obj interface{}, condName string) string {
+	cond := findOrNotCreateCond(obj, condName)
+	if cond == nil {
+		return ""
+	}
+	return getFieldValue(*cond, "Status").String()
+}
+
+func setTS(obj interface{}, condName, ts string) {
 	cond := findOrCreateCond(obj, condName)
-	return getFieldValue(cond, "Status").String()
+	getFieldValue(cond, "LastUpdateTime").SetString(ts)
+}
+
+func getTS(obj interface{}, condName string) string {
+	cond := findOrNotCreateCond(obj, condName)
+	if cond == nil {
+		return ""
+	}
+	return getFieldValue(*cond, "LastUpdateTime").String()
 }
 
 func setStatus(obj interface{}, condName, status string) {
 	cond := findOrCreateCond(obj, condName)
-	getFieldValue(cond, "Status").SetString(status)
-	touchTS(cond)
+	setValue(cond, "Status", status)
+}
+
+func setValue(cond reflect.Value, fieldName, newValue string) {
+	value := getFieldValue(cond, fieldName)
+	if value.String() != newValue {
+		value.SetString(newValue)
+		touchTS(cond)
+	}
+}
+
+func findOrNotCreateCond(obj interface{}, condName string) *reflect.Value {
+	condSlice := getValue(obj, "Status", "Conditions")
+	return findCond(condSlice, condName)
 }
 
 func findOrCreateCond(obj interface{}, condName string) reflect.Value {
@@ -182,6 +239,9 @@ func findCond(val reflect.Value, name string) *reflect.Value {
 }
 
 func getValue(obj interface{}, name ...string) reflect.Value {
+	if obj == nil {
+		return reflect.Value{}
+	}
 	v := reflect.ValueOf(obj)
 	t := v.Type()
 	if t.Kind() == reflect.Ptr {

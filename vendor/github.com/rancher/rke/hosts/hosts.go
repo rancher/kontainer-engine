@@ -16,15 +16,15 @@ import (
 
 type Host struct {
 	v3.RKEConfigNode
-	DClient              *client.Client
-	LocalConnPort        int
-	IsControl            bool
-	IsWorker             bool
-	IsEtcd               bool
-	EnforceDockerVersion bool
-	ToAddEtcdMember      bool
-	ExistingEtcdCluster  bool
-	SavedKeyPhrase       string
+	DClient             *client.Client
+	LocalConnPort       int
+	IsControl           bool
+	IsWorker            bool
+	IsEtcd              bool
+	IgnoreDockerVersion bool
+	ToAddEtcdMember     bool
+	ExistingEtcdCluster bool
+	SavedKeyPhrase      string
 }
 
 const (
@@ -134,6 +134,15 @@ func DeleteNode(ctx context.Context, toDeleteHost *Host, kubeClient *kubernetes.
 		return err
 	}
 	log.Infof(ctx, "[hosts] Successfully deleted host [%s] from the cluster", toDeleteHost.Address)
+	return nil
+}
+
+func RemoveTaintFromHost(ctx context.Context, host *Host, taintKey string, kubeClient *kubernetes.Clientset) error {
+	log.Infof(ctx, "[hosts] removing taint [%s] from host [%s]", taintKey, host.Address)
+	if err := k8s.RemoveTaintFromNodeByKey(kubeClient, host.HostnameOverride, taintKey); err != nil {
+		return err
+	}
+	log.Infof(ctx, "[hosts] Successfully deleted taint [%s] from host [%s]", taintKey, host.Address)
 	return nil
 }
 

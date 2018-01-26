@@ -19,12 +19,12 @@ const (
 
 	DefaultInfraContainerImage  = "gcr.io/google_containers/pause-amd64:3.0"
 	DefaultAplineImage          = "alpine:latest"
-	DefaultNginxProxyImage      = "rancher/rke-nginx-proxy:v0.1.0"
+	DefaultNginxProxyImage      = "rancher/rke-nginx-proxy:v0.1.1"
 	DefaultCertDownloaderImage  = "rancher/rke-cert-deployer:v0.1.1"
 	DefaultServiceSidekickImage = "rancher/rke-service-sidekick:v0.1.0"
 
 	DefaultEtcdImage = "quay.io/coreos/etcd:latest"
-	DefaultK8sImage  = "rancher/k8s:v1.8.3-rancher2"
+	DefaultK8sImage  = "rancher/k8s:v1.8.5-rancher4"
 
 	DefaultFlannelImage    = "quay.io/coreos/flannel:v0.9.1"
 	DefaultFlannelCNIImage = "quay.io/coreos/flannel-cni:v0.2.0"
