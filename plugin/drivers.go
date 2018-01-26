@@ -5,6 +5,7 @@ import (
 	"github.com/rancher/kontainer-engine/drivers/rke"
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/sirupsen/logrus"
+	"github.com/rancher/kontainer-engine/driver/aks"
 )
 
 var (
@@ -12,6 +13,7 @@ var (
 	BuiltInDrivers = map[string]bool{
 		"gke": true,
 		"rke": true,
+		"aks": true,
 	}
 )
 
@@ -23,6 +25,8 @@ func Run(driverName string, addrChan chan string) (types.Driver, error) {
 		driver = gke.NewDriver()
 	case "rke":
 		driver = rke.NewDriver()
+	case "aks":
+		driver = aks.NewDriver()
 	default:
 		addrChan <- ""
 	}
