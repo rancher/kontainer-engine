@@ -3,22 +3,25 @@ package aks
 import (
 	"strings"
 
-	generic "github.com/rancher/kontainer-engine/driver"
-	"github.com/Azure/go-autorest/autorest/azure"
-	"github.com/Azure/go-autorest/autorest/utils"
-	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2017-08-31/containerservice"
 	"context"
-	"github.com/Azure/go-autorest/autorest/to"
-	"io/ioutil"
-	"fmt"
-	"time"
-	"github.com/sirupsen/logrus"
 	"encoding/base64"
-	"gopkg.in/yaml.v2"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"time"
+
+	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2017-08-31/containerservice"
+	"github.com/Azure/go-autorest/autorest/azure"
+	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/Azure/go-autorest/autorest/utils"
+	"github.com/rancher/kontainer-engine/types"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 )
 
-type Driver struct{}
+type Driver struct {
+	driverCapabilities types.Capabilities
+}
 
 type state struct {
 	// Subscription credentials which uniquely identify Microsoft Azure subscription. The subscription ID forms part of the URI for every service call.
@@ -34,7 +37,7 @@ type state struct {
 	// Number of agents (VMs) to host docker containers. Allowed values must be in the range of 1 to 100 (inclusive). The default value is 1.
 	Count int64
 	// DNS prefix to be used to create the FQDN for the agent pool.
-	AgentDnsPrefix string
+	AgentDNSPrefix string
 	// FDQN for the agent pool
 	AgentPoolName string
 	// OS Disk Size in GB to be used to specify the disk size for every machine in this master/agent pool. If you specify 0, it will apply the default osDisk size according to the vmSize specified.
@@ -50,93 +53,105 @@ type state struct {
 	// Kubernetes admin username
 	AdminUsername string
 	// Different Base URL if required, usually needed for testing purposes
-	BaseUrl string
+	BaseURL string
 	// Azure Client ID to use
 	ClientID string
 	// Secret associated with the Client ID
 	ClientSecret string
 
 	// Cluster info
-	ClusterInfo generic.ClusterInfo
+	ClusterInfo types.ClusterInfo
 }
 
 func NewDriver() *Driver {
-	return &Driver{}
+	driver := &Driver{
+		driverCapabilities: types.Capabilities{
+			Capabilities: make(map[int64]bool),
+		},
+	}
+
+	driver.driverCapabilities.AddCapability(types.GetVersionCapability)
+	driver.driverCapabilities.AddCapability(types.SetVersionCapability)
+	driver.driverCapabilities.AddCapability(types.GetClusterSizeCapability)
+	driver.driverCapabilities.AddCapability(types.SetClusterSizeCapability)
+
+	return driver
 }
 
 // GetDriverCreateOptions implements driver interface
-func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
-	driverFlag := generic.DriverFlags{
-		Options: make(map[string]*generic.Flag),
+func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags, error) {
+	driverFlag := types.DriverFlags{
+		Options: make(map[string]*types.Flag),
 	}
-	driverFlag.Options["subscription-id"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["subscription-id"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Subscription credentials which uniquely identify Microsoft Azure subscription",
 	}
-	driverFlag.Options["resource-group"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["resource-group"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "The name of the resource group",
 	}
-	driverFlag.Options["location"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["location"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Resource location",
 		Value: "eastus",
 	}
-	driverFlag.Options["tags"] = &generic.Flag{
-		Type:  generic.StringSliceType,
+	driverFlag.Options["tags"] = &types.Flag{
+		Type:  types.StringSliceType,
 		Usage: "Resource tags. For example, foo=bar",
 	}
-	driverFlag.Options["node-count"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["node-count"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Number of agents (VMs) to host docker containers. Allowed values must be in the range of 1 to 100 (inclusive)",
 		Value: "1",
 	}
-	driverFlag.Options["node-dns-prefix"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["node-dns-prefix"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "DNS prefix to be used to create the FQDN for the agent pool",
 	}
-	driverFlag.Options["node-pool-name"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["node-pool-name"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Name for the agent pool",
 		Value: "agentpool0",
 	}
-	driverFlag.Options["os-disk-size"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["os-disk-size"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "OS Disk Size in GB to be used to specify the disk size for every machine in this master/agent pool. If you specify 0, it will apply the default osDisk size according to the vmSize specified.",
 	}
-	driverFlag.Options["node-vm-size"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["node-vm-size"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Size of agent VMs",
 		Value: "Standard_D1_v2",
 	}
-	driverFlag.Options["kubernetes-version"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["kubernetes-version"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Version of Kubernetes specified when creating the managed cluster",
+		Value: "1.7.9",
 	}
-	driverFlag.Options["public-key"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["public-key"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "SSH public key to use for the cluster",
 	}
-	driverFlag.Options["master-dns-prefix"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["master-dns-prefix"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "DNS prefix to use for the master",
 	}
-	driverFlag.Options["admin-username"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["admin-username"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Admin username to use for the cluster",
 		Value: "azureuser",
 	}
-	driverFlag.Options["base-url"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["base-url"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Different base API url to use",
 		Value: containerservice.DefaultBaseURI,
 	}
-	driverFlag.Options["client-id"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["client-id"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Azure client id to use",
 	}
-	driverFlag.Options["client-secret"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["client-secret"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Client secret associated with the client-id",
 	}
 
@@ -144,42 +159,42 @@ func (d *Driver) GetDriverCreateOptions() (*generic.DriverFlags, error) {
 }
 
 // GetDriverUpdateOptions implements driver interface
-func (d *Driver) GetDriverUpdateOptions() (*generic.DriverFlags, error) {
-	driverFlag := generic.DriverFlags{
-		Options: make(map[string]*generic.Flag),
+func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags, error) {
+	driverFlag := types.DriverFlags{
+		Options: make(map[string]*types.Flag),
 	}
-	driverFlag.Options["node-count"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["node-count"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Number of agents (VMs) to host docker containers. Allowed values must be in the range of 1 to 100 (inclusive)",
 		Value: "1",
 	}
-	driverFlag.Options["kubernetes-version"] = &generic.Flag{
-		Type:  generic.StringType,
+	driverFlag.Options["kubernetes-version"] = &types.Flag{
+		Type:  types.StringType,
 		Usage: "Version of Kubernetes specified when creating the managed cluster",
 	}
 	return &driverFlag, nil
 }
 
 // SetDriverOptions implements driver interface
-func getStateFromOptions(driverOptions *generic.DriverOptions) (state, error) {
+func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
 	state := state{}
-	state.Name = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "name").(string)
-	state.AgentDnsPrefix = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "node-dns-prefix").(string)
-	state.AgentVMSize = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "node-vm-size").(string)
-	state.Count = generic.GetValueFromDriverOptions(driverOptions, generic.IntType, "node-count").(int64)
-	state.KubernetesVersion = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "kubernetes-version").(string)
-	state.Location = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "location").(string)
-	state.OsDiskSizeGB = generic.GetValueFromDriverOptions(driverOptions, generic.IntType, "os-disk-size").(int64)
-	state.SubscriptionID = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "subscription-id").(string)
-	state.ResourceGroup = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "resource-group").(string)
-	state.AgentPoolName = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "node-pool-name").(string)
-	state.MasterDNSPrefix = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "master-dns-prefix").(string)
-	state.SSHPublicKeyPath = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "public-key").(string)
-	state.AdminUsername = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "admin-username").(string)
-	state.BaseUrl = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "base-url").(string)
-	state.ClientID = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "client-id").(string)
-	state.ClientSecret = generic.GetValueFromDriverOptions(driverOptions, generic.StringType, "client-secret").(string)
-	tagValues := generic.GetValueFromDriverOptions(driverOptions, generic.StringSliceType).(*generic.StringSlice)
+	state.Name = getValueFromDriverOptions(driverOptions, types.StringType, "name").(string)
+	state.AgentDNSPrefix = getValueFromDriverOptions(driverOptions, types.StringType, "node-dns-prefix").(string)
+	state.AgentVMSize = getValueFromDriverOptions(driverOptions, types.StringType, "node-vm-size").(string)
+	state.Count = getValueFromDriverOptions(driverOptions, types.IntType, "node-count").(int64)
+	state.KubernetesVersion = getValueFromDriverOptions(driverOptions, types.StringType, "kubernetes-version").(string)
+	state.Location = getValueFromDriverOptions(driverOptions, types.StringType, "location").(string)
+	state.OsDiskSizeGB = getValueFromDriverOptions(driverOptions, types.IntType, "os-disk-size").(int64)
+	state.SubscriptionID = getValueFromDriverOptions(driverOptions, types.StringType, "subscription-id").(string)
+	state.ResourceGroup = getValueFromDriverOptions(driverOptions, types.StringType, "resource-group").(string)
+	state.AgentPoolName = getValueFromDriverOptions(driverOptions, types.StringType, "node-pool-name").(string)
+	state.MasterDNSPrefix = getValueFromDriverOptions(driverOptions, types.StringType, "master-dns-prefix").(string)
+	state.SSHPublicKeyPath = getValueFromDriverOptions(driverOptions, types.StringType, "public-key").(string)
+	state.AdminUsername = getValueFromDriverOptions(driverOptions, types.StringType, "admin-username").(string)
+	state.BaseURL = getValueFromDriverOptions(driverOptions, types.StringType, "base-url").(string)
+	state.ClientID = getValueFromDriverOptions(driverOptions, types.StringType, "client-id").(string)
+	state.ClientSecret = getValueFromDriverOptions(driverOptions, types.StringType, "client-secret").(string)
+	tagValues := getValueFromDriverOptions(driverOptions, types.StringSliceType).(*types.StringSlice)
 	for _, part := range tagValues.Value {
 		kv := strings.Split(part, "=")
 		if len(kv) == 2 {
@@ -187,6 +202,40 @@ func getStateFromOptions(driverOptions *generic.DriverOptions) (state, error) {
 		}
 	}
 	return state, state.validate()
+}
+
+func getValueFromDriverOptions(driverOptions *types.DriverOptions, optionType string, keys ...string) interface{} {
+	switch optionType {
+	case types.IntType:
+		for _, key := range keys {
+			if value, ok := driverOptions.IntOptions[key]; ok {
+				return value
+			}
+		}
+		return int64(0)
+	case types.StringType:
+		for _, key := range keys {
+			if value, ok := driverOptions.StringOptions[key]; ok {
+				return value
+			}
+		}
+		return ""
+	case types.BoolType:
+		for _, key := range keys {
+			if value, ok := driverOptions.BoolOptions[key]; ok {
+				return value
+			}
+		}
+		return false
+	case types.StringSliceType:
+		for _, key := range keys {
+			if value, ok := driverOptions.StringSliceOptions[key]; ok {
+				return value
+			}
+		}
+		return &types.StringSlice{}
+	}
+	return nil
 }
 
 func (state *state) validate() error {
@@ -242,7 +291,7 @@ func newAzureClient(state state) (*containerservice.ManagedClustersClient, error
 		return nil, err
 	}
 
-	client := containerservice.NewManagedClustersClientWithBaseURI(state.BaseUrl, state.SubscriptionID)
+	client := containerservice.NewManagedClustersClientWithBaseURI(state.BaseURL, state.SubscriptionID)
 	client.Authorizer = authorizer
 
 	return &client, nil
@@ -255,7 +304,7 @@ const creatingStatus = "Creating"
 const pollInterval = 30
 
 // Create implements driver interface
-func (d *Driver) Create(options *generic.DriverOptions) (*generic.ClusterInfo, error) {
+func (d *Driver) Create(ctx context.Context, options *types.DriverOptions) (*types.ClusterInfo, error) {
 	driverState, err := getStateFromOptions(options)
 
 	if err != nil {
@@ -273,7 +322,7 @@ func (d *Driver) Create(options *generic.DriverOptions) (*generic.ClusterInfo, e
 		masterDNSPrefix = driverState.getDefaultDNSPrefix() + "-master"
 	}
 
-	agentDNSPrefix := driverState.AgentDnsPrefix
+	agentDNSPrefix := driverState.AgentDNSPrefix
 	if agentDNSPrefix == "" {
 		agentDNSPrefix = driverState.getDefaultDNSPrefix() + "-agent"
 	}
@@ -288,12 +337,12 @@ func (d *Driver) Create(options *generic.DriverOptions) (*generic.ClusterInfo, e
 
 	tags := make(map[string]*string)
 
-	ctx := context.Background()
 	_, err = client.CreateOrUpdate(ctx, driverState.ResourceGroup, driverState.Name, containerservice.ManagedCluster{
 		Location: to.StringPtr(driverState.Location),
 		Tags:     &tags,
 		ManagedClusterProperties: &containerservice.ManagedClusterProperties{
-			DNSPrefix: to.StringPtr(masterDNSPrefix),
+			KubernetesVersion: to.StringPtr(driverState.KubernetesVersion),
+			DNSPrefix:         to.StringPtr(masterDNSPrefix),
 			LinuxProfile: &containerservice.LinuxProfile{
 				AdminUsername: to.StringPtr(driverState.AdminUsername),
 				SSH: &containerservice.SSHConfiguration{
@@ -339,7 +388,7 @@ func (d *Driver) Create(options *generic.DriverOptions) (*generic.ClusterInfo, e
 
 		if state == succeededStatus {
 			logrus.Info("Cluster provisioned successfully")
-			info := &generic.ClusterInfo{}
+			info := &types.ClusterInfo{}
 			err := storeState(info, driverState)
 
 			fmt.Println("********")
@@ -359,7 +408,7 @@ func (d *Driver) Create(options *generic.DriverOptions) (*generic.ClusterInfo, e
 	}
 }
 
-func storeState(info *generic.ClusterInfo, state state) error {
+func storeState(info *types.ClusterInfo, state state) error {
 	data, err := json.Marshal(state)
 
 	if err != nil {
@@ -377,7 +426,7 @@ func storeState(info *generic.ClusterInfo, state state) error {
 	return nil
 }
 
-func getState(info *generic.ClusterInfo) (state, error) {
+func getState(info *types.ClusterInfo) (state, error) {
 	state := state{}
 
 	err := json.Unmarshal([]byte(info.Metadata["state"]), &state)
@@ -390,11 +439,118 @@ func getState(info *generic.ClusterInfo) (state, error) {
 }
 
 // Update implements driver interface
-func (d *Driver) Update(info *generic.ClusterInfo, options *generic.DriverOptions) (*generic.ClusterInfo, error) {
+func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, options *types.DriverOptions) (*types.ClusterInfo, error) {
 	// todo: implement
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (d *Driver) GetVersion(ctx context.Context, info *types.ClusterInfo) (*types.KubernetesVersion, error) {
+	state, err := getState(info)
+
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := newAzureClient(state)
+
+	if err != nil {
+		return nil, err
+	}
+
+	cluster, err := client.Get(context.Background(), state.ResourceGroup, state.Name)
+
+	if err != nil {
+		return nil, fmt.Errorf("error getting cluster info: %v", err)
+	}
+
+	return &types.KubernetesVersion{Version: *cluster.KubernetesVersion}, nil
+}
+
+func (d *Driver) SetVersion(ctx context.Context, info *types.ClusterInfo, version *types.KubernetesVersion) error {
+	state, err := getState(info)
+
+	if err != nil {
+		return err
+	}
+
+	client, err := newAzureClient(state)
+
+	if err != nil {
+		return err
+	}
+
+	cluster, err := client.Get(context.Background(), state.ResourceGroup, state.Name)
+
+	if err != nil {
+		return fmt.Errorf("error getting cluster info: %v", err)
+	}
+
+	cluster.KubernetesVersion = to.StringPtr(version.Version)
+
+	_, err = client.CreateOrUpdate(context.Background(), state.ResourceGroup, state.Name, cluster)
+
+	if err != nil {
+		return fmt.Errorf("error updating kubernetes version: %v", err)
+	}
+
+	return nil
+}
+
+func (d *Driver) GetClusterSize(ctx context.Context, info *types.ClusterInfo) (*types.NodeCount, error) {
+	state, err := getState(info)
+
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := newAzureClient(state)
+
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := client.Get(context.Background(), state.ResourceGroup, state.Name)
+
+	if err != nil {
+		return nil, fmt.Errorf("error getting cluster info: %v", err)
+	}
+
+	return &types.NodeCount{Count: int64(*(*result.AgentPoolProfiles)[0].Count)}, nil
+}
+
+func (d *Driver) SetClusterSize(ctx context.Context, info *types.ClusterInfo, size *types.NodeCount) error {
+	state, err := getState(info)
+
+	if err != nil {
+		return err
+	}
+
+	client, err := newAzureClient(state)
+
+	if err != nil {
+		return err
+	}
+
+	cluster, err := client.Get(context.Background(), state.ResourceGroup, state.Name)
+
+	if err != nil {
+		return fmt.Errorf("error getting cluster info: %v", err)
+	}
+
+	// mutate struct
+	(*cluster.ManagedClusterProperties.AgentPoolProfiles)[0].Count = to.Int32Ptr(int32(size.Count))
+
+	// PUT same data
+	_, err = client.CreateOrUpdate(context.Background(), state.ResourceGroup, state.Name, cluster)
+
+	if err != nil {
+		return fmt.Errorf("error updating cluster size: %v", err)
+	}
+
+	return nil
+}
+
+// KubeConfig struct for marshalling config files
 // shouldn't have to reimplement this but kubernetes' model won't serialize correctly for some reason
 type KubeConfig struct {
 	APIVersion string    `yaml:"apiVersion"`
@@ -435,7 +591,7 @@ type UserInfo struct {
 	Token                 string `yaml:"token"`
 }
 
-func (d *Driver) PostCheck(info *generic.ClusterInfo) (*generic.ClusterInfo, error) {
+func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types.ClusterInfo, error) {
 	state, err := getState(info)
 
 	if err != nil {
@@ -478,14 +634,12 @@ func (d *Driver) PostCheck(info *generic.ClusterInfo) (*generic.ClusterInfo, err
 	info.RootCaCertificate = singleCluster.ClusterInfo.CertificateAuthorityData
 	info.ClientCertificate = singleUser.UserInfo.ClientCertificateData
 	info.ClientKey = singleUser.UserInfo.ClientKeyData
-	//info.NodeCount = int64(*(*cluster.AgentPoolProfiles)[0].Count)
-	//info.Metadata["nodePool"] = strconv.Itoa(int(cluster.NodeCount))
 
 	return info, nil
 }
 
 // Remove implements driver interface
-func (driver *Driver) Remove(info *generic.ClusterInfo) error {
+func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 	state, err := getState(info)
 
 	if err != nil {
@@ -507,4 +661,8 @@ func (driver *Driver) Remove(info *generic.ClusterInfo) error {
 	logrus.Infof("Cluster %v removed successfully", state.Name)
 
 	return nil
+}
+
+func (d *Driver) GetCapabilities(ctx context.Context) (*types.Capabilities, error) {
+	return &d.driverCapabilities, nil
 }

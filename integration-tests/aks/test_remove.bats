@@ -8,17 +8,13 @@ setup() {
     setup_environment
 }
 
-teardown() {
-    teardown_environment
-}
-
 @test "able to remove cluster" {
     ./kontainer-engine create --base-url http://localhost:8500 --driver aks --resource-group kube --public-key ./integration-tests/test-key.pub --client-id 12345 --client-secret 67890 --subscription-id 1029384857 my-super-cluster-name-1 > /dev/null 2>&1
     ./kontainer-engine remove my-super-cluster-name-1 > /dev/null 2>&1
 
     # TODO this is bad but its the only way to get the requests from hoverctl because logs is broken and there is no
     # `hoverctl journal` command
-    output=$(curl localhost:8888/api/v2/journal | jq ".journal[].request.method")
+    output=$(curl localhost:8888/api/v2/journal | jq ".journal[-1].request.method")
     assert_output --partial "DELETE"
 }
 
@@ -28,6 +24,6 @@ teardown() {
 
     # TODO this is bad but its the only way to get the requests from hoverctl because logs is broken and there is no
     # `hoverctl journal` command
-    output=$(curl localhost:8888/api/v2/journal | jq ".journal[].request.method")
+    output=$(curl localhost:8888/api/v2/journal | jq ".journal[-1].request.method")
     refute_output --partial "DELETE"
 }

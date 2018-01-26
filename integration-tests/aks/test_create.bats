@@ -8,10 +8,6 @@ setup() {
     setup_environment
 }
 
-teardown() {
-    teardown_environment
-}
-
 #########################
 # TEST VALIDATIONS WORK #
 #########################

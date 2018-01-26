@@ -8,10 +8,6 @@ setup() {
     setup_environment
 }
 
-teardown() {
-    teardown_environment
-}
-
 @test "inspect cluster" {
     ./kontainer-engine create --base-url http://localhost:8500 --driver aks --resource-group kube --public-key ./integration-tests/test-key.pub --client-id 12345 --client-secret 67890 --subscription-id 1029384857 my-super-cluster-name-1 > /dev/null 2>&1
     run ./kontainer-engine inspect my-super-cluster-name-1
