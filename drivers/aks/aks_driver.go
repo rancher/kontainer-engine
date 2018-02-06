@@ -296,6 +296,7 @@ func newAzureClient(state state) (*containerservice.ManagedClustersClient, error
 const failedStatus = "Failed"
 const succeededStatus = "Succeeded"
 const creatingStatus = "Creating"
+const updatingStatus = "Updating"
 
 const pollInterval = 30
 
@@ -402,14 +403,10 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions) (*typ
 			info := &types.ClusterInfo{}
 			err := storeState(info, driverState)
 
-			fmt.Println("********")
-			fmt.Println(info.Metadata["state"])
-			fmt.Println("********")
-
 			return info, err
 		}
 
-		if state != creatingStatus {
+		if state != creatingStatus && state != updatingStatus {
 			return nil, fmt.Errorf("unexpected state %v", state)
 		}
 
