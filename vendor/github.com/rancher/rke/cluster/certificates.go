@@ -11,6 +11,7 @@ import (
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/cert"
 )
@@ -22,7 +23,7 @@ func SetUpAuthentication(ctx context.Context, kubeCluster, currentCluster *Clust
 			kubeCluster.Certificates = currentCluster.Certificates
 		} else {
 			log.Infof(ctx, "[certificates] Attempting to recover certificates from backup on host [%s]", kubeCluster.EtcdHosts[0].Address)
-			kubeCluster.Certificates, err = pki.FetchCertificatesFromHost(ctx, kubeCluster.EtcdHosts, kubeCluster.EtcdHosts[0], kubeCluster.SystemImages.Alpine, kubeCluster.LocalKubeConfigPath)
+			kubeCluster.Certificates, err = pki.FetchCertificatesFromHost(ctx, kubeCluster.EtcdHosts, kubeCluster.EtcdHosts[0], kubeCluster.SystemImages.Alpine, kubeCluster.LocalKubeConfigPath, kubeCluster.PrivateRegistriesMap)
 			if err != nil {
 				return err
 			}
@@ -42,7 +43,7 @@ func SetUpAuthentication(ctx context.Context, kubeCluster, currentCluster *Clust
 				return fmt.Errorf("Failed to generate Kubernetes certificates: %v", err)
 			}
 			log.Infof(ctx, "[certificates] Temporarily saving certs to etcd host [%s]", kubeCluster.EtcdHosts[0].Address)
-			if err := pki.DeployCertificatesOnHost(ctx, kubeCluster.EtcdHosts, kubeCluster.EtcdHosts[0], kubeCluster.Certificates, kubeCluster.SystemImages.CertDownloader, pki.TempCertPath); err != nil {
+			if err := pki.DeployCertificatesOnHost(ctx, kubeCluster.EtcdHosts, kubeCluster.EtcdHosts[0], kubeCluster.Certificates, kubeCluster.SystemImages.CertDownloader, pki.TempCertPath, kubeCluster.PrivateRegistriesMap); err != nil {
 				return err
 			}
 			log.Infof(ctx, "[certificates] Saved certs to etcd host [%s]", kubeCluster.EtcdHosts[0].Address)
@@ -106,11 +107,17 @@ func getClusterCerts(ctx context.Context, kubeClient *kubernetes.Clientset, etcd
 
 func saveClusterCerts(ctx context.Context, kubeClient *kubernetes.Clientset, crts map[string]pki.CertificatePKI) error {
 	log.Infof(ctx, "[certificates] Save kubernetes certificates as secrets")
+	var errgrp errgroup.Group
 	for crtName, crt := range crts {
-		err := saveCertToKubernetes(kubeClient, crtName, crt)
-		if err != nil {
-			return fmt.Errorf("Failed to save certificate [%s] to kubernetes: %v", crtName, err)
-		}
+		name := crtName
+		certificate := crt
+		errgrp.Go(func() error {
+			return saveCertToKubernetes(kubeClient, name, certificate)
+		})
+	}
+	if err := errgrp.Wait(); err != nil {
+		return err
+
 	}
 	log.Infof(ctx, "[certificates] Successfully saved certificates as kubernetes secret [%s]", pki.CertificatesSecretName)
 	return nil
@@ -119,39 +126,24 @@ func saveClusterCerts(ctx context.Context, kubeClient *kubernetes.Clientset, crt
 func saveCertToKubernetes(kubeClient *kubernetes.Clientset, crtName string, crt pki.CertificatePKI) error {
 	logrus.Debugf("[certificates] Saving certificate [%s] to kubernetes", crtName)
 	timeout := make(chan bool, 1)
+
+	// build secret Data
+	secretData := map[string][]byte{
+		"Certificate": cert.EncodeCertPEM(crt.Certificate),
+		"Key":         cert.EncodePrivateKeyPEM(crt.Key),
+		"EnvName":     []byte(crt.EnvName),
+		"KeyEnvName":  []byte(crt.KeyEnvName),
+	}
+	if len(crt.Config) > 0 {
+		secretData["ConfigEnvName"] = []byte(crt.ConfigEnvName)
+		secretData["Config"] = []byte(crt.Config)
+	}
 	go func() {
 		for {
-			err := k8s.UpdateSecret(kubeClient, "Certificate", cert.EncodeCertPEM(crt.Certificate), crtName)
+			err := k8s.UpdateSecret(kubeClient, secretData, crtName)
 			if err != nil {
 				time.Sleep(time.Second * 5)
 				continue
-			}
-			err = k8s.UpdateSecret(kubeClient, "Key", cert.EncodePrivateKeyPEM(crt.Key), crtName)
-			if err != nil {
-				time.Sleep(time.Second * 5)
-				continue
-			}
-			err = k8s.UpdateSecret(kubeClient, "EnvName", []byte(crt.EnvName), crtName)
-			if err != nil {
-				time.Sleep(time.Second * 5)
-				continue
-			}
-			err = k8s.UpdateSecret(kubeClient, "KeyEnvName", []byte(crt.KeyEnvName), crtName)
-			if err != nil {
-				time.Sleep(time.Second * 5)
-				continue
-			}
-			if len(crt.Config) > 0 {
-				err = k8s.UpdateSecret(kubeClient, "ConfigEnvName", []byte(crt.ConfigEnvName), crtName)
-				if err != nil {
-					time.Sleep(time.Second * 5)
-					continue
-				}
-				err = k8s.UpdateSecret(kubeClient, "Config", []byte(crt.Config), crtName)
-				if err != nil {
-					time.Sleep(time.Second * 5)
-					continue
-				}
 			}
 			timeout <- true
 			break

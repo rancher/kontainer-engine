@@ -11,9 +11,9 @@ import (
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 )
 
-func runScheduler(ctx context.Context, host *hosts.Host, schedulerService v3.SchedulerService, df hosts.DialerFactory) error {
+func runScheduler(ctx context.Context, host *hosts.Host, schedulerService v3.SchedulerService, df hosts.DialerFactory, prsMap map[string]v3.PrivateRegistry) error {
 	imageCfg, hostCfg := buildSchedulerConfig(host, schedulerService)
-	if err := docker.DoRunContainer(ctx, host.DClient, imageCfg, hostCfg, SchedulerContainerName, host.Address, ControlRole); err != nil {
+	if err := docker.DoRunContainer(ctx, host.DClient, imageCfg, hostCfg, SchedulerContainerName, host.Address, ControlRole, prsMap); err != nil {
 		return err
 	}
 	return runHealthcheck(ctx, host, SchedulerPort, false, SchedulerContainerName, df)
@@ -39,7 +39,7 @@ func buildSchedulerConfig(host *hosts.Host, schedulerService v3.SchedulerService
 			SidekickContainerName,
 		},
 		Binds: []string{
-			"/etc/kubernetes:/etc/kubernetes",
+			"/etc/kubernetes:/etc/kubernetes:z",
 		},
 		NetworkMode:   "host",
 		RestartPolicy: container.RestartPolicy{Name: "always"},

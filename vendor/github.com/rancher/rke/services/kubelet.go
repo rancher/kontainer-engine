@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/rancher/rke/docker"
@@ -11,9 +12,9 @@ import (
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 )
 
-func runKubelet(ctx context.Context, host *hosts.Host, kubeletService v3.KubeletService, df hosts.DialerFactory, unschedulable bool) error {
-	imageCfg, hostCfg := buildKubeletConfig(host, kubeletService, unschedulable)
-	if err := docker.DoRunContainer(ctx, host.DClient, imageCfg, hostCfg, KubeletContainerName, host.Address, WorkerRole); err != nil {
+func runKubelet(ctx context.Context, host *hosts.Host, kubeletService v3.KubeletService, df hosts.DialerFactory, prsMap map[string]v3.PrivateRegistry) error {
+	imageCfg, hostCfg := buildKubeletConfig(host, kubeletService)
+	if err := docker.DoRunContainer(ctx, host.DClient, imageCfg, hostCfg, KubeletContainerName, host.Address, WorkerRole, prsMap); err != nil {
 		return err
 	}
 	return runHealthcheck(ctx, host, KubeletPort, true, KubeletContainerName, df)
@@ -23,7 +24,7 @@ func removeKubelet(ctx context.Context, host *hosts.Host) error {
 	return docker.DoRemoveContainer(ctx, host.DClient, KubeletContainerName, host.Address)
 }
 
-func buildKubeletConfig(host *hosts.Host, kubeletService v3.KubeletService, unschedulable bool) (*container.Config, *container.HostConfig) {
+func buildKubeletConfig(host *hosts.Host, kubeletService v3.KubeletService) (*container.Config, *container.HostConfig) {
 	imageCfg := &container.Config{
 		Image: kubeletService.Image,
 		Entrypoint: []string{"/opt/rke/entrypoint.sh",
@@ -43,41 +44,29 @@ func buildKubeletConfig(host *hosts.Host, kubeletService v3.KubeletService, unsc
 			"--allow-privileged=true",
 			"--cloud-provider=",
 			"--kubeconfig=" + pki.GetConfigPath(pki.KubeNodeCertName),
+			"--volume-plugin-dir=/var/lib/kubelet/volumeplugins",
 			"--require-kubeconfig=True",
+			"--fail-swap-on=" + strconv.FormatBool(kubeletService.FailSwapOn),
 		},
-	}
-	if unschedulable {
-		imageCfg.Cmd = append(imageCfg.Cmd, "--register-with-taints=node-role.kubernetes.io/etcd=true:NoSchedule")
-	}
-	for _, role := range host.Role {
-		switch role {
-		case ETCDRole:
-			imageCfg.Cmd = append(imageCfg.Cmd, "--node-labels=node-role.kubernetes.io/etcd=true")
-		case ControlRole:
-			imageCfg.Cmd = append(imageCfg.Cmd, "--node-labels=node-role.kubernetes.io/master=true")
-		case WorkerRole:
-			imageCfg.Cmd = append(imageCfg.Cmd, "--node-labels=node-role.kubernetes.io/worker=true")
-		}
 	}
 	hostCfg := &container.HostConfig{
 		VolumesFrom: []string{
 			SidekickContainerName,
 		},
 		Binds: []string{
-			"/etc/kubernetes:/etc/kubernetes",
-			"/usr/libexec/kubernetes/kubelet-plugins:/usr/libexec/kubernetes/kubelet-plugins",
-			"/etc/cni:/etc/cni:ro",
-			"/opt/cni:/opt/cni:ro",
+			"/etc/kubernetes:/etc/kubernetes:z",
+			"/etc/cni:/etc/cni:ro,z",
+			"/opt/cni:/opt/cni:ro,z",
 			"/etc/resolv.conf:/etc/resolv.conf",
 			"/sys:/sys",
-			"/var/lib/docker:/var/lib/docker:rw",
-			"/var/lib/kubelet:/var/lib/kubelet:shared",
+			"/var/lib/docker:/var/lib/docker:rw,z",
+			"/var/lib/kubelet:/var/lib/kubelet:shared,z",
 			"/var/run:/var/run:rw",
 			"/run:/run",
 			"/etc/ceph:/etc/ceph",
 			"/dev:/host/dev",
-			"/var/log/containers:/var/log/containers",
-			"/var/log/pods:/var/log/pods"},
+			"/var/log/containers:/var/log/containers:z",
+			"/var/log/pods:/var/log/pods:z"},
 		NetworkMode:   "host",
 		PidMode:       "host",
 		Privileged:    true,
