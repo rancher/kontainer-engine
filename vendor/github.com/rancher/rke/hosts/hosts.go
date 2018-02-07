@@ -25,6 +25,10 @@ type Host struct {
 	ToAddEtcdMember     bool
 	ExistingEtcdCluster bool
 	SavedKeyPhrase      string
+	ToAddLabels         map[string]string
+	ToDelLabels         map[string]string
+	ToAddTaints         []string
+	ToDelTaints         []string
 }
 
 const (
@@ -37,7 +41,7 @@ const (
 	CleanerContainerName = "kube-cleaner"
 )
 
-func (h *Host) CleanUpAll(ctx context.Context, cleanerImage string) error {
+func (h *Host) CleanUpAll(ctx context.Context, cleanerImage string, prsMap map[string]v3.PrivateRegistry) error {
 	log.Infof(ctx, "[hosts] Cleaning up host [%s]", h.Address)
 	toCleanPaths := []string{
 		ToCleanEtcdDir,
@@ -47,10 +51,10 @@ func (h *Host) CleanUpAll(ctx context.Context, cleanerImage string) error {
 		ToCleanCalicoRun,
 		ToCleanTempCertPath,
 	}
-	return h.CleanUp(ctx, toCleanPaths, cleanerImage)
+	return h.CleanUp(ctx, toCleanPaths, cleanerImage, prsMap)
 }
 
-func (h *Host) CleanUpWorkerHost(ctx context.Context, cleanerImage string) error {
+func (h *Host) CleanUpWorkerHost(ctx context.Context, cleanerImage string, prsMap map[string]v3.PrivateRegistry) error {
 	if h.IsControl {
 		log.Infof(ctx, "[hosts] Host [%s] is already a controlplane host, skipping cleanup.", h.Address)
 		return nil
@@ -61,10 +65,10 @@ func (h *Host) CleanUpWorkerHost(ctx context.Context, cleanerImage string) error
 		ToCleanCNIBin,
 		ToCleanCalicoRun,
 	}
-	return h.CleanUp(ctx, toCleanPaths, cleanerImage)
+	return h.CleanUp(ctx, toCleanPaths, cleanerImage, prsMap)
 }
 
-func (h *Host) CleanUpControlHost(ctx context.Context, cleanerImage string) error {
+func (h *Host) CleanUpControlHost(ctx context.Context, cleanerImage string, prsMap map[string]v3.PrivateRegistry) error {
 	if h.IsWorker {
 		log.Infof(ctx, "[hosts] Host [%s] is already a worker host, skipping cleanup.", h.Address)
 		return nil
@@ -75,10 +79,10 @@ func (h *Host) CleanUpControlHost(ctx context.Context, cleanerImage string) erro
 		ToCleanCNIBin,
 		ToCleanCalicoRun,
 	}
-	return h.CleanUp(ctx, toCleanPaths, cleanerImage)
+	return h.CleanUp(ctx, toCleanPaths, cleanerImage, prsMap)
 }
 
-func (h *Host) CleanUpEtcdHost(ctx context.Context, cleanerImage string) error {
+func (h *Host) CleanUpEtcdHost(ctx context.Context, cleanerImage string, prsMap map[string]v3.PrivateRegistry) error {
 	toCleanPaths := []string{
 		ToCleanEtcdDir,
 		ToCleanSSLDir,
@@ -89,14 +93,14 @@ func (h *Host) CleanUpEtcdHost(ctx context.Context, cleanerImage string) error {
 			ToCleanEtcdDir,
 		}
 	}
-	return h.CleanUp(ctx, toCleanPaths, cleanerImage)
+	return h.CleanUp(ctx, toCleanPaths, cleanerImage, prsMap)
 }
 
-func (h *Host) CleanUp(ctx context.Context, toCleanPaths []string, cleanerImage string) error {
+func (h *Host) CleanUp(ctx context.Context, toCleanPaths []string, cleanerImage string, prsMap map[string]v3.PrivateRegistry) error {
 	log.Infof(ctx, "[hosts] Cleaning up host [%s]", h.Address)
 	imageCfg, hostCfg := buildCleanerConfig(h, toCleanPaths, cleanerImage)
 	log.Infof(ctx, "[hosts] Running cleaner container on host [%s]", h.Address)
-	if err := docker.DoRunContainer(ctx, h.DClient, imageCfg, hostCfg, CleanerContainerName, h.Address, CleanerContainerName); err != nil {
+	if err := docker.DoRunContainer(ctx, h.DClient, imageCfg, hostCfg, CleanerContainerName, h.Address, CleanerContainerName, prsMap); err != nil {
 		return err
 	}
 
@@ -216,7 +220,7 @@ func buildCleanerConfig(host *Host, toCleanDirs []string, cleanerImage string) (
 	}
 	bindMounts := []string{}
 	for _, vol := range toCleanDirs {
-		bindMounts = append(bindMounts, fmt.Sprintf("%s:%s", vol, vol))
+		bindMounts = append(bindMounts, fmt.Sprintf("%s:%s:z", vol, vol))
 	}
 	hostCfg := &container.HostConfig{
 		Binds: bindMounts,

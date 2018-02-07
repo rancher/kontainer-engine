@@ -33,10 +33,11 @@ type Interface interface {
 	GroupsGetter
 	GroupMembersGetter
 	PrincipalsGetter
-	TokensGetter
 	UsersGetter
+	AuthConfigsGetter
+	TokensGetter
 	DynamicSchemasGetter
-	StacksGetter
+	AppsGetter
 	PreferencesGetter
 	ClusterLoggingsGetter
 	ProjectLoggingsGetter
@@ -68,10 +69,11 @@ type Client struct {
 	groupControllers                      map[string]GroupController
 	groupMemberControllers                map[string]GroupMemberController
 	principalControllers                  map[string]PrincipalController
-	tokenControllers                      map[string]TokenController
 	userControllers                       map[string]UserController
+	authConfigControllers                 map[string]AuthConfigController
+	tokenControllers                      map[string]TokenController
 	dynamicSchemaControllers              map[string]DynamicSchemaController
-	stackControllers                      map[string]StackController
+	appControllers                        map[string]AppController
 	preferenceControllers                 map[string]PreferenceController
 	clusterLoggingControllers             map[string]ClusterLoggingController
 	projectLoggingControllers             map[string]ProjectLoggingController
@@ -112,10 +114,11 @@ func NewForConfig(config rest.Config) (Interface, error) {
 		groupControllers:                      map[string]GroupController{},
 		groupMemberControllers:                map[string]GroupMemberController{},
 		principalControllers:                  map[string]PrincipalController{},
-		tokenControllers:                      map[string]TokenController{},
 		userControllers:                       map[string]UserController{},
+		authConfigControllers:                 map[string]AuthConfigController{},
+		tokenControllers:                      map[string]TokenController{},
 		dynamicSchemaControllers:              map[string]DynamicSchemaController{},
-		stackControllers:                      map[string]StackController{},
+		appControllers:                        map[string]AppController{},
 		preferenceControllers:                 map[string]PreferenceController{},
 		clusterLoggingControllers:             map[string]ClusterLoggingController{},
 		projectLoggingControllers:             map[string]ProjectLoggingController{},
@@ -383,19 +386,6 @@ func (c *Client) Principals(namespace string) PrincipalInterface {
 	}
 }
 
-type TokensGetter interface {
-	Tokens(namespace string) TokenInterface
-}
-
-func (c *Client) Tokens(namespace string) TokenInterface {
-	objectClient := clientbase.NewObjectClient(namespace, c.restClient, &TokenResource, TokenGroupVersionKind, tokenFactory{})
-	return &tokenClient{
-		ns:           namespace,
-		client:       c,
-		objectClient: objectClient,
-	}
-}
-
 type UsersGetter interface {
 	Users(namespace string) UserInterface
 }
@@ -403,6 +393,32 @@ type UsersGetter interface {
 func (c *Client) Users(namespace string) UserInterface {
 	objectClient := clientbase.NewObjectClient(namespace, c.restClient, &UserResource, UserGroupVersionKind, userFactory{})
 	return &userClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type AuthConfigsGetter interface {
+	AuthConfigs(namespace string) AuthConfigInterface
+}
+
+func (c *Client) AuthConfigs(namespace string) AuthConfigInterface {
+	objectClient := clientbase.NewObjectClient(namespace, c.restClient, &AuthConfigResource, AuthConfigGroupVersionKind, authConfigFactory{})
+	return &authConfigClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type TokensGetter interface {
+	Tokens(namespace string) TokenInterface
+}
+
+func (c *Client) Tokens(namespace string) TokenInterface {
+	objectClient := clientbase.NewObjectClient(namespace, c.restClient, &TokenResource, TokenGroupVersionKind, tokenFactory{})
+	return &tokenClient{
 		ns:           namespace,
 		client:       c,
 		objectClient: objectClient,
@@ -422,13 +438,13 @@ func (c *Client) DynamicSchemas(namespace string) DynamicSchemaInterface {
 	}
 }
 
-type StacksGetter interface {
-	Stacks(namespace string) StackInterface
+type AppsGetter interface {
+	Apps(namespace string) AppInterface
 }
 
-func (c *Client) Stacks(namespace string) StackInterface {
-	objectClient := clientbase.NewObjectClient(namespace, c.restClient, &StackResource, StackGroupVersionKind, stackFactory{})
-	return &stackClient{
+func (c *Client) Apps(namespace string) AppInterface {
+	objectClient := clientbase.NewObjectClient(namespace, c.restClient, &AppResource, AppGroupVersionKind, appFactory{})
+	return &appClient{
 		ns:           namespace,
 		client:       c,
 		objectClient: objectClient,

@@ -18,6 +18,7 @@ import (
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
 	"github.com/rancher/rke/templates"
+	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/client-go/util/cert"
@@ -114,8 +115,8 @@ func (c *Cluster) DeployNetworkPlugin(ctx context.Context) error {
 func (c *Cluster) doFlannelDeploy(ctx context.Context) error {
 	flannelConfig := map[string]string{
 		ClusterCIDR:      c.ClusterCIDR,
-		Image:            c.Network.Options[FlannelImage],
-		CNIImage:         c.Network.Options[FlannelCNIImage],
+		Image:            c.SystemImages.Flannel,
+		CNIImage:         c.SystemImages.FlannelCNI,
 		FlannelInterface: c.Network.Options[FlannelIface],
 		RBACConfig:       c.Authorization.Mode,
 	}
@@ -142,10 +143,10 @@ func (c *Cluster) doCalicoDeploy(ctx context.Context) error {
 		ClientCAPath:     pki.GetCertPath(pki.CACertName),
 		KubeCfg:          clientConfig,
 		ClusterCIDR:      c.ClusterCIDR,
-		CNIImage:         c.Network.Options[CalicoCNIImage],
-		NodeImage:        c.Network.Options[CalicoNodeImage],
-		ControllersImage: c.Network.Options[CalicoControllersImage],
-		Calicoctl:        c.Network.Options[CalicoctlImage],
+		CNIImage:         c.SystemImages.CalicoCNI,
+		NodeImage:        c.SystemImages.CalicoNode,
+		ControllersImage: c.SystemImages.CalicoControllers,
+		Calicoctl:        c.SystemImages.CalicoCtl,
 		CloudProvider:    c.Network.Options[CalicoCloudProvider],
 		RBACConfig:       c.Authorization.Mode,
 	}
@@ -165,9 +166,9 @@ func (c *Cluster) doCanalDeploy(ctx context.Context) error {
 		ClientCAPath:    pki.GetCertPath(pki.CACertName),
 		KubeCfg:         clientConfig,
 		ClusterCIDR:     c.ClusterCIDR,
-		NodeImage:       c.Network.Options[CanalNodeImage],
-		CNIImage:        c.Network.Options[CanalCNIImage],
-		CanalFlannelImg: c.Network.Options[CanalFlannelImage],
+		NodeImage:       c.SystemImages.CanalNode,
+		CNIImage:        c.SystemImages.CanalCNI,
+		CanalFlannelImg: c.SystemImages.CanalFlannel,
 		RBACConfig:      c.Authorization.Mode,
 	}
 	pluginYaml, err := c.getNetworkPluginManifest(canalConfig)
@@ -180,8 +181,8 @@ func (c *Cluster) doCanalDeploy(ctx context.Context) error {
 func (c *Cluster) doWeaveDeploy(ctx context.Context) error {
 	weaveConfig := map[string]string{
 		ClusterCIDR: c.ClusterCIDR,
-		Image:       c.Network.Options[WeaveImage],
-		CNIImage:    c.Network.Options[WeaveCNIImage],
+		Image:       c.SystemImages.WeaveNode,
+		CNIImage:    c.SystemImages.WeaveCNI,
 		RBACConfig:  c.Authorization.Mode,
 	}
 	pluginYaml, err := c.getNetworkPluginManifest(weaveConfig)
@@ -189,49 +190,6 @@ func (c *Cluster) doWeaveDeploy(ctx context.Context) error {
 		return err
 	}
 	return c.doAddonDeploy(ctx, pluginYaml, NetworkPluginResourceName)
-}
-
-func (c *Cluster) setClusterNetworkDefaults() {
-	setDefaultIfEmpty(&c.Network.Plugin, DefaultNetworkPlugin)
-
-	if c.Network.Options == nil {
-		// don't break if the user didn't define options
-		c.Network.Options = make(map[string]string)
-	}
-	networkPluginConfigDefaultsMap := make(map[string]string)
-	switch c.Network.Plugin {
-	case FlannelNetworkPlugin:
-		networkPluginConfigDefaultsMap = map[string]string{
-			FlannelImage:    DefaultFlannelImage,
-			FlannelCNIImage: DefaultFlannelCNIImage,
-		}
-
-	case CalicoNetworkPlugin:
-		networkPluginConfigDefaultsMap = map[string]string{
-			CalicoCNIImage:         DefaultCalicoCNIImage,
-			CalicoNodeImage:        DefaultCalicoNodeImage,
-			CalicoControllersImage: DefaultCalicoControllersImage,
-			CalicoCloudProvider:    DefaultNetworkCloudProvider,
-			CalicoctlImage:         DefaultCalicoctlImage,
-		}
-
-	case CanalNetworkPlugin:
-		networkPluginConfigDefaultsMap = map[string]string{
-			CanalCNIImage:     DefaultCanalCNIImage,
-			CanalNodeImage:    DefaultCanalNodeImage,
-			CanalFlannelImage: DefaultCanalFlannelImage,
-		}
-
-	case WeaveNetworkPlugin:
-		networkPluginConfigDefaultsMap = map[string]string{
-			WeaveImage:    DefaultWeaveImage,
-			WeaveCNIImage: DefaultWeaveCNIImage,
-		}
-	}
-	for k, v := range networkPluginConfigDefaultsMap {
-		setDefaultIfEmptyMapValue(c.Network.Options, k, v)
-	}
-
 }
 
 func (c *Cluster) getNetworkPluginManifest(pluginConfig map[string]string) (string, error) {
@@ -363,7 +321,7 @@ func (c *Cluster) deployListener(ctx context.Context, host *hosts.Host, portList
 	}
 
 	logrus.Debugf("[network] Starting deployListener [%s] on host [%s]", containerName, host.Address)
-	if err := docker.DoRunContainer(ctx, host.DClient, imageCfg, hostCfg, containerName, host.Address, "network"); err != nil {
+	if err := docker.DoRunContainer(ctx, host.DClient, imageCfg, hostCfg, containerName, host.Address, "network", c.PrivateRegistriesMap); err != nil {
 		if strings.Contains(err.Error(), "bind: address already in use") {
 			logrus.Debugf("[network] Service is already up on host [%s]", host.Address)
 			return nil
@@ -412,7 +370,7 @@ func (c *Cluster) runServicePortChecks(ctx context.Context) error {
 		for _, host := range c.EtcdHosts {
 			runHost := host
 			errgrp.Go(func() error {
-				return checkPlaneTCPPortsFromHost(ctx, runHost, etcdPortList, c.EtcdHosts, c.SystemImages.Alpine)
+				return checkPlaneTCPPortsFromHost(ctx, runHost, etcdPortList, c.EtcdHosts, c.SystemImages.Alpine, c.PrivateRegistriesMap)
 			})
 		}
 		if err := errgrp.Wait(); err != nil {
@@ -424,7 +382,7 @@ func (c *Cluster) runServicePortChecks(ctx context.Context) error {
 	for _, host := range c.ControlPlaneHosts {
 		runHost := host
 		errgrp.Go(func() error {
-			return checkPlaneTCPPortsFromHost(ctx, runHost, etcdPortList, c.EtcdHosts, c.SystemImages.Alpine)
+			return checkPlaneTCPPortsFromHost(ctx, runHost, etcdPortList, c.EtcdHosts, c.SystemImages.Alpine, c.PrivateRegistriesMap)
 		})
 	}
 	if err := errgrp.Wait(); err != nil {
@@ -434,7 +392,7 @@ func (c *Cluster) runServicePortChecks(ctx context.Context) error {
 	for _, host := range c.WorkerHosts {
 		runHost := host
 		errgrp.Go(func() error {
-			return checkPlaneTCPPortsFromHost(ctx, runHost, etcdPortList, c.EtcdHosts, c.SystemImages.Alpine)
+			return checkPlaneTCPPortsFromHost(ctx, runHost, etcdPortList, c.EtcdHosts, c.SystemImages.Alpine, c.PrivateRegistriesMap)
 		})
 	}
 	if err := errgrp.Wait(); err != nil {
@@ -448,7 +406,7 @@ func (c *Cluster) runServicePortChecks(ctx context.Context) error {
 	for _, host := range c.ControlPlaneHosts {
 		runHost := host
 		errgrp.Go(func() error {
-			return checkPlaneTCPPortsFromHost(ctx, runHost, workerPortList, c.WorkerHosts, c.SystemImages.Alpine)
+			return checkPlaneTCPPortsFromHost(ctx, runHost, workerPortList, c.WorkerHosts, c.SystemImages.Alpine, c.PrivateRegistriesMap)
 		})
 	}
 	if err := errgrp.Wait(); err != nil {
@@ -462,13 +420,13 @@ func (c *Cluster) runServicePortChecks(ctx context.Context) error {
 	for _, host := range c.WorkerHosts {
 		runHost := host
 		errgrp.Go(func() error {
-			return checkPlaneTCPPortsFromHost(ctx, runHost, controlPlanePortList, c.ControlPlaneHosts, c.SystemImages.Alpine)
+			return checkPlaneTCPPortsFromHost(ctx, runHost, controlPlanePortList, c.ControlPlaneHosts, c.SystemImages.Alpine, c.PrivateRegistriesMap)
 		})
 	}
 	return errgrp.Wait()
 }
 
-func checkPlaneTCPPortsFromHost(ctx context.Context, host *hosts.Host, portList []string, planeHosts []*hosts.Host, image string) error {
+func checkPlaneTCPPortsFromHost(ctx context.Context, host *hosts.Host, portList []string, planeHosts []*hosts.Host, image string, prsMap map[string]v3.PrivateRegistry) error {
 	hosts := []string{}
 	for _, host := range planeHosts {
 		hosts = append(hosts, host.InternalAddress)
@@ -492,7 +450,7 @@ func checkPlaneTCPPortsFromHost(ctx context.Context, host *hosts.Host, portList 
 	if err := docker.DoRemoveContainer(ctx, host.DClient, PortCheckContainer, host.Address); err != nil {
 		return err
 	}
-	if err := docker.DoRunContainer(ctx, host.DClient, imageCfg, hostCfg, PortCheckContainer, host.Address, "network"); err != nil {
+	if err := docker.DoRunContainer(ctx, host.DClient, imageCfg, hostCfg, PortCheckContainer, host.Address, "network", prsMap); err != nil {
 		return err
 	}
 	if err := docker.WaitForContainer(ctx, host.DClient, PortCheckContainer); err != nil {

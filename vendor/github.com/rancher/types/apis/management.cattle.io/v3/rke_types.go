@@ -23,6 +23,8 @@ type RancherKubernetesEngineConfig struct {
 	Version string `yaml:"kubernetes_version" json:"kubernetesVersion,omitempty"`
 	// List of private registries and their credentials
 	PrivateRegistries []PrivateRegistry `yaml:"private_registries" json:"privateRegistries,omitempty"`
+	// Ingress controller used in the cluster
+	Ingress IngressConfig `yaml:"ingress" json:"ingress,omitempty"`
 }
 
 type PrivateRegistry struct {
@@ -36,25 +38,49 @@ type PrivateRegistry struct {
 
 type RKESystemImages struct {
 	// etcd image
-	Etcd string `yaml:"etcd" json:"etcd,omitempty" norman:"default=quay.io/coreos/etcd:latest"`
+	Etcd string `yaml:"etcd" json:"etcd,omitempty"`
 	// Alpine image
-	Alpine string `yaml:"alpine" json:"alpine,omitempty" norman:"default=alpine"`
+	Alpine string `yaml:"alpine" json:"alpine,omitempty"`
 	// rke-nginx-proxy image
-	NginxProxy string `yaml:"nginx_proxy" json:"nginxProxy,omitempty" norman:"default=rancher/rke-nginx-proxy"`
+	NginxProxy string `yaml:"nginx_proxy" json:"nginxProxy,omitempty"`
 	// rke-cert-deployer image
-	CertDownloader string `yaml:"cert_downloader" json:"certDownloader,omitempty" norman:"default=rancher/rke-cert-deployer"`
+	CertDownloader string `yaml:"cert_downloader" json:"certDownloader,omitempty"`
 	// rke-service-sidekick image
-	KubernetesServicesSidecar string `yaml:"kubernetes_services_sidecar" json:"kubernetesServicesSidecar,omitempty" norman:"default=rancher/rke-kube-services-sidecar"`
+	KubernetesServicesSidecar string `yaml:"kubernetes_services_sidecar" json:"kubernetesServicesSidecar,omitempty"`
 	// KubeDNS image
-	KubeDNS string `yaml:"kubedns" json:"kubedns,omitempty" norman:"default=gcr.io/google_containers/k8s-dns-kube-dns-amd64"`
+	KubeDNS string `yaml:"kubedns" json:"kubedns,omitempty"`
 	// DNSMasq image
-	DNSmasq string `yaml:"dnsmasq" json:"dnsmasq,omitempty" norman:"default=gcr.io/google_containers/k8s-dns-dnsmasq-nanny-amd64"`
+	DNSmasq string `yaml:"dnsmasq" json:"dnsmasq,omitempty"`
 	// KubeDNS side car image
-	KubeDNSSidecar string `yaml:"kubedns_sidecar" json:"kubednsSidecar,omitempty" norman:"default=gcr.io/google_containers/k8s-dns-sidecar-amd64"`
+	KubeDNSSidecar string `yaml:"kubedns_sidecar" json:"kubednsSidecar,omitempty"`
 	// KubeDNS autoscaler image
-	KubeDNSAutoscaler string `yaml:"kubedns_autoscaler" json:"kubednsAutoscaler,omitempty" norman:"default=gcr.io/google_containers/cluster-proportional-autoscaler-amd64"`
+	KubeDNSAutoscaler string `yaml:"kubedns_autoscaler" json:"kubednsAutoscaler,omitempty"`
 	// Kubernetes image
-	Kubernetes string `yaml:"kubernetes" json:"kubernetes,omitempty" norman:"default=rancher/k8s"`
+	Kubernetes string `yaml:"kubernetes" json:"kubernetes,omitempty" norman:"default=rancher/k8s:v1.8.5-rancher4"`
+	// Flannel image
+	Flannel string `yaml:"flannel" json:"flannel,omitempty"`
+	// Flannel CNI image
+	FlannelCNI string `yaml:"flannel_cni" json:"flannelCni,omitempty"`
+	// Calico Node image
+	CalicoNode string `yaml:"calico_node" json:"calicoNode,omitempty"`
+	// Calico CNI image
+	CalicoCNI string `yaml:"calico_cni" json:"calicoCni,omitempty"`
+	// Calico Controllers image
+	CalicoControllers string `yaml:"calico_controllers" json:"calicoControllers,omitempty"`
+	// Calicoctl image
+	CalicoCtl string `yaml:"calico_ctl" json:"calicoCtl,omitempty"`
+	// Canal Node Image
+	CanalNode string `yaml:"canal_node" json:"canalNode,omitempty"`
+	// Canal CNI image
+	CanalCNI string `yaml:"canal_cni" json:"canalCni,omitempty"`
+	//CanalFlannel image
+	CanalFlannel string `yaml:"canal_flannel" json:"canalFlannel,omitempty"`
+	// Weave Node image
+	WeaveNode string `yaml:"wave_node" json:"weaveNode,omitempty"`
+	// Weave CNI image
+	WeaveCNI string `yaml:"weave_cni" json:"weaveCni,omitempty"`
+	// Pod infra container image
+	PodInfraContainer string `yaml:"pod_infra_container" json:"podInfraContainer,omitempty"`
 }
 
 type RKEConfigNode struct {
@@ -76,6 +102,8 @@ type RKEConfigNode struct {
 	SSHKey string `yaml:"ssh_key" json:"sshKey,omitempty"`
 	// SSH Private Key Path
 	SSHKeyPath string `yaml:"ssh_key_path" json:"sshKeyPath,omitempty"`
+	// Node Labels
+	Labels map[string]string `yaml:"labels" json:"labels,omitempty"`
 }
 
 type RKEConfigServices struct {
@@ -125,6 +153,8 @@ type KubeletService struct {
 	InfraContainerImage string `yaml:"infra_container_image" json:"infraContainerImage,omitempty"`
 	// Cluster DNS service ip
 	ClusterDNSServer string `yaml:"cluster_dns_server" json:"clusterDnsServer,omitempty"`
+	// Fail if swap is enabled
+	FailSwapOn bool `yaml:"fail_swap_on" json:"failSwapOn,omitempty"`
 }
 
 type KubeproxyService struct {
@@ -163,4 +193,13 @@ type AuthzConfig struct {
 	Mode string `yaml:"mode" json:"mode,omitempty"`
 	// Authorization mode options
 	Options map[string]string `yaml:"options" json:"options,omitempty"`
+}
+
+type IngressConfig struct {
+	// Ingress controller type used by kubernetes
+	Provider string `yaml:"provider" json:"provider,omitempty"`
+	// Ingress controller options
+	Options map[string]string `yaml:"options" json:"options,omitempty"`
+	// NodeSelector key pair
+	NodeSelector map[string]string `yaml:"node_selector" json:"nodeSelector,omitempty"`
 }

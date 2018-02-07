@@ -8,12 +8,15 @@ import (
 	"strings"
 
 	"github.com/rancher/rke/authz"
+	"github.com/rancher/rke/docker"
 	"github.com/rancher/rke/hosts"
+	"github.com/rancher/rke/k8s"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -35,6 +38,7 @@ type Cluster struct {
 	ClusterDNSServer                 string
 	DockerDialerFactory              hosts.DialerFactory
 	LocalConnDialerFactory           hosts.DialerFactory
+	PrivateRegistriesMap             map[string]v3.PrivateRegistry
 }
 
 const (
@@ -51,7 +55,7 @@ const (
 
 func (c *Cluster) DeployControlPlane(ctx context.Context) error {
 	// Deploy Etcd Plane
-	if err := services.RunEtcdPlane(ctx, c.EtcdHosts, c.Services.Etcd, c.LocalConnDialerFactory); err != nil {
+	if err := services.RunEtcdPlane(ctx, c.EtcdHosts, c.Services.Etcd, c.LocalConnDialerFactory, c.PrivateRegistriesMap); err != nil {
 		return fmt.Errorf("[etcd] Failed to bring up Etcd Plane: %v", err)
 	}
 	// Deploy Control plane
@@ -60,7 +64,8 @@ func (c *Cluster) DeployControlPlane(ctx context.Context) error {
 		c.Services,
 		c.SystemImages.KubernetesServicesSidecar,
 		c.Authorization.Mode,
-		c.LocalConnDialerFactory); err != nil {
+		c.LocalConnDialerFactory,
+		c.PrivateRegistriesMap); err != nil {
 		return fmt.Errorf("[controlPlane] Failed to bring up Control Plane: %v", err)
 	}
 	// Apply Authz configuration after deploying controlplane
@@ -78,7 +83,8 @@ func (c *Cluster) DeployWorkerPlane(ctx context.Context) error {
 		c.Services,
 		c.SystemImages.NginxProxy,
 		c.SystemImages.KubernetesServicesSidecar,
-		c.LocalConnDialerFactory); err != nil {
+		c.LocalConnDialerFactory,
+		c.PrivateRegistriesMap); err != nil {
 		return fmt.Errorf("[workerPlane] Failed to bring up Worker Plane: %v", err)
 	}
 	return nil
@@ -105,6 +111,7 @@ func ParseCluster(
 		ConfigPath:                    clusterFilePath,
 		DockerDialerFactory:           dockerDialerFactory,
 		LocalConnDialerFactory:        localConnDialerFactory,
+		PrivateRegistriesMap:          make(map[string]v3.PrivateRegistry),
 	}
 	// Setting cluster Defaults
 	c.setClusterDefaults(ctx)
@@ -128,73 +135,15 @@ func ParseCluster(
 		c.ConfigPath = DefaultClusterConfig
 	}
 	c.LocalKubeConfigPath = GetLocalKubeConfig(c.ConfigPath, configDir)
+
+	for _, pr := range c.PrivateRegistries {
+		if pr.URL == "" {
+			pr.URL = docker.DockerRegistryURL
+		}
+		c.PrivateRegistriesMap[pr.URL] = pr
+	}
+
 	return c, nil
-}
-
-func (c *Cluster) setClusterDefaults(ctx context.Context) {
-	if len(c.SSHKeyPath) == 0 {
-		c.SSHKeyPath = DefaultClusterSSHKeyPath
-	}
-	for i, host := range c.Nodes {
-		if len(host.InternalAddress) == 0 {
-			c.Nodes[i].InternalAddress = c.Nodes[i].Address
-		}
-		if len(host.HostnameOverride) == 0 {
-			// This is a temporary modification
-			c.Nodes[i].HostnameOverride = c.Nodes[i].Address
-		}
-		if len(host.SSHKeyPath) == 0 {
-			c.Nodes[i].SSHKeyPath = c.SSHKeyPath
-		}
-	}
-	if len(c.Authorization.Mode) == 0 {
-		c.Authorization.Mode = DefaultAuthorizationMode
-	}
-	if c.Services.KubeAPI.PodSecurityPolicy && c.Authorization.Mode != services.RBACAuthorizationMode {
-		log.Warnf(ctx, "PodSecurityPolicy can't be enabled with RBAC support disabled")
-		c.Services.KubeAPI.PodSecurityPolicy = false
-	}
-	c.setClusterServicesDefaults()
-	c.setClusterNetworkDefaults()
-	c.setClusterImageDefaults()
-}
-
-func (c *Cluster) setClusterServicesDefaults() {
-	serviceConfigDefaultsMap := map[*string]string{
-		&c.Services.KubeAPI.ServiceClusterIPRange:        DefaultServiceClusterIPRange,
-		&c.Services.KubeController.ServiceClusterIPRange: DefaultServiceClusterIPRange,
-		&c.Services.KubeController.ClusterCIDR:           DefaultClusterCIDR,
-		&c.Services.Kubelet.ClusterDNSServer:             DefaultClusterDNSService,
-		&c.Services.Kubelet.ClusterDomain:                DefaultClusterDomain,
-		&c.Services.Kubelet.InfraContainerImage:          DefaultInfraContainerImage,
-		&c.Authentication.Strategy:                       DefaultAuthStrategy,
-		&c.Services.KubeAPI.Image:                        DefaultK8sImage,
-		&c.Services.Scheduler.Image:                      DefaultK8sImage,
-		&c.Services.KubeController.Image:                 DefaultK8sImage,
-		&c.Services.Kubelet.Image:                        DefaultK8sImage,
-		&c.Services.Kubeproxy.Image:                      DefaultK8sImage,
-		&c.Services.Etcd.Image:                           DefaultEtcdImage,
-	}
-	for k, v := range serviceConfigDefaultsMap {
-		setDefaultIfEmpty(k, v)
-	}
-}
-
-func (c *Cluster) setClusterImageDefaults() {
-
-	systemImagesDefaultsMap := map[*string]string{
-		&c.SystemImages.Alpine:                    DefaultAplineImage,
-		&c.SystemImages.NginxProxy:                DefaultNginxProxyImage,
-		&c.SystemImages.CertDownloader:            DefaultCertDownloaderImage,
-		&c.SystemImages.KubeDNS:                   DefaultKubeDNSImage,
-		&c.SystemImages.KubeDNSSidecar:            DefaultKubeDNSSidecarImage,
-		&c.SystemImages.DNSmasq:                   DefaultDNSmasqImage,
-		&c.SystemImages.KubeDNSAutoscaler:         DefaultKubeDNSAutoScalerImage,
-		&c.SystemImages.KubernetesServicesSidecar: DefaultKubernetesServicesSidecarImage,
-	}
-	for k, v := range systemImagesDefaultsMap {
-		setDefaultIfEmpty(k, v)
-	}
 }
 
 func GetLocalKubeConfig(configPath, configDir string) string {
@@ -304,4 +253,47 @@ func (c *Cluster) getUniqueHostList() []*hosts.Host {
 		uniqHostList = append(uniqHostList, host)
 	}
 	return uniqHostList
+}
+
+func (c *Cluster) DeployAddons(ctx context.Context) error {
+	if err := c.DeployK8sAddOns(ctx); err != nil {
+		return err
+	}
+	return c.DeployUserAddOns(ctx)
+}
+
+func (c *Cluster) SyncLabelsAndTaints(ctx context.Context) error {
+	log.Infof(ctx, "[sync] Syncing nodes Labels and Taints")
+	k8sClient, err := k8s.NewClient(c.LocalKubeConfigPath)
+	if err != nil {
+		return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
+	}
+	for _, host := range c.getUniqueHostList() {
+		if err := k8s.SyncLabels(k8sClient, host.HostnameOverride, host.ToAddLabels, host.ToDelLabels); err != nil {
+			return err
+		}
+		// Taints are not being added by user
+		if err := k8s.SyncTaints(k8sClient, host.HostnameOverride, host.ToAddTaints, host.ToDelTaints); err != nil {
+			return err
+		}
+	}
+	log.Infof(ctx, "[sync] Successfully synced nodes Labels and Taints")
+	return nil
+}
+
+func (c *Cluster) PrePullK8sImages(ctx context.Context) error {
+	log.Infof(ctx, "Pre-pulling kubernetes images")
+	var errgrp errgroup.Group
+	hosts := c.getUniqueHostList()
+	for _, host := range hosts {
+		runHost := host
+		errgrp.Go(func() error {
+			return docker.UseLocalOrPull(ctx, runHost.DClient, runHost.Address, c.SystemImages.Kubernetes, "pre-deploy", c.PrivateRegistriesMap)
+		})
+	}
+	if err := errgrp.Wait(); err != nil {
+		return err
+	}
+	log.Infof(ctx, "Kubernetes images pulled successfully")
+	return nil
 }
