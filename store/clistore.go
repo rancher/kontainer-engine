@@ -77,7 +77,7 @@ func (c CLIPersistStore) Store(cls cluster.Cluster) error {
 	} {
 		data, err := base64.StdEncoding.DecodeString(k)
 		if err != nil {
-			return err
+			return fmt.Errorf("error while decoding crypto '%v': %v", k, err)
 		}
 		if err := utils.WriteToFile(data, filepath.Join(fileDir, v)); err != nil {
 			return err
@@ -138,7 +138,7 @@ func storeConfig(c cluster.Cluster) error {
 	}
 
 	configFile := utils.KubeConfigFilePath()
-	config := kubeConfig{}
+	config := KubeConfig{}
 	if _, err := os.Stat(configFile); err == nil {
 		data, err := ioutil.ReadFile(configFile)
 		if err != nil {
@@ -156,15 +156,15 @@ func storeConfig(c cluster.Cluster) error {
 	if !strings.HasPrefix(host, "https://") {
 		host = fmt.Sprintf("https://%s", host)
 	}
-	cluster := configCluster{
-		Cluster: dataCluster{
+	cluster := ConfigCluster{
+		Cluster: DataCluster{
 			CertificateAuthorityData: string(c.RootCACert),
 			Server: host,
 		},
 		Name: c.Name,
 	}
 	if config.Clusters == nil || len(config.Clusters) == 0 {
-		config.Clusters = []configCluster{cluster}
+		config.Clusters = []ConfigCluster{cluster}
 	} else {
 		exist := false
 		for _, cluster := range config.Clusters {
@@ -179,8 +179,8 @@ func storeConfig(c cluster.Cluster) error {
 	}
 
 	// setup users
-	user := configUser{
-		User: userData{
+	user := ConfigUser{
+		User: UserData{
 			Username: username,
 			Password: password,
 			Token:    token,
@@ -188,7 +188,7 @@ func storeConfig(c cluster.Cluster) error {
 		Name: c.Name,
 	}
 	if config.Users == nil || len(config.Users) == 0 {
-		config.Users = []configUser{user}
+		config.Users = []ConfigUser{user}
 	} else {
 		exist := false
 		for _, user := range config.Users {
@@ -203,15 +203,15 @@ func storeConfig(c cluster.Cluster) error {
 	}
 
 	// setup context
-	context := configContext{
-		Context: contextData{
+	context := ConfigContext{
+		Context: ContextData{
 			Cluster: c.Name,
 			User:    c.Name,
 		},
 		Name: c.Name,
 	}
 	if config.Contexts == nil || len(config.Contexts) == 0 {
-		config.Contexts = []configContext{context}
+		config.Contexts = []ConfigContext{context}
 	} else {
 		exist := false
 		for _, context := range config.Contexts {
@@ -239,20 +239,20 @@ func storeConfig(c cluster.Cluster) error {
 	return nil
 }
 
-func deleteConfigByName(config *kubeConfig, name string) {
-	contexts := []configContext{}
+func deleteConfigByName(config *KubeConfig, name string) {
+	contexts := []ConfigContext{}
 	for _, context := range config.Contexts {
 		if context.Name != name {
 			contexts = append(contexts, context)
 		}
 	}
-	clusters := []configCluster{}
+	clusters := []ConfigCluster{}
 	for _, cls := range config.Clusters {
 		if cls.Name != name {
 			clusters = append(clusters, cls)
 		}
 	}
-	users := []configUser{}
+	users := []ConfigUser{}
 	for _, user := range config.Users {
 		if user.Name != name {
 			users = append(users, user)
@@ -263,20 +263,20 @@ func deleteConfigByName(config *kubeConfig, name string) {
 	config.Users = users
 }
 
-func getConfigFromFile() (kubeConfig, error) {
+func getConfigFromFile() (KubeConfig, error) {
 	configFile := utils.KubeConfigFilePath()
-	config := kubeConfig{}
+	config := KubeConfig{}
 	data, err := ioutil.ReadFile(configFile)
 	if err != nil {
-		return kubeConfig{}, err
+		return KubeConfig{}, err
 	}
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return kubeConfig{}, err
+		return KubeConfig{}, err
 	}
 	return config, nil
 }
 
-func setConfigToFile(config kubeConfig) error {
+func setConfigToFile(config KubeConfig) error {
 	data, err := yaml.Marshal(config)
 	if err != nil {
 		return err
