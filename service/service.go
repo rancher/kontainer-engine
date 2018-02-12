@@ -71,6 +71,15 @@ func (c controllerConfigGetter) GetConfig() (types.DriverOptions, error) {
 		}
 		data = config
 		flatten(data, &driverOptions)
+	case "import":
+		config, err := toMap(c.clusterSpec.ImportedConfig, "json")
+		if err != nil {
+			return driverOptions, err
+		}
+		data = config
+		flatten(data, &driverOptions)
+	default:
+		return driverOptions, fmt.Errorf("driver type '%v' not supported", c.driverName)
 	}
 
 	driverOptions.StringOptions["name"] = c.clusterName
@@ -155,6 +164,8 @@ func (e *engineService) convertCluster(name string, spec v3.ClusterSpec) (cluste
 		driverName = "gke"
 	} else if spec.RancherKubernetesEngineConfig != nil {
 		driverName = "rke"
+	} else if spec.ImportedConfig != nil {
+		driverName = "import"
 	}
 	if driverName == "" {
 		return cluster.Cluster{}, fmt.Errorf("no driver config found")

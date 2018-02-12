@@ -1,42 +1,45 @@
 package store
 
-type kubeConfig struct {
-	APIVersion     string          `yaml:"apiVersion,omitempty"`
-	Clusters       []configCluster `yaml:"clusters,omitempty"`
-	Contexts       []configContext `yaml:"contexts,omitempty"`
-	Users          []configUser    `yaml:"users,omitempty"`
-	CurrentContext string          `yaml:"current-context,omitempty"`
-	Kind           string          `yaml:"kind,omitempty"`
-	Preferences    string          `yaml:"preferences,omitempty"`
+type KubeConfig struct {
+	APIVersion     string            `yaml:"apiVersion,omitempty"`
+	Clusters       []ConfigCluster   `yaml:"clusters,omitempty"`
+	Contexts       []ConfigContext   `yaml:"contexts,omitempty"`
+	Users          []ConfigUser      `yaml:"users,omitempty"`
+	CurrentContext string            `yaml:"current-context,omitempty"`
+	Kind           string            `yaml:"kind,omitempty"`
+	Preferences    map[string]string `yaml:"preferences,omitempty"`
 }
 
-type configCluster struct {
-	Cluster dataCluster `yaml:"cluster,omitempty"`
+type ConfigCluster struct {
+	Cluster DataCluster `yaml:"cluster,omitempty"`
 	Name    string      `yaml:"name,omitempty"`
 }
 
-type dataCluster struct {
+type DataCluster struct {
+	CertificateAuthority     string `yaml:"certificate-authority,omitempty"`
 	CertificateAuthorityData string `yaml:"certificate-authority-data,omitempty"`
 	Server                   string `yaml:"server,omitempty"`
 }
 
-type configContext struct {
-	Context contextData `yaml:"context,omitempty"`
+type ConfigContext struct {
+	Context ContextData `yaml:"context,omitempty"`
 	Name    string      `yaml:"name,omitempty"`
 }
 
-type contextData struct {
+type ContextData struct {
 	Cluster string `yaml:"cluster,omitempty"`
 	User    string `yaml:"user,omitempty"`
 }
 
-type configUser struct {
+type ConfigUser struct {
 	Name string   `yaml:"name,omitempty"`
-	User userData `yaml:"user,omitempty"`
+	User UserData `yaml:"user,omitempty"`
 }
 
-type userData struct {
-	Token    string `yaml:"token,omitempty"`
-	Username string `yaml:"username,omitempty"`
-	Password string `yaml:"password,omitempty"`
+type UserData struct {
+	Token                 string `yaml:"token,omitempty"`
+	Username              string `yaml:"username,omitempty"`
+	Password              string `yaml:"password,omitempty"`
+	ClientCertificateData string `yaml:"client-certificate-data,omitempty"`
+	ClientKeyData         string `yaml:"client-key-data,omitempty"`
 }
