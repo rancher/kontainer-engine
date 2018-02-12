@@ -78,6 +78,8 @@ func (c controllerConfigGetter) GetConfig() (types.DriverOptions, error) {
 		}
 		data = config
 		flatten(data, &driverOptions)
+	default:
+		return driverOptions, fmt.Errorf("driver type '%v' not supported", c.driverName)
 	}
 
 	driverOptions.StringOptions["name"] = c.clusterName
