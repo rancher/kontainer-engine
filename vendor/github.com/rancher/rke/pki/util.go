@@ -5,9 +5,11 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net"
+	"path/filepath"
 	"strings"
 
 	"github.com/rancher/rke/hosts"
+	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"k8s.io/client-go/util/cert"
 )
 
@@ -105,11 +107,14 @@ func GetAltNames(cpHosts []*hosts.Host, clusterDomain string, KubernetesServiceI
 }
 
 func (c *CertificatePKI) ToEnv() []string {
-	env := []string{
-		c.CertToEnv(),
-		c.KeyToEnv(),
+	env := []string{}
+	if c.Key != nil {
+		env = append(env, c.KeyToEnv())
 	}
-	if c.Config != "" {
+	if c.Certificate != nil {
+		env = append(env, c.CertToEnv())
+	}
+	if c.Config != "" && c.ConfigEnvName != "" {
 		env = append(env, c.ConfigToEnv())
 	}
 	return env
@@ -206,4 +211,75 @@ func ToCertObject(componentName, commonName, ouName string, cert *x509.Certifica
 
 func getDefaultCN(name string) string {
 	return fmt.Sprintf("system:%s", name)
+}
+
+func getControlCertKeys() []string {
+	return []string{
+		CACertName,
+		KubeAPICertName,
+		KubeControllerCertName,
+		KubeSchedulerCertName,
+		KubeProxyCertName,
+		KubeNodeCertName,
+		EtcdClientCertName,
+		EtcdClientCACertName,
+	}
+}
+
+func getWorkerCertKeys() []string {
+	return []string{
+		CACertName,
+		KubeProxyCertName,
+		KubeNodeCertName,
+		EtcdClientCertName,
+		EtcdClientCACertName,
+	}
+}
+
+func getEtcdCertKeys(rkeNodes []v3.RKEConfigNode, etcdRole string) []string {
+	certList := []string{
+		CACertName,
+		KubeProxyCertName,
+		KubeNodeCertName,
+	}
+	etcdHosts := hosts.NodesToHosts(rkeNodes, etcdRole)
+	for _, host := range etcdHosts {
+		certList = append(certList, GetEtcdCrtName(host.InternalAddress))
+	}
+	return certList
+
+}
+
+func GetKubernetesServiceIP(serviceClusterRange string) (net.IP, error) {
+	ip, ipnet, err := net.ParseCIDR(serviceClusterRange)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get kubernetes service IP from Kube API option [service_cluster_ip_range]: %v", err)
+	}
+	ip = ip.Mask(ipnet.Mask)
+	for j := len(ip) - 1; j >= 0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			break
+		}
+	}
+	return ip, nil
+}
+
+func GetLocalKubeConfig(configPath, configDir string) string {
+	baseDir := filepath.Dir(configPath)
+	if len(configDir) > 0 {
+		baseDir = filepath.Dir(configDir)
+	}
+	fileName := filepath.Base(configPath)
+	baseDir += "/"
+	return fmt.Sprintf("%s%s%s", baseDir, KubeAdminConfigPrefix, fileName)
+}
+
+func strCrtToEnv(crtName, crt string) string {
+	return fmt.Sprintf("%s=%s", getEnvFromName(crtName), crt)
+}
+
+func strKeyToEnv(crtName, key string) string {
+	envName := getEnvFromName(crtName)
+	return fmt.Sprintf("%s=%s", getKeyEnvFromEnv(envName), key)
 }

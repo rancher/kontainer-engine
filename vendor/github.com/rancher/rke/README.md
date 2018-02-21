@@ -64,7 +64,7 @@ RKE supports the following network plugins:
 
 - Flannel
 - Calico
-- Cannal
+- Canal
 - Weave
 
 To use specific network plugin configure `cluster.yml` to include:
@@ -92,11 +92,11 @@ There are extra options that can be specified for each network plugin:
 - **calicoctl_image**: Calicoctl tool Docker image
 - **calico_cloud_provider**: Cloud provider where Calico will operate, currently supported values are: `aws`, `gce`
 
-#### Cannal
+#### Canal
 
-- **canal_node_image**: Cannal Node Docker image
-- **canal_cni_image**: Cannal CNI binary installer Docker image
-- **canal_flannel_image**: Cannal Flannel Docker image
+- **canal_node_image**: Canal Node Docker image
+- **canal_cni_image**: Canal CNI binary installer Docker image
+- **canal_flannel_image**: Canal Flannel Docker image
 
 #### Weave
 
@@ -197,15 +197,15 @@ RKE will ask some questions around the cluster file like number of the hosts, ip
 
 ## Ingress Controller
 
-RKE will deploy Nginx controller by default, user can disable this by specifying `none` to `ingress` option in the cluster configuration, user also can specify list of options fo nginx config map listed in this [docs](https://github.com/kubernetes/ingress-nginx/blob/master/docs/user-guide/configmap.md), for example:
+RKE will deploy Nginx controller by default, user can disable this by specifying `none` to ingress `provider` option in the cluster configuration, user also can specify list of options for nginx config map listed in this [doc](https://github.com/kubernetes/ingress-nginx/blob/master/docs/user-guide/configmap.md), for example:
 ```
 ingress:
-  type: nginx
+  provider: nginx
   options:
     map-hash-bucket-size: "128"
     ssl-protocols: SSLv2
 ```
-RKE will deploy ingress controller on all schedulable nodes (controlplane and workers), to specify only certain nodes for ingress controller to be deployed user has to specify `node_selector` for the ingress and the right label on the node, for example:
+By default, RKE will deploy ingress controller on all schedulable nodes (controlplane and workers), to specify only certain nodes for ingress controller to be deployed, user has to specify `node_selector` for the ingress and the right label on the node, for example:
 ```
 nodes:
   - address: 1.1.1.1
@@ -215,12 +215,38 @@ nodes:
       app: ingress
 
 ingress:
-  type: nginx
+  provider: nginx
   node_selector:
     app: ingress
 ```
 
 RKE will deploy Nginx Ingress controller as a DaemonSet with `hostnetwork: true`, so ports `80`, and `443` will be opened on each node where the controller is deployed.
+
+## External etcd
+
+RKE supports using external etcd instead of deploying etcd servers, to enable external etcd the following parameters should be populated:
+
+```
+services:
+  etcd:
+    path: /etcdcluster
+    external_urls:
+      - https://etcd-example.com:2379
+    ca_cert: |-
+      -----BEGIN CERTIFICATE-----
+      xxxxxxxxxx
+      -----END CERTIFICATE-----
+    cert: |-
+      -----BEGIN CERTIFICATE-----
+      xxxxxxxxxx
+      -----END CERTIFICATE-----
+    key: |-
+      -----BEGIN PRIVATE KEY-----
+      xxxxxxxxxx
+      -----END PRIVATE KEY-----
+```
+
+Note that RKE only supports connecting to TLS enabled etcd setup, user can enable multiple endpoints in the `external_urls` field. RKE will not accept having external urls and nodes with `etcd` role at the same time, user should only specify either etcd role for servers or external etcd but not both.
 
 ## Operating Systems Notes
 

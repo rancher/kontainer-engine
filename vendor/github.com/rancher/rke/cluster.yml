@@ -32,8 +32,23 @@ network:
   plugin: flannel
   options:
 
+# Default ingress provider is nginx, To disable ingress, use
+# provider: none
+
+ingress:
+  provider: nginx
+  node_selector:
+    app: ingress
+  options:
+    map-hash-bucket-size: "128"
+    ssl-protocols: SSLv2
+
 ssh_key_path: ~/.ssh/test
+
+# ignore_docker_version toggle will enforce docker version support.
+# If ignore is enabled (true), rke will print out a non-fatal warning instead of error
 ignore_docker_version: false
+
 # Kubernetes authorization mode; currently only `rbac` is supported and enabled by default.
 # Use `mode: none` to disable authorization
 authorization:
@@ -46,7 +61,7 @@ authorization:
 private_registries:
   - url: registry.com
     user: Username
-    passowrd: password
+    password: password
 
 nodes:
   - address: 1.1.1.1
@@ -56,6 +71,8 @@ nodes:
   - address: 2.2.2.2
     user: ubuntu
     role: [worker]
+    labels:
+      app: ingress
     ssh_key: |-
       -----BEGIN RSA PRIVATE KEY-----
 
@@ -65,12 +82,29 @@ nodes:
     role: [worker]
     hostname_override: node3
     internal_address: 192.168.1.6
+    labels:
+      app: ingress
 
 services:
   etcd:
+    # if external etcd is used
+    # path: /etcdcluster
+    # external_urls:
+    #   - https://etcd-example.com:2379
+    # ca_cert: |-
+    #   -----BEGIN CERTIFICATE-----
+    #   xxxxxxxxxx
+    #   -----END CERTIFICATE-----
+    # cert: |-
+    #   -----BEGIN CERTIFICATE-----
+    #   xxxxxxxxxx
+    #   -----END CERTIFICATE-----
+    # key: |-
+    #   -----BEGIN PRIVATE KEY-----
+    #   xxxxxxxxxx
+    #   -----END PRIVATE KEY-----
 
   kube-api:
-
     service_cluster_ip_range: 10.233.0.0/18
     pod_security_policy: false
     extra_args:

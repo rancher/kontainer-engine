@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rancher/rke/cluster"
+	"github.com/rancher/rke/pki"
 	"github.com/urfave/cli"
 )
 
@@ -12,7 +13,7 @@ func VersionCommand() cli.Command {
 		cli.StringFlag{
 			Name:   "config",
 			Usage:  "Specify an alternate cluster YAML file",
-			Value:  cluster.DefaultClusterConfig,
+			Value:  pki.ClusterConfig,
 			EnvVar: "RKE_CONFIG",
 		},
 	}
@@ -25,8 +26,9 @@ func VersionCommand() cli.Command {
 }
 
 func getClusterVersion(ctx *cli.Context) error {
-	localKubeConfig := cluster.GetLocalKubeConfig(ctx.String("config"), "")
-	serverVersion, err := cluster.GetK8sVersion(localKubeConfig)
+	localKubeConfig := pki.GetLocalKubeConfig(ctx.String("config"), "")
+	// not going to use a k8s dialer here.. this is a CLI command
+	serverVersion, err := cluster.GetK8sVersion(localKubeConfig, nil)
 	if err != nil {
 		return err
 	}

@@ -9,7 +9,9 @@ import (
 
 	"github.com/rancher/rke/cluster"
 	"github.com/rancher/rke/hosts"
+	"github.com/rancher/rke/k8s"
 	"github.com/rancher/rke/log"
+	"github.com/rancher/rke/pki"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -20,7 +22,7 @@ func RemoveCommand() cli.Command {
 		cli.StringFlag{
 			Name:   "config",
 			Usage:  "Specify an alternate cluster YAML file",
-			Value:  cluster.DefaultClusterConfig,
+			Value:  pki.ClusterConfig,
 			EnvVar: "RKE_CONFIG",
 		},
 		cli.BoolFlag{
@@ -44,10 +46,11 @@ func ClusterRemove(
 	ctx context.Context,
 	rkeConfig *v3.RancherKubernetesEngineConfig,
 	dialerFactory hosts.DialerFactory,
+	k8sWrapTransport k8s.WrapTransport,
 	local bool, configDir string) error {
 
 	log.Infof(ctx, "Tearing down Kubernetes cluster")
-	kubeCluster, err := cluster.ParseCluster(ctx, rkeConfig, clusterFilePath, configDir, dialerFactory, nil)
+	kubeCluster, err := cluster.ParseCluster(ctx, rkeConfig, clusterFilePath, configDir, dialerFactory, nil, k8sWrapTransport)
 	if err != nil {
 		return err
 	}
@@ -93,7 +96,7 @@ func clusterRemoveFromCli(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("Failed to parse cluster file: %v", err)
 	}
-	return ClusterRemove(context.Background(), rkeConfig, nil, false, "")
+	return ClusterRemove(context.Background(), rkeConfig, nil, nil, false, "")
 }
 
 func clusterRemoveLocal(ctx *cli.Context) error {
@@ -110,5 +113,5 @@ func clusterRemoveLocal(ctx *cli.Context) error {
 		}
 		rkeConfig.Nodes = []v3.RKEConfigNode{*cluster.GetLocalRKENodeConfig()}
 	}
-	return ClusterRemove(context.Background(), rkeConfig, nil, true, "")
+	return ClusterRemove(context.Background(), rkeConfig, nil, nil, true, "")
 }

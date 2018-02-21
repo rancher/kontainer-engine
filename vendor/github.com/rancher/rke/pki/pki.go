@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"fmt"
 	"net"
 
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/log"
+	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"k8s.io/client-go/util/cert"
 )
 
@@ -26,17 +28,13 @@ type CertificatePKI struct {
 	ConfigPath    string
 }
 
-// StartCertificatesGeneration ...
-func StartCertificatesGeneration(ctx context.Context, cpHosts, etcdHosts []*hosts.Host, clusterDomain, localConfigPath string, KubernetesServiceIP net.IP) (map[string]CertificatePKI, error) {
-	log.Infof(ctx, "[certificates] Generating kubernetes certificates")
-	certs, err := generateCerts(ctx, cpHosts, etcdHosts, clusterDomain, localConfigPath, KubernetesServiceIP)
-	if err != nil {
-		return nil, err
-	}
-	return certs, nil
-}
+const (
+	etcdRole    = "etcd"
+	controlRole = "controlplane"
+	workerRole  = "worker"
+)
 
-func generateCerts(ctx context.Context, cpHosts, etcdHosts []*hosts.Host, clusterDomain, localConfigPath string, KubernetesServiceIP net.IP) (map[string]CertificatePKI, error) {
+func GenerateRKECerts(ctx context.Context, rkeConfig v3.RancherKubernetesEngineConfig, configPath, configDir string) (map[string]CertificatePKI, error) {
 	certs := make(map[string]CertificatePKI)
 	// generate CA certificate and key
 	log.Infof(ctx, "[certificates] Generating CA kubernetes certificates")
@@ -48,7 +46,13 @@ func generateCerts(ctx context.Context, cpHosts, etcdHosts []*hosts.Host, cluste
 
 	// generate API certificate and key
 	log.Infof(ctx, "[certificates] Generating Kubernetes API server certificates")
-	kubeAPIAltNames := GetAltNames(cpHosts, clusterDomain, KubernetesServiceIP)
+	kubernetesServiceIP, err := GetKubernetesServiceIP(rkeConfig.Services.KubeAPI.ServiceClusterIPRange)
+	clusterDomain := rkeConfig.Services.Kubelet.ClusterDomain
+	cpHosts := hosts.NodesToHosts(rkeConfig.Nodes, controlRole)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get Kubernetes Service IP: %v", err)
+	}
+	kubeAPIAltNames := GetAltNames(cpHosts, clusterDomain, kubernetesServiceIP)
 	kubeAPICrt, kubeAPIKey, err := GenerateSignedCertAndKey(caCrt, caKey, true, KubeAPICertName, kubeAPIAltNames, nil, nil)
 	if err != nil {
 		return nil, err
@@ -89,23 +93,48 @@ func generateCerts(ctx context.Context, cpHosts, etcdHosts []*hosts.Host, cluste
 
 	// generate Admin certificate and key
 	log.Infof(ctx, "[certificates] Generating admin certificates and kubeconfig")
+	if len(configPath) == 0 {
+		configPath = ClusterConfig
+	}
+	localKubeConfigPath := GetLocalKubeConfig(configPath, configDir)
 	kubeAdminCrt, kubeAdminKey, err := GenerateSignedCertAndKey(caCrt, caKey, false, KubeAdminCertName, nil, nil, []string{KubeAdminOrganizationName})
 	if err != nil {
 		return nil, err
 	}
-	kubeAdminConfig := GetKubeConfigX509WithData(
-		"https://"+cpHosts[0].Address+":6443",
-		KubeAdminCertName,
-		string(cert.EncodeCertPEM(caCrt)),
-		string(cert.EncodeCertPEM(kubeAdminCrt)),
-		string(cert.EncodePrivateKeyPEM(kubeAdminKey)))
-
 	kubeAdminCertObj := ToCertObject(KubeAdminCertName, KubeAdminCertName, KubeAdminOrganizationName, kubeAdminCrt, kubeAdminKey)
-	kubeAdminCertObj.Config = kubeAdminConfig
-	kubeAdminCertObj.ConfigPath = localConfigPath
+	if len(cpHosts) > 0 {
+		kubeAdminConfig := GetKubeConfigX509WithData(
+			"https://"+cpHosts[0].Address+":6443",
+			KubeAdminCertName,
+			string(cert.EncodeCertPEM(caCrt)),
+			string(cert.EncodeCertPEM(kubeAdminCrt)),
+			string(cert.EncodePrivateKeyPEM(kubeAdminKey)))
+		kubeAdminCertObj.Config = kubeAdminConfig
+		kubeAdminCertObj.ConfigPath = localKubeConfigPath
+	} else {
+		kubeAdminCertObj.Config = ""
+	}
 	certs[KubeAdminCertName] = kubeAdminCertObj
+	// generate etcd certificate and key
+	if len(rkeConfig.Services.Etcd.ExternalURLs) > 0 {
+		clientCert, err := cert.ParseCertsPEM([]byte(rkeConfig.Services.Etcd.Cert))
+		if err != nil {
+			return nil, err
+		}
+		clientKey, err := cert.ParsePrivateKeyPEM([]byte(rkeConfig.Services.Etcd.Key))
+		if err != nil {
+			return nil, err
+		}
+		certs[EtcdClientCertName] = ToCertObject(EtcdClientCertName, "", "", clientCert[0], clientKey.(*rsa.PrivateKey))
 
-	etcdAltNames := GetAltNames(etcdHosts, clusterDomain, KubernetesServiceIP)
+		caCert, err := cert.ParseCertsPEM([]byte(rkeConfig.Services.Etcd.CACert))
+		if err != nil {
+			return nil, err
+		}
+		certs[EtcdClientCACertName] = ToCertObject(EtcdClientCACertName, "", "", caCert[0], nil)
+	}
+	etcdHosts := hosts.NodesToHosts(rkeConfig.Nodes, etcdRole)
+	etcdAltNames := GetAltNames(etcdHosts, clusterDomain, kubernetesServiceIP)
 	for _, host := range etcdHosts {
 		log.Infof(ctx, "[certificates] Generating etcd-%s certificate and key", host.InternalAddress)
 		etcdCrt, etcdKey, err := GenerateSignedCertAndKey(caCrt, caKey, true, EtcdCertName, etcdAltNames, nil, nil)
@@ -117,6 +146,33 @@ func generateCerts(ctx context.Context, cpHosts, etcdHosts []*hosts.Host, cluste
 	}
 
 	return certs, nil
+}
+
+func GenerateRKENodeCerts(ctx context.Context, rkeConfig v3.RancherKubernetesEngineConfig, nodeAddress string, certBundle map[string]CertificatePKI) map[string]CertificatePKI {
+	crtMap := make(map[string]CertificatePKI)
+	crtKeys := []string{}
+	for _, node := range rkeConfig.Nodes {
+		if node.Address == nodeAddress {
+			for _, role := range node.Role {
+				switch role {
+				case controlRole:
+					keys := getControlCertKeys()
+					crtKeys = append(crtKeys, keys...)
+				case workerRole:
+					keys := getWorkerCertKeys()
+					crtKeys = append(crtKeys, keys...)
+				case etcdRole:
+					keys := getEtcdCertKeys(rkeConfig.Nodes, etcdRole)
+					crtKeys = append(crtKeys, keys...)
+				}
+			}
+			break
+		}
+	}
+	for _, key := range crtKeys {
+		crtMap[key] = certBundle[key]
+	}
+	return crtMap
 }
 
 func RegenerateEtcdCertificate(
