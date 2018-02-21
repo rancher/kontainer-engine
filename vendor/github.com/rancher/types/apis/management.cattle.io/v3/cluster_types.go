@@ -11,13 +11,12 @@ type ClusterConditionType string
 
 const (
 	// ClusterConditionReady Cluster ready to serve API (healthy when true, unhealthy when false)
-	ClusterConditionReady           condition.Cond = "Ready"
-	ClusterConditionMachinesCreated condition.Cond = "MachinesCreated"
+	ClusterConditionReady   condition.Cond = "Ready"
+	ClusterConditionPending condition.Cond = "Pending"
 	// ClusterConditionProvisioned Cluster is provisioned
 	ClusterConditionProvisioned condition.Cond = "Provisioned"
 	ClusterConditionUpdated     condition.Cond = "Updated"
 	ClusterConditionRemoved     condition.Cond = "Removed"
-	ClusterConditionRegistered  condition.Cond = "Registered"
 	// ClusterConditionNoDiskPressure true when all cluster nodes have sufficient disk
 	ClusterConditionNoDiskPressure condition.Cond = "NoDiskPressure"
 	// ClusterConditionNoMemoryPressure true when all cluster nodes have sufficient memory
@@ -26,7 +25,9 @@ const (
 	ClusterConditionconditionDefautlProjectCreated condition.Cond = "DefaultProjectCreated"
 	// ClusterConditionDefaultNamespaceAssigned true when cluster's default namespace has been initially assigned
 	ClusterConditionDefaultNamespaceAssigned condition.Cond = "DefaultNamespaceAssigned"
-	// More conditions can be added if unredlying controllers request it
+
+	ClusterDriverImported = "imported"
+	ClusterDriverRKE      = "rancherKubernetesEngine"
 )
 
 type Cluster struct {
@@ -43,12 +44,10 @@ type Cluster struct {
 }
 
 type ClusterSpec struct {
-	Nodes                                []MachineConfig                `json:"nodes"`
 	DisplayName                          string                         `json:"displayName"`
 	Description                          string                         `json:"description"`
 	Internal                             bool                           `json:"internal" norman:"nocreate,noupdate"`
-	ImportedConfig                       *ImportedConfig                `json:"importedConfig" norman:"noupdate"`
-	EmbeddedConfig                       *K8sServerConfig               `json:"embeddedConfig" norman:"noupdate"`
+	ImportedConfig                       *ImportedConfig                `json:"importedConfig,omitempty" norman:"nocreate,noupdate"`
 	GoogleKubernetesEngineConfig         *GoogleKubernetesEngineConfig  `json:"googleKubernetesEngineConfig,omitempty"`
 	AzureKubernetesServiceConfig         *AzureKubernetesServiceConfig  `json:"azureKubernetesServiceConfig,omitempty"`
 	RancherKubernetesEngineConfig        *RancherKubernetesEngineConfig `json:"rancherKubernetesEngineConfig,omitempty"`
@@ -57,12 +56,7 @@ type ClusterSpec struct {
 }
 
 type ImportedConfig struct {
-	KubeConfig string `json:"kubeConfig"`
-}
-
-type K8sServerConfig struct {
-	AdmissionControllers []string `json:"admissionControllers,omitempty"`
-	ServiceNetCIDR       string   `json:"serviceNetCidr,omitempty"`
+	KubeConfig string `json:"kubeConfig" norman:"type=password"`
 }
 
 type ClusterStatus struct {
@@ -128,7 +122,7 @@ type GoogleKubernetesEngineConfig struct {
 	// to each node.
 	Labels map[string]string `json:"labels,omitempty"`
 	// The content of the credential file(key.json)
-	Credential string `json:"credential,omitempty" norman:"required"`
+	Credential string `json:"credential,omitempty" norman:"required,type=password"`
 	// Enable alpha feature
 	EnableAlphaFeature bool `json:"enableAlphaFeature,omitempty"`
 	// Configuration for the HTTP (L7) load balancing controller addon
@@ -182,10 +176,10 @@ type AzureKubernetesServiceConfig struct {
 	BaseURL string `json:"baseUrl,omitempty"`
 	// Azure Client ID to use
 	ClientID string `json:"clientId,omitempty" norman:"required"`
-	// Secret associated with the Client ID
-	ClientSecret string `json:"clientSecret,omitempty" norman:"required"`
 	// Tenant ID to create the cluster under
 	TenantID string `json:"tenantId,omitempty" norman:"required"`
+	// Secret associated with the Client ID
+	ClientSecret string `json:"clientSecret,omitempty" norman:"required,type=password"`
 }
 
 type ClusterEvent struct {
@@ -214,7 +208,9 @@ type ClusterRegistrationTokenSpec struct {
 }
 
 type ClusterRegistrationTokenStatus struct {
-	Command     string `json:"command"`
-	ManifestURL string `json:"manifestUrl"`
-	Token       string `json:"token"`
+	InsecureCommand string `json:"insecureCommand"`
+	Command         string `json:"command"`
+	NodeCommand     string `json:"nodeCommand"`
+	ManifestURL     string `json:"manifestUrl"`
+	Token           string `json:"token"`
 }

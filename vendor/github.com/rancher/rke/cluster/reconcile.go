@@ -27,7 +27,7 @@ func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster)
 		return nil
 	}
 
-	kubeClient, err := k8s.NewClient(kubeCluster.LocalKubeConfigPath)
+	kubeClient, err := k8s.NewClient(kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport)
 	if err != nil {
 		return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
 	}
@@ -90,7 +90,7 @@ func reconcileControl(ctx context.Context, currentCluster, kubeCluster *Cluster,
 	}
 
 	for _, toDeleteHost := range cpToDelete {
-		kubeClient, err := k8s.NewClient(kubeCluster.LocalKubeConfigPath)
+		kubeClient, err := k8s.NewClient(kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport)
 		if err != nil {
 			return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
 		}
@@ -189,7 +189,7 @@ func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, ku
 	currentCluster.Certificates = crtMap
 	for _, etcdHost := range etcdToAdd {
 		// deploy certificates on new etcd host
-		if err := pki.DeployCertificatesOnHost(ctx, kubeCluster.EtcdHosts, etcdHost, currentCluster.Certificates, kubeCluster.SystemImages.CertDownloader, pki.CertPathPrefix, kubeCluster.PrivateRegistriesMap); err != nil {
+		if err := pki.DeployCertificatesOnHost(ctx, etcdHost, currentCluster.Certificates, kubeCluster.SystemImages.CertDownloader, pki.CertPathPrefix, kubeCluster.PrivateRegistriesMap); err != nil {
 			return err
 		}
 
@@ -197,7 +197,10 @@ func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, ku
 			return err
 		}
 		etcdHost.ToAddEtcdMember = false
-		if err := services.ReloadEtcdCluster(ctx, kubeCluster.EtcdHosts, kubeCluster.Services.Etcd, currentCluster.LocalConnDialerFactory, clientCert, clientkey, currentCluster.PrivateRegistriesMap); err != nil {
+		readyHosts := getReadyEtcdHosts(kubeCluster.EtcdHosts)
+		etcdProcessHostMap := kubeCluster.getEtcdProcessHostMap(readyHosts)
+
+		if err := services.ReloadEtcdCluster(ctx, readyHosts, currentCluster.LocalConnDialerFactory, clientCert, clientkey, currentCluster.PrivateRegistriesMap, etcdProcessHostMap); err != nil {
 			return err
 		}
 	}
@@ -205,8 +208,8 @@ func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, ku
 }
 
 func syncLabels(ctx context.Context, currentCluster, kubeCluster *Cluster) {
-	currentHosts := currentCluster.getUniqueHostList()
-	configHosts := kubeCluster.getUniqueHostList()
+	currentHosts := hosts.GetUniqueHostList(currentCluster.EtcdHosts, currentCluster.ControlPlaneHosts, currentCluster.WorkerHosts)
+	configHosts := hosts.GetUniqueHostList(kubeCluster.EtcdHosts, kubeCluster.ControlPlaneHosts, kubeCluster.WorkerHosts)
 	for _, host := range configHosts {
 		for _, currentHost := range currentHosts {
 			if host.Address == currentHost.Address {
@@ -219,4 +222,15 @@ func syncLabels(ctx context.Context, currentCluster, kubeCluster *Cluster) {
 			}
 		}
 	}
+}
+
+func getReadyEtcdHosts(etcdHosts []*hosts.Host) []*hosts.Host {
+	readyEtcdHosts := []*hosts.Host{}
+	for _, host := range etcdHosts {
+		if !host.ToAddEtcdMember {
+			readyEtcdHosts = append(readyEtcdHosts, host)
+			host.ExistingEtcdCluster = true
+		}
+	}
+	return readyEtcdHosts
 }

@@ -36,6 +36,29 @@ type PrivateRegistry struct {
 	Password string `yaml:"password" json:"password,omitempty"`
 }
 
+type RancherSystemImages struct {
+	// RKE system images
+	RKESystemImages `yaml:",inline" json:",inline"`
+	// Kubectld image
+	Kubectld string `yaml:"kubectld" json:"kubectld,omitempty"`
+	// Etc host updater image
+	EtcHostUpdater string `yaml:"etc_host_updater" json:"etcHostUpdater,omitempty"`
+	// Kubernetes agent image
+	K8sAgent string `yaml:"k8s_agent" json:"k8sAgent,omitempty"`
+	// Kubernetes auth service agent
+	K8sAuth string `yaml:"k8s_auth" json:"k8sAuth,omitempty"`
+	// Kubernetes Dashboard image
+	Dashboard string `yaml:"dashboard" json:"dashboard,omitempty"`
+	// Heapster addon image
+	Heapster string `yaml:"heapster" json:"heapster,omitempty"`
+	// Grafana image for heapster addon
+	Grafana string `yaml:"grafana" json:"grafana,omitempty"`
+	// Influxdb image for heapster addon
+	Influxdb string `yaml:"influxdb" json:"influxdb,omitempty"`
+	// Tiller addon image
+	Tiller string `yaml:"tiller" json:"tiller,omitempty"`
+}
+
 type RKESystemImages struct {
 	// etcd image
 	Etcd string `yaml:"etcd" json:"etcd,omitempty"`
@@ -56,7 +79,7 @@ type RKESystemImages struct {
 	// KubeDNS autoscaler image
 	KubeDNSAutoscaler string `yaml:"kubedns_autoscaler" json:"kubednsAutoscaler,omitempty"`
 	// Kubernetes image
-	Kubernetes string `yaml:"kubernetes" json:"kubernetes,omitempty" norman:"default=rancher/k8s:v1.8.5-rancher4"`
+	Kubernetes string `yaml:"kubernetes" json:"kubernetes,omitempty"`
 	// Flannel image
 	Flannel string `yaml:"flannel" json:"flannel,omitempty"`
 	// Flannel CNI image
@@ -81,13 +104,19 @@ type RKESystemImages struct {
 	WeaveCNI string `yaml:"weave_cni" json:"weaveCni,omitempty"`
 	// Pod infra container image
 	PodInfraContainer string `yaml:"pod_infra_container" json:"podInfraContainer,omitempty"`
+	// Ingress Controller image
+	Ingress string `yaml:"ingress" json:"ingress,omitempty"`
+	// Ingress Controller Backend image
+	IngressBackend string `yaml:"ingress_backend" json:"ingressBackend,omitempty"`
 }
 
 type RKEConfigNode struct {
 	// Name of the host provisioned via docker machine
-	MachineName string `yaml:"machine_name,omitempty" json:"machineName,omitempty" norman:"type=reference[machine]"`
+	NodeName string `yaml:"nodeName,omitempty" json:"nodeName,omitempty" norman:"type=reference[node]"`
 	// IP or FQDN that is fully resolvable and used for SSH communication
 	Address string `yaml:"address" json:"address,omitempty"`
+	// Port used for SSH communication
+	Port string `yaml:"port" json:"port,omitempty"`
 	// Optional - Internal address that will be used for components communication
 	InternalAddress string `yaml:"internal_address" json:"internalAddress,omitempty"`
 	// Node role in kubernetes cluster (controlplane, worker, or etcd)
@@ -124,6 +153,16 @@ type RKEConfigServices struct {
 type ETCDService struct {
 	// Base service properties
 	BaseService `yaml:",inline" json:",inline"`
+	// List of etcd urls
+	ExternalURLs []string `yaml:"external_urls" json:"externalUrls,omitempty"`
+	// External CA certificate
+	CACert string `yaml:"ca_cert" json:"caCert,omitempty"`
+	// External Client certificate
+	Cert string `yaml:"cert" json:"cert,omitempty"`
+	// External Client key
+	Key string `yaml:"key" json:"key,omitempty"`
+	// External etcd prefix
+	Path string `yaml:"path" json:"path,omitempty"`
 }
 
 type KubeAPIService struct {
@@ -202,4 +241,57 @@ type IngressConfig struct {
 	Options map[string]string `yaml:"options" json:"options,omitempty"`
 	// NodeSelector key pair
 	NodeSelector map[string]string `yaml:"node_selector" json:"nodeSelector,omitempty"`
+}
+
+type RKEPlan struct {
+	// List of node Plans
+	Nodes []RKEConfigNodePlan `json:"nodes,omitempty"`
+}
+
+type RKEConfigNodePlan struct {
+	// Node address
+	Address string `json:"address,omitempty"`
+	// List of processes that should run on the node
+	Processes []Process `json:"processes,omitempty"`
+	// List of portchecks that should be open on the node
+	PortChecks []PortCheck `json:"portChecks,omitempty"`
+}
+
+type Process struct {
+	// Process Entrypoint command
+	Command []string `json:"command,omitempty"`
+	// Process args
+	Args []string `json:"args,omitempty"`
+	// Environment variables list
+	Env []string `json:"env,omitempty"`
+	// Process docker image
+	Image string `json:"image,omitempty"`
+	// Process docker image VolumesFrom
+	VolumesFrom []string `json:"volumesFrom,omitempty"`
+	// Process docker container bind mounts
+	Binds []string `json:"binds,omitempty"`
+	// Process docker container netwotk mode
+	NetworkMode string `json:"networkMode,omitempty"`
+	// Process container restart policy
+	RestartPolicy string `json:"restartPolicy,omitempty"`
+	// Process container pid mode
+	PidMode string `json:"pidMode,omitempty"`
+	// Run process in privileged container
+	Privileged bool `json:"privileged,omitempty"`
+	// Process healthcheck
+	HealthCheck HealthCheck `json:"healthCheck,omitempty"`
+}
+
+type HealthCheck struct {
+	// Healthcheck URL
+	URL string `json:"url,omitempty"`
+}
+
+type PortCheck struct {
+	// Portcheck address to check.
+	Address string `json:"address,omitempty"`
+	// Port number
+	Port int `json:"port,omitempty"`
+	// Port Protocol
+	Protocol string `json:"protocol,omitempty"`
 }

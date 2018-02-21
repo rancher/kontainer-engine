@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"path/filepath"
 	"strings"
 
 	"github.com/rancher/rke/authz"
@@ -39,6 +38,7 @@ type Cluster struct {
 	DockerDialerFactory              hosts.DialerFactory
 	LocalConnDialerFactory           hosts.DialerFactory
 	PrivateRegistriesMap             map[string]v3.PrivateRegistry
+	K8sWrapTransport                 k8s.WrapTransport
 }
 
 const (
@@ -55,36 +55,55 @@ const (
 
 func (c *Cluster) DeployControlPlane(ctx context.Context) error {
 	// Deploy Etcd Plane
-	if err := services.RunEtcdPlane(ctx, c.EtcdHosts, c.Services.Etcd, c.LocalConnDialerFactory, c.PrivateRegistriesMap); err != nil {
-		return fmt.Errorf("[etcd] Failed to bring up Etcd Plane: %v", err)
+	etcdProcessHostMap := c.getEtcdProcessHostMap(nil)
+	if len(c.Services.Etcd.ExternalURLs) > 0 {
+		log.Infof(ctx, "[etcd] External etcd connection string has been specified, skipping etcd plane")
+	} else {
+		if err := services.RunEtcdPlane(ctx, c.EtcdHosts, etcdProcessHostMap, c.LocalConnDialerFactory, c.PrivateRegistriesMap); err != nil {
+			return fmt.Errorf("[etcd] Failed to bring up Etcd Plane: %v", err)
+		}
 	}
+
 	// Deploy Control plane
+	processMap := map[string]v3.Process{
+		services.SidekickContainerName:       c.BuildSidecarProcess(),
+		services.KubeAPIContainerName:        c.BuildKubeAPIProcess(),
+		services.KubeControllerContainerName: c.BuildKubeControllerProcess(),
+		services.SchedulerContainerName:      c.BuildSchedulerProcess(),
+	}
 	if err := services.RunControlPlane(ctx, c.ControlPlaneHosts,
-		c.EtcdHosts,
-		c.Services,
-		c.SystemImages.KubernetesServicesSidecar,
-		c.Authorization.Mode,
 		c.LocalConnDialerFactory,
-		c.PrivateRegistriesMap); err != nil {
+		c.PrivateRegistriesMap,
+		processMap); err != nil {
 		return fmt.Errorf("[controlPlane] Failed to bring up Control Plane: %v", err)
 	}
-	// Apply Authz configuration after deploying controlplane
-	if err := c.ApplyAuthzResources(ctx); err != nil {
-		return fmt.Errorf("[auths] Failed to apply RBAC resources: %v", err)
+	if len(c.ControlPlaneHosts) > 0 {
+		// Apply Authz configuration after deploying controlplane
+		if err := c.ApplyAuthzResources(ctx); err != nil {
+			return fmt.Errorf("[auths] Failed to apply RBAC resources: %v", err)
+		}
 	}
 	return nil
 }
 
 func (c *Cluster) DeployWorkerPlane(ctx context.Context) error {
 	// Deploy Worker Plane
-	if err := services.RunWorkerPlane(ctx, c.ControlPlaneHosts,
-		c.WorkerHosts,
-		c.EtcdHosts,
-		c.Services,
-		c.SystemImages.NginxProxy,
-		c.SystemImages.KubernetesServicesSidecar,
+	processMap := map[string]v3.Process{
+		services.SidekickContainerName:   c.BuildSidecarProcess(),
+		services.KubeproxyContainerName:  c.BuildKubeProxyProcess(),
+		services.NginxProxyContainerName: c.BuildProxyProcess(),
+	}
+	kubeletProcessHostMap := make(map[*hosts.Host]v3.Process)
+	for _, host := range hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts) {
+		kubeletProcessHostMap[host] = c.BuildKubeletProcess(host)
+	}
+	allHosts := hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts)
+	if err := services.RunWorkerPlane(ctx, allHosts,
 		c.LocalConnDialerFactory,
-		c.PrivateRegistriesMap); err != nil {
+		c.PrivateRegistriesMap,
+		processMap,
+		kubeletProcessHostMap,
+	); err != nil {
 		return fmt.Errorf("[workerPlane] Failed to bring up Worker Plane: %v", err)
 	}
 	return nil
@@ -104,7 +123,8 @@ func ParseCluster(
 	rkeConfig *v3.RancherKubernetesEngineConfig,
 	clusterFilePath, configDir string,
 	dockerDialerFactory,
-	localConnDialerFactory hosts.DialerFactory) (*Cluster, error) {
+	localConnDialerFactory hosts.DialerFactory,
+	k8sWrapTransport k8s.WrapTransport) (*Cluster, error) {
 	var err error
 	c := &Cluster{
 		RancherKubernetesEngineConfig: *rkeConfig,
@@ -112,6 +132,7 @@ func ParseCluster(
 		DockerDialerFactory:           dockerDialerFactory,
 		LocalConnDialerFactory:        localConnDialerFactory,
 		PrivateRegistriesMap:          make(map[string]v3.PrivateRegistry),
+		K8sWrapTransport:              k8sWrapTransport,
 	}
 	// Setting cluster Defaults
 	c.setClusterDefaults(ctx)
@@ -124,7 +145,7 @@ func ParseCluster(
 		return nil, fmt.Errorf("Failed to validate cluster: %v", err)
 	}
 
-	c.KubernetesServiceIP, err = services.GetKubernetesServiceIP(c.Services.KubeAPI.ServiceClusterIPRange)
+	c.KubernetesServiceIP, err = pki.GetKubernetesServiceIP(c.Services.KubeAPI.ServiceClusterIPRange)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get Kubernetes Service IP: %v", err)
 	}
@@ -132,9 +153,9 @@ func ParseCluster(
 	c.ClusterCIDR = c.Services.KubeController.ClusterCIDR
 	c.ClusterDNSServer = c.Services.Kubelet.ClusterDNSServer
 	if len(c.ConfigPath) == 0 {
-		c.ConfigPath = DefaultClusterConfig
+		c.ConfigPath = pki.ClusterConfig
 	}
-	c.LocalKubeConfigPath = GetLocalKubeConfig(c.ConfigPath, configDir)
+	c.LocalKubeConfigPath = pki.GetLocalKubeConfig(c.ConfigPath, configDir)
 
 	for _, pr := range c.PrivateRegistries {
 		if pr.URL == "" {
@@ -146,17 +167,10 @@ func ParseCluster(
 	return c, nil
 }
 
-func GetLocalKubeConfig(configPath, configDir string) string {
-	baseDir := filepath.Dir(configPath)
-	if len(configDir) > 0 {
-		baseDir = filepath.Dir(configDir)
-	}
-	fileName := filepath.Base(configPath)
-	baseDir += "/"
-	return fmt.Sprintf("%s%s%s", baseDir, pki.KubeAdminConfigPrefix, fileName)
-}
-
 func rebuildLocalAdminConfig(ctx context.Context, kubeCluster *Cluster) error {
+	if len(kubeCluster.ControlPlaneHosts) == 0 {
+		return nil
+	}
 	log.Infof(ctx, "[reconcile] Rebuilding and updating local kube config")
 	var workingConfig, newConfig string
 	currentKubeConfig := kubeCluster.Certificates[pki.KubeAdminCertName]
@@ -176,7 +190,7 @@ func rebuildLocalAdminConfig(ctx context.Context, kubeCluster *Cluster) error {
 			return fmt.Errorf("Failed to redeploy local admin config with new host")
 		}
 		workingConfig = newConfig
-		if _, err := GetK8sVersion(kubeCluster.LocalKubeConfigPath); err == nil {
+		if _, err := GetK8sVersion(kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport); err == nil {
 			log.Infof(ctx, "[reconcile] host [%s] is active master on the cluster", cpHost.Address)
 			break
 		}
@@ -186,8 +200,8 @@ func rebuildLocalAdminConfig(ctx context.Context, kubeCluster *Cluster) error {
 	return nil
 }
 
-func isLocalConfigWorking(ctx context.Context, localKubeConfigPath string) bool {
-	if _, err := GetK8sVersion(localKubeConfigPath); err != nil {
+func isLocalConfigWorking(ctx context.Context, localKubeConfigPath string, k8sWrapTransport k8s.WrapTransport) bool {
+	if _, err := GetK8sVersion(localKubeConfigPath, k8sWrapTransport); err != nil {
 		log.Infof(ctx, "[reconcile] Local config is not vaild, rebuilding admin config")
 		return false
 	}
@@ -206,6 +220,9 @@ func getLocalConfigAddress(localConfigPath string) (string, error) {
 
 func getLocalAdminConfigWithNewAddress(localConfigPath, cpAddress string) string {
 	config, _ := clientcmd.BuildConfigFromFlags("", localConfigPath)
+	if config == nil {
+		return ""
+	}
 	config.Host = fmt.Sprintf("https://%s:6443", cpAddress)
 	return pki.GetKubeConfigX509WithData(
 		"https://"+cpAddress+":6443",
@@ -216,75 +233,60 @@ func getLocalAdminConfigWithNewAddress(localConfigPath, cpAddress string) string
 }
 
 func (c *Cluster) ApplyAuthzResources(ctx context.Context) error {
-	if err := authz.ApplyJobDeployerServiceAccount(ctx, c.LocalKubeConfigPath); err != nil {
+	if err := authz.ApplyJobDeployerServiceAccount(ctx, c.LocalKubeConfigPath, c.K8sWrapTransport); err != nil {
 		return fmt.Errorf("Failed to apply the ServiceAccount needed for job execution: %v", err)
 	}
 	if c.Authorization.Mode == NoneAuthorizationMode {
 		return nil
 	}
 	if c.Authorization.Mode == services.RBACAuthorizationMode {
-		if err := authz.ApplySystemNodeClusterRoleBinding(ctx, c.LocalKubeConfigPath); err != nil {
+		if err := authz.ApplySystemNodeClusterRoleBinding(ctx, c.LocalKubeConfigPath, c.K8sWrapTransport); err != nil {
 			return fmt.Errorf("Failed to apply the ClusterRoleBinding needed for node authorization: %v", err)
 		}
 	}
 	if c.Authorization.Mode == services.RBACAuthorizationMode && c.Services.KubeAPI.PodSecurityPolicy {
-		if err := authz.ApplyDefaultPodSecurityPolicy(ctx, c.LocalKubeConfigPath); err != nil {
+		if err := authz.ApplyDefaultPodSecurityPolicy(ctx, c.LocalKubeConfigPath, c.K8sWrapTransport); err != nil {
 			return fmt.Errorf("Failed to apply default PodSecurityPolicy: %v", err)
 		}
-		if err := authz.ApplyDefaultPodSecurityPolicyRole(ctx, c.LocalKubeConfigPath); err != nil {
+		if err := authz.ApplyDefaultPodSecurityPolicyRole(ctx, c.LocalKubeConfigPath, c.K8sWrapTransport); err != nil {
 			return fmt.Errorf("Failed to apply default PodSecurityPolicy ClusterRole and ClusterRoleBinding: %v", err)
 		}
 	}
 	return nil
 }
 
-func (c *Cluster) getUniqueHostList() []*hosts.Host {
-	hostList := []*hosts.Host{}
-	hostList = append(hostList, c.EtcdHosts...)
-	hostList = append(hostList, c.ControlPlaneHosts...)
-	hostList = append(hostList, c.WorkerHosts...)
-	// little trick to get a unique host list
-	uniqHostMap := make(map[*hosts.Host]bool)
-	for _, host := range hostList {
-		uniqHostMap[host] = true
-	}
-	uniqHostList := []*hosts.Host{}
-	for host := range uniqHostMap {
-		uniqHostList = append(uniqHostList, host)
-	}
-	return uniqHostList
-}
-
-func (c *Cluster) DeployAddons(ctx context.Context) error {
-	if err := c.DeployK8sAddOns(ctx); err != nil {
+func (c *Cluster) deployAddons(ctx context.Context) error {
+	if err := c.deployK8sAddOns(ctx); err != nil {
 		return err
 	}
-	return c.DeployUserAddOns(ctx)
+	return c.deployUserAddOns(ctx)
 }
 
 func (c *Cluster) SyncLabelsAndTaints(ctx context.Context) error {
-	log.Infof(ctx, "[sync] Syncing nodes Labels and Taints")
-	k8sClient, err := k8s.NewClient(c.LocalKubeConfigPath)
-	if err != nil {
-		return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
-	}
-	for _, host := range c.getUniqueHostList() {
-		if err := k8s.SyncLabels(k8sClient, host.HostnameOverride, host.ToAddLabels, host.ToDelLabels); err != nil {
-			return err
+	if len(c.ControlPlaneHosts) > 0 {
+		log.Infof(ctx, "[sync] Syncing nodes Labels and Taints")
+		k8sClient, err := k8s.NewClient(c.LocalKubeConfigPath, c.K8sWrapTransport)
+		if err != nil {
+			return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
 		}
-		// Taints are not being added by user
-		if err := k8s.SyncTaints(k8sClient, host.HostnameOverride, host.ToAddTaints, host.ToDelTaints); err != nil {
-			return err
+		for _, host := range hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts) {
+			if err := k8s.SyncLabels(k8sClient, host.HostnameOverride, host.ToAddLabels, host.ToDelLabels); err != nil {
+				return err
+			}
+			// Taints are not being added by user
+			if err := k8s.SyncTaints(k8sClient, host.HostnameOverride, host.ToAddTaints, host.ToDelTaints); err != nil {
+				return err
+			}
 		}
+		log.Infof(ctx, "[sync] Successfully synced nodes Labels and Taints")
 	}
-	log.Infof(ctx, "[sync] Successfully synced nodes Labels and Taints")
 	return nil
 }
 
 func (c *Cluster) PrePullK8sImages(ctx context.Context) error {
 	log.Infof(ctx, "Pre-pulling kubernetes images")
 	var errgrp errgroup.Group
-	hosts := c.getUniqueHostList()
+	hosts := hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts)
 	for _, host := range hosts {
 		runHost := host
 		errgrp.Go(func() error {
@@ -296,4 +298,30 @@ func (c *Cluster) PrePullK8sImages(ctx context.Context) error {
 	}
 	log.Infof(ctx, "Kubernetes images pulled successfully")
 	return nil
+}
+
+func ConfigureCluster(ctx context.Context, rkeConfig v3.RancherKubernetesEngineConfig, crtBundle map[string]pki.CertificatePKI, clusterFilePath, configDir string, k8sWrapTransport k8s.WrapTransport) error {
+	// dialer factories are not needed here since we are not uses docker only k8s jobs
+	kubeCluster, err := ParseCluster(ctx, &rkeConfig, clusterFilePath, configDir, nil, nil, k8sWrapTransport)
+	if err != nil {
+		return err
+	}
+	if len(kubeCluster.ControlPlaneHosts) > 0 {
+		kubeCluster.Certificates = crtBundle
+		if err := kubeCluster.deployNetworkPlugin(ctx); err != nil {
+			return err
+		}
+		return kubeCluster.deployAddons(ctx)
+	}
+	return nil
+}
+
+func (c *Cluster) getEtcdProcessHostMap(readyEtcdHosts []*hosts.Host) map[*hosts.Host]v3.Process {
+	etcdProcessHostMap := make(map[*hosts.Host]v3.Process)
+	for _, host := range c.EtcdHosts {
+		if !host.ToAddEtcdMember {
+			etcdProcessHostMap[host] = c.BuildEtcdProcess(host, readyEtcdHosts)
+		}
+	}
+	return etcdProcessHostMap
 }

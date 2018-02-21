@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+
 	"github.com/docker/docker/client"
 	"github.com/rancher/rke/docker"
 	"github.com/rancher/rke/k8s"
@@ -29,6 +31,7 @@ type Host struct {
 	ToDelLabels         map[string]string
 	ToAddTaints         []string
 	ToDelTaints         []string
+	DockerInfo          types.Info
 }
 
 const (
@@ -36,27 +39,31 @@ const (
 	ToCleanSSLDir        = "/etc/kubernetes/ssl"
 	ToCleanCNIConf       = "/etc/cni"
 	ToCleanCNIBin        = "/opt/cni"
+	ToCleanCNILib        = "/var/lib/cni"
 	ToCleanCalicoRun     = "/var/run/calico"
 	ToCleanTempCertPath  = "/etc/kubernetes/.tmp/"
 	CleanerContainerName = "kube-cleaner"
 )
 
-func (h *Host) CleanUpAll(ctx context.Context, cleanerImage string, prsMap map[string]v3.PrivateRegistry) error {
+func (h *Host) CleanUpAll(ctx context.Context, cleanerImage string, prsMap map[string]v3.PrivateRegistry, externalEtcd bool) error {
 	log.Infof(ctx, "[hosts] Cleaning up host [%s]", h.Address)
 	toCleanPaths := []string{
-		ToCleanEtcdDir,
 		ToCleanSSLDir,
 		ToCleanCNIConf,
 		ToCleanCNIBin,
 		ToCleanCalicoRun,
 		ToCleanTempCertPath,
+		ToCleanCNILib,
+	}
+	if !externalEtcd {
+		toCleanPaths = append(toCleanPaths, ToCleanEtcdDir)
 	}
 	return h.CleanUp(ctx, toCleanPaths, cleanerImage, prsMap)
 }
 
 func (h *Host) CleanUpWorkerHost(ctx context.Context, cleanerImage string, prsMap map[string]v3.PrivateRegistry) error {
-	if h.IsControl {
-		log.Infof(ctx, "[hosts] Host [%s] is already a controlplane host, skipping cleanup.", h.Address)
+	if h.IsControl || h.IsEtcd {
+		log.Infof(ctx, "[hosts] Host [%s] is already a controlplane or etcd host, skipping cleanup.", h.Address)
 		return nil
 	}
 	toCleanPaths := []string{
@@ -64,13 +71,14 @@ func (h *Host) CleanUpWorkerHost(ctx context.Context, cleanerImage string, prsMa
 		ToCleanCNIConf,
 		ToCleanCNIBin,
 		ToCleanCalicoRun,
+		ToCleanCNILib,
 	}
 	return h.CleanUp(ctx, toCleanPaths, cleanerImage, prsMap)
 }
 
 func (h *Host) CleanUpControlHost(ctx context.Context, cleanerImage string, prsMap map[string]v3.PrivateRegistry) error {
-	if h.IsWorker {
-		log.Infof(ctx, "[hosts] Host [%s] is already a worker host, skipping cleanup.", h.Address)
+	if h.IsWorker || h.IsEtcd {
+		log.Infof(ctx, "[hosts] Host [%s] is already a worker or etcd host, skipping cleanup.", h.Address)
 		return nil
 	}
 	toCleanPaths := []string{
@@ -78,6 +86,7 @@ func (h *Host) CleanUpControlHost(ctx context.Context, cleanerImage string, prsM
 		ToCleanCNIConf,
 		ToCleanCNIBin,
 		ToCleanCalicoRun,
+		ToCleanCNILib,
 	}
 	return h.CleanUp(ctx, toCleanPaths, cleanerImage, prsMap)
 }
@@ -226,4 +235,37 @@ func buildCleanerConfig(host *Host, toCleanDirs []string, cleanerImage string) (
 		Binds: bindMounts,
 	}
 	return imageCfg, hostCfg
+}
+
+func NodesToHosts(rkeNodes []v3.RKEConfigNode, nodeRole string) []*Host {
+	hostList := make([]*Host, 0)
+	for _, node := range rkeNodes {
+		for _, role := range node.Role {
+			if role == nodeRole {
+				newHost := Host{
+					RKEConfigNode: node,
+				}
+				hostList = append(hostList, &newHost)
+				break
+			}
+		}
+	}
+	return hostList
+}
+
+func GetUniqueHostList(etcdHosts, cpHosts, workerHosts []*Host) []*Host {
+	hostList := []*Host{}
+	hostList = append(hostList, etcdHosts...)
+	hostList = append(hostList, cpHosts...)
+	hostList = append(hostList, workerHosts...)
+	// little trick to get a unique host list
+	uniqHostMap := make(map[*Host]bool)
+	for _, host := range hostList {
+		uniqHostMap[host] = true
+	}
+	uniqHostList := []*Host{}
+	for host := range uniqHostMap {
+		uniqHostList = append(uniqHostList, host)
+	}
+	return uniqHostList
 }

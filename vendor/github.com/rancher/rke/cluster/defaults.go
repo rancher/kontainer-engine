@@ -9,8 +9,6 @@ import (
 )
 
 const (
-	DefaultClusterConfig = "cluster.yml"
-
 	DefaultServiceClusterIPRange = "10.233.0.0/18"
 	DefaultClusterCIDR           = "10.233.64.0/18"
 	DefaultClusterDNSService     = "10.233.0.3"
@@ -30,7 +28,10 @@ const (
 	DefaultNginxProxyImage                = "rancher/rke-nginx-proxy:v0.1.1"
 	DefaultCertDownloaderImage            = "rancher/rke-cert-deployer:v0.1.1"
 	DefaultKubernetesServicesSidecarImage = "rancher/rke-service-sidekick:v0.1.0"
-	DefaultIngressController              = "nginx"
+
+	DefaultIngressController   = "nginx"
+	DefaultIngressImage        = "rancher/nginx-ingress-controller:0.10.2"
+	DefaultIngressBackendImage = "rancher/nginx-ingress-controller-defaultbackend:1.4"
 
 	DefaultEtcdImage = "rancher/etcd:v3.0.17"
 	DefaultK8sImage  = "rancher/k8s:v1.8.7-rancher1-1"
@@ -162,6 +163,8 @@ func (c *Cluster) setClusterImageDefaults() {
 		&c.SystemImages.CanalFlannel:              DefaultCanalFlannelImage,
 		&c.SystemImages.WeaveNode:                 DefaultWeaveImage,
 		&c.SystemImages.WeaveCNI:                  DefaultWeaveCNIImage,
+		&c.SystemImages.Ingress:                   DefaultIngressImage,
+		&c.SystemImages.IngressBackend:            DefaultIngressBackendImage,
 	}
 	for k, v := range systemImagesDefaultsMap {
 		setDefaultIfEmpty(k, v)

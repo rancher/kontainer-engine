@@ -7,24 +7,26 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type MachineTemplate struct {
+type NodeTemplate struct {
+	types.Namespaced
+
 	metav1.TypeMeta `json:",inline"`
 	// Standard object’s metadata. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#metadata
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	// Specification of the desired behavior of the the cluster. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
-	Spec MachineTemplateSpec `json:"spec"`
+	Spec NodeTemplateSpec `json:"spec"`
 	// Most recent observed status of the cluster. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
-	Status MachineTemplateStatus `json:"status"`
+	Status NodeTemplateStatus `json:"status"`
 }
 
-type MachineTemplateStatus struct {
-	Conditions []MachineTemplateCondition `json:"conditions"`
+type NodeTemplateStatus struct {
+	Conditions []NodeTemplateCondition `json:"conditions"`
 }
 
-type MachineTemplateCondition struct {
+type NodeTemplateCondition struct {
 	// Type of cluster condition.
 	Type string `json:"type"`
 	// Status of the condition, one of True, False, Unknown.
@@ -37,14 +39,14 @@ type MachineTemplateCondition struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-type MachineTemplateSpec struct {
-	DisplayName         string `json:"displayName"`
-	Description         string `json:"description"`
-	Driver              string `json:"driver"`
-	MachineCommonParams `json:",inline"`
+type NodeTemplateSpec struct {
+	DisplayName      string `json:"displayName"`
+	Description      string `json:"description"`
+	Driver           string `json:"driver" norman:"nocreate,noupdate"`
+	NodeCommonParams `json:",inline"`
 }
 
-type Machine struct {
+type Node struct {
 	types.Namespaced
 
 	metav1.TypeMeta `json:",inline"`
@@ -53,35 +55,35 @@ type Machine struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	// Specification of the desired behavior of the the cluster. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
-	Spec MachineSpec `json:"spec"`
+	Spec NodeSpec `json:"spec"`
 	// Most recent observed status of the cluster. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
-	Status MachineStatus `json:"status"`
+	Status NodeStatus `json:"status"`
 }
 
-type MachineStatus struct {
-	Conditions          []MachineCondition   `json:"conditions,omitempty"`
-	NodeStatus          v1.NodeStatus        `json:"nodeStatus,omitempty"`
-	NodeName            string               `json:"nodeName,omitempty"`
-	Requested           v1.ResourceList      `json:"requested,omitempty"`
-	Limits              v1.ResourceList      `json:"limits,omitempty"`
-	MachineTemplateSpec *MachineTemplateSpec `json:"machineTemplateSpec,omitempty"`
-	NodeConfig          *RKEConfigNode       `json:"rkeNode,omitempty"`
-	SSHUser             string               `json:"sshUser,omitempty"`
-	MachineDriverConfig string               `json:"machineDriverConfig,omitempty"`
-	NodeAnnotations     map[string]string    `json:"nodeAnnotations,omitempty"`
-	NodeLabels          map[string]string    `json:"nodeLabels,omitempty"`
-	NodeTaints          []v1.Taint           `json:"nodeTaints,omitempty"`
+type NodeStatus struct {
+	Conditions         []NodeCondition   `json:"conditions,omitempty"`
+	InternalNodeStatus v1.NodeStatus     `json:"internalNodeStatus,omitempty"`
+	NodeName           string            `json:"nodeName,omitempty"`
+	Requested          v1.ResourceList   `json:"requested,omitempty"`
+	Limits             v1.ResourceList   `json:"limits,omitempty"`
+	NodeTemplateSpec   *NodeTemplateSpec `json:"nodeTemplateSpec,omitempty"`
+	NodeConfig         *RKEConfigNode    `json:"rkeNode,omitempty"`
+	NodeAnnotations    map[string]string `json:"nodeAnnotations,omitempty"`
+	NodeLabels         map[string]string `json:"nodeLabels,omitempty"`
+	NodeTaints         []v1.Taint        `json:"nodeTaints,omitempty"`
 }
 
 var (
-	MachineConditionInitialized condition.Cond = "Initialized"
-	MachineConditionProvisioned condition.Cond = "Provisioned"
-	MachineConditionConfigSaved condition.Cond = "Saved"
-	MachineConditionReady       condition.Cond = "Ready"
+	NodeConditionInitialized condition.Cond = "Initialized"
+	NodeConditionProvisioned condition.Cond = "Provisioned"
+	NodeConditionRegistered  condition.Cond = "Registered"
+	NodeConditionRemoved     condition.Cond = "Removed"
+	NodeConditionConfigSaved condition.Cond = "Saved"
+	NodeConditionReady       condition.Cond = "Ready"
 )
 
-type MachineCondition struct {
+type NodeCondition struct {
 	// Type of cluster condition.
 	Type condition.Cond `json:"type"`
 	// Status of the condition, one of True, False, Unknown.
@@ -96,10 +98,39 @@ type MachineCondition struct {
 	Message string `json:"message,omitempty"`
 }
 
-type MachineConfig struct {
-	MachineSpec
-	Labels      map[string]string `json:"labels"`
-	Annotations map[string]string `json:"annotations"`
+var (
+	NodePoolConditionUpdated condition.Cond = "Updated"
+)
+
+type NodePool struct {
+	types.Namespaced
+
+	metav1.TypeMeta `json:",inline"`
+	// Standard object’s metadata. More info:
+	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#metadata
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   NodePoolSpec   `json:"spec"`
+	Status NodePoolStatus `json:"status"`
+}
+
+type NodePoolSpec struct {
+	Etcd             bool   `json:"etcd"`
+	ControlPlane     bool   `json:"controlPlane"`
+	Worker           bool   `json:"worker"`
+	NodeTemplateName string `json:"nodeTemplateName,omitempty" norman:"type=reference[nodeTemplate],required,notnullable"`
+
+	HostnamePrefix  string            `json:"hostnamePrefix" norman:"required,notnullable"`
+	Quantity        int               `json:"quantity" norman:"required,default=1"`
+	NodeLabels      map[string]string `json:"nodeLabels"`
+	NodeAnnotations map[string]string `json:"nodeAnnotations"`
+
+	DisplayName string `json:"displayName"`
+	ClusterName string `json:"clusterName,omitempty" norman:"type=reference[cluster],noupdate,required"`
+}
+
+type NodePoolStatus struct {
+	Conditions []Condition `json:"conditions"`
 }
 
 type CustomConfig struct {
@@ -115,20 +146,25 @@ type CustomConfig struct {
 	SSHKey string `yaml:"ssh_key" json:"sshKey,omitempty"`
 }
 
-type MachineSpec struct {
-	NodeSpec             v1.NodeSpec   `json:"nodeSpec"`
-	CustomConfig         *CustomConfig `json:"customConfig"`
-	Imported             bool          `json:"imported"`
-	Description          string        `json:"description,omitempty"`
-	DisplayName          string        `json:"displayName"`
-	RequestedHostname    string        `json:"requestedHostname,omitempty" norman:"type=dnsLabel,nullable,noupdate,required"`
-	ClusterName          string        `json:"clusterName,omitempty" norman:"type=reference[cluster],noupdate,required"`
-	Role                 []string      `json:"role,omitempty" norman:"noupdate,type=array[enum],options=etcd|worker|controlplane"`
-	MachineTemplateName  string        `json:"machineTemplateName,omitempty" norman:"type=reference[machineTemplate],noupdate"`
-	UseInternalIPAddress bool          `json:"useInternalIpAddress,omitempty" norman:"default=true,noupdate"`
+type NodeSpec struct {
+	// Common fields.  They aren't in a shared struct because the annotations are different
+
+	Etcd             bool   `json:"etcd" norman:"noupdate"`
+	ControlPlane     bool   `json:"controlPlane" norman:"noupdate"`
+	Worker           bool   `json:"worker" norman:"noupdate"`
+	NodeTemplateName string `json:"nodeTemplateName,omitempty" norman:"type=reference[nodeTemplate],noupdate"`
+
+	NodePoolName      string        `json:"nodePoolUuid" norman:"type=reference[nodePool],nocreate,noupdate"`
+	CustomConfig      *CustomConfig `json:"customConfig"`
+	Imported          bool          `json:"imported"`
+	Description       string        `json:"description,omitempty"`
+	DisplayName       string        `json:"displayName"`
+	RequestedHostname string        `json:"requestedHostname,omitempty" norman:"type=dnsLabel,nullable,noupdate,required"`
+	ClusterName       string        `json:"clusterName,omitempty" norman:"type=reference[cluster],noupdate,required"`
+	InternalNodeSpec  v1.NodeSpec   `json:"internalNodeSpec"`
 }
 
-type MachineCommonParams struct {
+type NodeCommonParams struct {
 	AuthCertificateAuthority string            `json:"authCertificateAuthority,omitempty"`
 	AuthKey                  string            `json:"authKey,omitempty"`
 	EngineInstallURL         string            `json:"engineInstallURL,omitempty"`
@@ -139,32 +175,33 @@ type MachineCommonParams struct {
 	EngineLabel              map[string]string `json:"engineLabel,omitempty"`
 	EngineStorageDriver      string            `json:"engineStorageDriver,omitempty"`
 	EngineEnv                map[string]string `json:"engineEnv,omitempty"`
+	UseInternalIPAddress     bool              `json:"useInternalIpAddress,omitempty" norman:"default=true,noupdate"`
 }
 
-type MachineDriver struct {
+type NodeDriver struct {
 	metav1.TypeMeta `json:",inline"`
 	// Standard object’s metadata. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#metadata
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	// Specification of the desired behavior of the the cluster. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
-	Spec MachineDriverSpec `json:"spec"`
+	Spec NodeDriverSpec `json:"spec"`
 	// Most recent observed status of the cluster. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
-	Status MachineDriverStatus `json:"status"`
+	Status NodeDriverStatus `json:"status"`
 }
 
-type MachineDriverStatus struct {
-	Conditions []MachineDriverCondition `json:"conditions"`
+type NodeDriverStatus struct {
+	Conditions []Condition `json:"conditions"`
 }
 
 var (
-	MachineDriverConditionDownloaded condition.Cond = "Downloaded"
-	MachineDriverConditionActive     condition.Cond = "Active"
-	MachineDriverConditionInactive   condition.Cond = "Inactive"
+	NodeDriverConditionDownloaded condition.Cond = "Downloaded"
+	NodeDriverConditionActive     condition.Cond = "Active"
+	NodeDriverConditionInactive   condition.Cond = "Inactive"
 )
 
-type MachineDriverCondition struct {
+type Condition struct {
 	// Type of cluster condition.
 	Type string `json:"type"`
 	// Status of the condition, one of True, False, Unknown.
@@ -179,10 +216,10 @@ type MachineDriverCondition struct {
 	Message string `json:"message,omitempty"`
 }
 
-type MachineDriverSpec struct {
+type NodeDriverSpec struct {
 	DisplayName string `json:"displayName"`
 	Description string `json:"description"`
-	URL         string `json:"url"`
+	URL         string `json:"url" norman:"required"`
 	ExternalID  string `json:"externalId"`
 	Builtin     bool   `json:"builtin"`
 	Active      bool   `json:"active"`
