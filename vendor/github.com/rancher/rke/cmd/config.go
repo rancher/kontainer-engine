@@ -160,6 +160,12 @@ func getHostConfig(reader *bufio.Reader, index int, clusterSSHKeyPath string) (*
 	}
 	host.Address = address
 
+	port, err := getConfig(reader, fmt.Sprintf("SSH Port of host (%d)", index+1), cluster.DefaultSSHPort)
+	if err != nil {
+		return nil, err
+	}
+	host.Port = port
+
 	sshKeyPath, err := getConfig(reader, fmt.Sprintf("SSH Private Key Path of host (%s)", address), "")
 	if err != nil {
 		return nil, err
@@ -239,13 +245,15 @@ func getServiceConfig(reader *bufio.Reader) (*v3.RKEConfigServices, error) {
 	servicesConfig.Kubelet = v3.KubeletService{}
 	servicesConfig.Kubeproxy = v3.KubeproxyService{}
 
-	etcdImage, err := getConfig(reader, "Etcd Docker Image", cluster.DefaultEtcdImage)
+	imageDefaults := v3.K8sVersionToRKESystemImages[cluster.DefaultK8sVersion]
+
+	etcdImage, err := getConfig(reader, "Etcd Docker Image", imageDefaults.Etcd)
 	if err != nil {
 		return nil, err
 	}
 	servicesConfig.Etcd.Image = etcdImage
 
-	kubeImage, err := getConfig(reader, "Kubernetes Docker image", cluster.DefaultK8sImage)
+	kubeImage, err := getConfig(reader, "Kubernetes Docker image", imageDefaults.Kubernetes)
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +298,7 @@ func getServiceConfig(reader *bufio.Reader) (*v3.RKEConfigServices, error) {
 	}
 	servicesConfig.Kubelet.ClusterDNSServer = clusterDNSServiceIP
 
-	infraPodImage, err := getConfig(reader, "Infra Container image", cluster.DefaultInfraContainerImage)
+	infraPodImage, err := getConfig(reader, "Infra Container image", imageDefaults.PodInfraContainer)
 	if err != nil {
 		return nil, err
 	}

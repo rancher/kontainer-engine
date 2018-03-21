@@ -29,6 +29,7 @@ type Cluster struct {
 	EtcdHosts                        []*hosts.Host
 	WorkerHosts                      []*hosts.Host
 	ControlPlaneHosts                []*hosts.Host
+	InactiveHosts                    []*hosts.Host
 	KubeClient                       *kubernetes.Clientset
 	KubernetesServiceIP              net.IP
 	Certificates                     map[string]pki.CertificatePKI
@@ -39,6 +40,8 @@ type Cluster struct {
 	LocalConnDialerFactory           hosts.DialerFactory
 	PrivateRegistriesMap             map[string]v3.PrivateRegistry
 	K8sWrapTransport                 k8s.WrapTransport
+	UseKubectlDeploy                 bool
+	UpdateWorkersOnly                bool
 }
 
 const (
@@ -59,7 +62,7 @@ func (c *Cluster) DeployControlPlane(ctx context.Context) error {
 	if len(c.Services.Etcd.ExternalURLs) > 0 {
 		log.Infof(ctx, "[etcd] External etcd connection string has been specified, skipping etcd plane")
 	} else {
-		if err := services.RunEtcdPlane(ctx, c.EtcdHosts, etcdProcessHostMap, c.LocalConnDialerFactory, c.PrivateRegistriesMap); err != nil {
+		if err := services.RunEtcdPlane(ctx, c.EtcdHosts, etcdProcessHostMap, c.LocalConnDialerFactory, c.PrivateRegistriesMap, c.UpdateWorkersOnly, c.SystemImages.Alpine); err != nil {
 			return fmt.Errorf("[etcd] Failed to bring up Etcd Plane: %v", err)
 		}
 	}
@@ -74,15 +77,12 @@ func (c *Cluster) DeployControlPlane(ctx context.Context) error {
 	if err := services.RunControlPlane(ctx, c.ControlPlaneHosts,
 		c.LocalConnDialerFactory,
 		c.PrivateRegistriesMap,
-		processMap); err != nil {
+		processMap,
+		c.UpdateWorkersOnly,
+		c.SystemImages.Alpine); err != nil {
 		return fmt.Errorf("[controlPlane] Failed to bring up Control Plane: %v", err)
 	}
-	if len(c.ControlPlaneHosts) > 0 {
-		// Apply Authz configuration after deploying controlplane
-		if err := c.ApplyAuthzResources(ctx); err != nil {
-			return fmt.Errorf("[auths] Failed to apply RBAC resources: %v", err)
-		}
-	}
+
 	return nil
 }
 
@@ -103,7 +103,9 @@ func (c *Cluster) DeployWorkerPlane(ctx context.Context) error {
 		c.PrivateRegistriesMap,
 		processMap,
 		kubeletProcessHostMap,
-	); err != nil {
+		c.Certificates,
+		c.UpdateWorkersOnly,
+		c.SystemImages.Alpine); err != nil {
 		return fmt.Errorf("[workerPlane] Failed to bring up Worker Plane: %v", err)
 	}
 	return nil
@@ -232,23 +234,31 @@ func getLocalAdminConfigWithNewAddress(localConfigPath, cpAddress string) string
 		string(config.KeyData))
 }
 
-func (c *Cluster) ApplyAuthzResources(ctx context.Context) error {
-	if err := authz.ApplyJobDeployerServiceAccount(ctx, c.LocalKubeConfigPath, c.K8sWrapTransport); err != nil {
-		return fmt.Errorf("Failed to apply the ServiceAccount needed for job execution: %v", err)
+func ApplyAuthzResources(ctx context.Context, rkeConfig v3.RancherKubernetesEngineConfig, clusterFilePath, configDir string, k8sWrapTransport k8s.WrapTransport) error {
+	// dialer factories are not needed here since we are not uses docker only k8s jobs
+	kubeCluster, err := ParseCluster(ctx, &rkeConfig, clusterFilePath, configDir, nil, nil, k8sWrapTransport)
+	if err != nil {
+		return err
 	}
-	if c.Authorization.Mode == NoneAuthorizationMode {
+	if len(kubeCluster.ControlPlaneHosts) == 0 {
 		return nil
 	}
-	if c.Authorization.Mode == services.RBACAuthorizationMode {
-		if err := authz.ApplySystemNodeClusterRoleBinding(ctx, c.LocalKubeConfigPath, c.K8sWrapTransport); err != nil {
+	if err := authz.ApplyJobDeployerServiceAccount(ctx, kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport); err != nil {
+		return fmt.Errorf("Failed to apply the ServiceAccount needed for job execution: %v", err)
+	}
+	if kubeCluster.Authorization.Mode == NoneAuthorizationMode {
+		return nil
+	}
+	if kubeCluster.Authorization.Mode == services.RBACAuthorizationMode {
+		if err := authz.ApplySystemNodeClusterRoleBinding(ctx, kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport); err != nil {
 			return fmt.Errorf("Failed to apply the ClusterRoleBinding needed for node authorization: %v", err)
 		}
 	}
-	if c.Authorization.Mode == services.RBACAuthorizationMode && c.Services.KubeAPI.PodSecurityPolicy {
-		if err := authz.ApplyDefaultPodSecurityPolicy(ctx, c.LocalKubeConfigPath, c.K8sWrapTransport); err != nil {
+	if kubeCluster.Authorization.Mode == services.RBACAuthorizationMode && kubeCluster.Services.KubeAPI.PodSecurityPolicy {
+		if err := authz.ApplyDefaultPodSecurityPolicy(ctx, kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport); err != nil {
 			return fmt.Errorf("Failed to apply default PodSecurityPolicy: %v", err)
 		}
-		if err := authz.ApplyDefaultPodSecurityPolicyRole(ctx, c.LocalKubeConfigPath, c.K8sWrapTransport); err != nil {
+		if err := authz.ApplyDefaultPodSecurityPolicyRole(ctx, kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport); err != nil {
 			return fmt.Errorf("Failed to apply default PodSecurityPolicy ClusterRole and ClusterRoleBinding: %v", err)
 		}
 	}
@@ -300,12 +310,13 @@ func (c *Cluster) PrePullK8sImages(ctx context.Context) error {
 	return nil
 }
 
-func ConfigureCluster(ctx context.Context, rkeConfig v3.RancherKubernetesEngineConfig, crtBundle map[string]pki.CertificatePKI, clusterFilePath, configDir string, k8sWrapTransport k8s.WrapTransport) error {
+func ConfigureCluster(ctx context.Context, rkeConfig v3.RancherKubernetesEngineConfig, crtBundle map[string]pki.CertificatePKI, clusterFilePath, configDir string, k8sWrapTransport k8s.WrapTransport, useKubectl bool) error {
 	// dialer factories are not needed here since we are not uses docker only k8s jobs
 	kubeCluster, err := ParseCluster(ctx, &rkeConfig, clusterFilePath, configDir, nil, nil, k8sWrapTransport)
 	if err != nil {
 		return err
 	}
+	kubeCluster.UseKubectlDeploy = useKubectl
 	if len(kubeCluster.ControlPlaneHosts) > 0 {
 		kubeCluster.Certificates = crtBundle
 		if err := kubeCluster.deployNetworkPlugin(ctx); err != nil {

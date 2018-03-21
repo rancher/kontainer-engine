@@ -19,11 +19,12 @@ const (
 	unschedulableEtcdTaint = "node-role.kubernetes.io/etcd=true:NoExecute"
 )
 
-func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster) error {
+func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster, updateOnly bool) error {
 	log.Infof(ctx, "[reconcile] Reconciling cluster state")
+	kubeCluster.UpdateWorkersOnly = updateOnly
 	if currentCluster == nil {
 		log.Infof(ctx, "[reconcile] This is newly generated cluster")
-
+		kubeCluster.UpdateWorkersOnly = false
 		return nil
 	}
 
@@ -52,7 +53,7 @@ func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster)
 func reconcileWorker(ctx context.Context, currentCluster, kubeCluster *Cluster, kubeClient *kubernetes.Clientset) error {
 	// worker deleted first to avoid issues when worker+controller on same host
 	logrus.Debugf("[reconcile] Check worker hosts to be deleted")
-	wpToDelete := hosts.GetToDeleteHosts(currentCluster.WorkerHosts, kubeCluster.WorkerHosts)
+	wpToDelete := hosts.GetToDeleteHosts(currentCluster.WorkerHosts, kubeCluster.WorkerHosts, kubeCluster.InactiveHosts)
 	for _, toDeleteHost := range wpToDelete {
 		toDeleteHost.IsWorker = false
 		if err := hosts.DeleteNode(ctx, toDeleteHost, kubeClient, toDeleteHost.IsControl); err != nil {
@@ -67,6 +68,7 @@ func reconcileWorker(ctx context.Context, currentCluster, kubeCluster *Cluster, 
 	// attempt to remove unschedulable taint
 	toAddHosts := hosts.GetToAddHosts(currentCluster.WorkerHosts, kubeCluster.WorkerHosts)
 	for _, host := range toAddHosts {
+		host.UpdateWorker = true
 		if host.IsEtcd {
 			host.ToDelTaints = append(host.ToDelTaints, unschedulableEtcdTaint)
 		}
@@ -80,7 +82,7 @@ func reconcileControl(ctx context.Context, currentCluster, kubeCluster *Cluster,
 	if err != nil {
 		return err
 	}
-	cpToDelete := hosts.GetToDeleteHosts(currentCluster.ControlPlaneHosts, kubeCluster.ControlPlaneHosts)
+	cpToDelete := hosts.GetToDeleteHosts(currentCluster.ControlPlaneHosts, kubeCluster.ControlPlaneHosts, kubeCluster.InactiveHosts)
 	// move the current host in local kubeconfig to the end of the list
 	for i, toDeleteHost := range cpToDelete {
 		if toDeleteHost.Address == selfDeleteAddress {
@@ -110,6 +112,7 @@ func reconcileControl(ctx context.Context, currentCluster, kubeCluster *Cluster,
 	// attempt to remove unschedulable taint
 	toAddHosts := hosts.GetToAddHosts(currentCluster.ControlPlaneHosts, kubeCluster.ControlPlaneHosts)
 	for _, host := range toAddHosts {
+		kubeCluster.UpdateWorkersOnly = false
 		if host.IsEtcd {
 			host.ToDelTaints = append(host.ToDelTaints, unschedulableEtcdTaint)
 		}
@@ -152,7 +155,7 @@ func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, ku
 	clientCert := cert.EncodeCertPEM(currentCluster.Certificates[pki.KubeNodeCertName].Certificate)
 	clientkey := cert.EncodePrivateKeyPEM(currentCluster.Certificates[pki.KubeNodeCertName].Key)
 
-	etcdToDelete := hosts.GetToDeleteHosts(currentCluster.EtcdHosts, kubeCluster.EtcdHosts)
+	etcdToDelete := hosts.GetToDeleteHosts(currentCluster.EtcdHosts, kubeCluster.EtcdHosts, kubeCluster.InactiveHosts)
 	for _, etcdHost := range etcdToDelete {
 		if err := services.RemoveEtcdMember(ctx, etcdHost, kubeCluster.EtcdHosts, currentCluster.LocalConnDialerFactory, clientCert, clientkey); err != nil {
 			log.Warnf(ctx, "[reconcile] %v", err)
@@ -173,6 +176,7 @@ func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, ku
 	crtMap := currentCluster.Certificates
 	var err error
 	for _, etcdHost := range etcdToAdd {
+		kubeCluster.UpdateWorkersOnly = false
 		etcdHost.ToAddEtcdMember = true
 		// Generate new certificate for the new etcd member
 		crtMap, err = pki.RegenerateEtcdCertificate(
@@ -193,14 +197,21 @@ func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, ku
 			return err
 		}
 
-		if err := services.AddEtcdMember(ctx, etcdHost, kubeCluster.EtcdHosts, currentCluster.LocalConnDialerFactory, clientCert, clientkey); err != nil {
+		// Check if the host already part of the cluster -- this will cover cluster with lost quorum
+		isEtcdMember, err := services.IsEtcdMember(ctx, etcdHost, kubeCluster.EtcdHosts, currentCluster.LocalConnDialerFactory, clientCert, clientkey)
+		if err != nil {
 			return err
+		}
+		if !isEtcdMember {
+			if err := services.AddEtcdMember(ctx, etcdHost, kubeCluster.EtcdHosts, currentCluster.LocalConnDialerFactory, clientCert, clientkey); err != nil {
+				return err
+			}
 		}
 		etcdHost.ToAddEtcdMember = false
 		readyHosts := getReadyEtcdHosts(kubeCluster.EtcdHosts)
 		etcdProcessHostMap := kubeCluster.getEtcdProcessHostMap(readyHosts)
 
-		if err := services.ReloadEtcdCluster(ctx, readyHosts, currentCluster.LocalConnDialerFactory, clientCert, clientkey, currentCluster.PrivateRegistriesMap, etcdProcessHostMap); err != nil {
+		if err := services.ReloadEtcdCluster(ctx, readyHosts, currentCluster.LocalConnDialerFactory, clientCert, clientkey, currentCluster.PrivateRegistriesMap, etcdProcessHostMap, kubeCluster.SystemImages.Alpine); err != nil {
 			return err
 		}
 	}

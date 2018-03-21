@@ -11,10 +11,14 @@ type RancherKubernetesEngineConfig struct {
 	Authentication AuthnConfig `yaml:"authentication" json:"authentication,omitempty"`
 	// YAML manifest for user provided addons to be deployed on the cluster
 	Addons string `yaml:"addons" json:"addons,omitempty"`
+	// List of urls or paths for addons
+	AddonsInclude []string `yaml:"addons_include" json:"addonsInclude,omitempty"`
 	// List of images used internally for proxy, cert downlaod and kubedns
 	SystemImages RKESystemImages `yaml:"system_images" json:"systemImages,omitempty"`
 	// SSH Private Key Path
 	SSHKeyPath string `yaml:"ssh_key_path" json:"sshKeyPath,omitempty"`
+	// SSH Agent Auth enable
+	SSHAgentAuth bool `yaml:"ssh_agent_auth" json:"sshAgentAuth"`
 	// Authorization mode configuration used in the cluster
 	Authorization AuthzConfig `yaml:"authorization" json:"authorization,omitempty"`
 	// Enable/disable strict docker version checking
@@ -127,6 +131,8 @@ type RKEConfigNode struct {
 	User string `yaml:"user" json:"user,omitempty"`
 	// Optional - Docker socket on the node that will be used in tunneling
 	DockerSocket string `yaml:"docker_socket" json:"dockerSocket,omitempty"`
+	// SSH Agent Auth enable
+	SSHAgentAuth bool `yaml:"ssh_agent_auth,omitempty" json:"sshAgentAuth,omitempty"`
 	// SSH Private Key
 	SSHKey string `yaml:"ssh_key" json:"sshKey,omitempty"`
 	// SSH Private Key Path
@@ -251,13 +257,15 @@ type RKEPlan struct {
 type RKEConfigNodePlan struct {
 	// Node address
 	Address string `json:"address,omitempty"`
-	// List of processes that should run on the node
-	Processes []Process `json:"processes,omitempty"`
+	// map of named processes that should run on the node
+	Processes map[string]Process `json:"processes,omitempty"`
 	// List of portchecks that should be open on the node
 	PortChecks []PortCheck `json:"portChecks,omitempty"`
 }
 
 type Process struct {
+	// Process name, this should be the container name
+	Name string `json:"name,omitempty"`
 	// Process Entrypoint command
 	Command []string `json:"command,omitempty"`
 	// Process args
