@@ -2,8 +2,10 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 
 	"github.com/rancher/rke/authz"
@@ -42,6 +44,7 @@ type Cluster struct {
 	K8sWrapTransport                 k8s.WrapTransport
 	UseKubectlDeploy                 bool
 	UpdateWorkersOnly                bool
+	CloudConfigFile                  string
 }
 
 const (
@@ -54,6 +57,9 @@ const (
 	LocalNodeAddress           = "127.0.0.1"
 	LocalNodeHostname          = "localhost"
 	LocalNodeUser              = "root"
+	CloudProvider              = "CloudProvider"
+	AzureCloudProvider         = "azure"
+	AWSCloudProvider           = "aws"
 )
 
 func (c *Cluster) DeployControlPlane(ctx context.Context) error {
@@ -165,7 +171,11 @@ func ParseCluster(
 		}
 		c.PrivateRegistriesMap[pr.URL] = pr
 	}
-
+	// parse the cluster config file
+	c.CloudConfigFile, err = c.parseCloudConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to parse cloud config file: %v", err)
+	}
 	return c, nil
 }
 
@@ -180,13 +190,13 @@ func rebuildLocalAdminConfig(ctx context.Context, kubeCluster *Cluster) error {
 	for _, cpHost := range kubeCluster.ControlPlaneHosts {
 		if (currentKubeConfig == pki.CertificatePKI{}) {
 			kubeCluster.Certificates = make(map[string]pki.CertificatePKI)
-			newConfig = getLocalAdminConfigWithNewAddress(kubeCluster.LocalKubeConfigPath, cpHost.Address)
+			newConfig = getLocalAdminConfigWithNewAddress(kubeCluster.LocalKubeConfigPath, cpHost.Address, kubeCluster.ClusterName)
 		} else {
 			kubeURL := fmt.Sprintf("https://%s:6443", cpHost.Address)
 			caData := string(cert.EncodeCertPEM(caCrt))
 			crtData := string(cert.EncodeCertPEM(currentKubeConfig.Certificate))
 			keyData := string(cert.EncodePrivateKeyPEM(currentKubeConfig.Key))
-			newConfig = pki.GetKubeConfigX509WithData(kubeURL, pki.KubeAdminCertName, caData, crtData, keyData)
+			newConfig = pki.GetKubeConfigX509WithData(kubeURL, kubeCluster.ClusterName, pki.KubeAdminCertName, caData, crtData, keyData)
 		}
 		if err := pki.DeployAdminConfig(ctx, newConfig, kubeCluster.LocalKubeConfigPath); err != nil {
 			return fmt.Errorf("Failed to redeploy local admin config with new host")
@@ -220,7 +230,7 @@ func getLocalConfigAddress(localConfigPath string) (string, error) {
 	return address[2:], nil
 }
 
-func getLocalAdminConfigWithNewAddress(localConfigPath, cpAddress string) string {
+func getLocalAdminConfigWithNewAddress(localConfigPath, cpAddress string, clusterName string) string {
 	config, _ := clientcmd.BuildConfigFromFlags("", localConfigPath)
 	if config == nil {
 		return ""
@@ -228,6 +238,7 @@ func getLocalAdminConfigWithNewAddress(localConfigPath, cpAddress string) string
 	config.Host = fmt.Sprintf("https://%s:6443", cpAddress)
 	return pki.GetKubeConfigX509WithData(
 		"https://"+cpAddress+":6443",
+		clusterName,
 		pki.KubeAdminCertName,
 		string(config.CAData),
 		string(config.CertData),
@@ -280,6 +291,9 @@ func (c *Cluster) SyncLabelsAndTaints(ctx context.Context) error {
 			return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
 		}
 		for _, host := range hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts) {
+			if err := k8s.SetAddressesAnnotations(k8sClient, host.HostnameOverride, host.InternalAddress, host.Address); err != nil {
+				return err
+			}
 			if err := k8s.SyncLabels(k8sClient, host.HostnameOverride, host.ToAddLabels, host.ToDelLabels); err != nil {
 				return err
 			}
@@ -298,6 +312,9 @@ func (c *Cluster) PrePullK8sImages(ctx context.Context) error {
 	var errgrp errgroup.Group
 	hosts := hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts)
 	for _, host := range hosts {
+		if !host.UpdateWorker {
+			continue
+		}
 		runHost := host
 		errgrp.Go(func() error {
 			return docker.UseLocalOrPull(ctx, runHost.DClient, runHost.Address, c.SystemImages.Kubernetes, "pre-deploy", c.PrivateRegistriesMap)
@@ -310,7 +327,13 @@ func (c *Cluster) PrePullK8sImages(ctx context.Context) error {
 	return nil
 }
 
-func ConfigureCluster(ctx context.Context, rkeConfig v3.RancherKubernetesEngineConfig, crtBundle map[string]pki.CertificatePKI, clusterFilePath, configDir string, k8sWrapTransport k8s.WrapTransport, useKubectl bool) error {
+func ConfigureCluster(
+	ctx context.Context,
+	rkeConfig v3.RancherKubernetesEngineConfig,
+	crtBundle map[string]pki.CertificatePKI,
+	clusterFilePath, configDir string,
+	k8sWrapTransport k8s.WrapTransport,
+	useKubectl bool) error {
 	// dialer factories are not needed here since we are not uses docker only k8s jobs
 	kubeCluster, err := ParseCluster(ctx, &rkeConfig, clusterFilePath, configDir, nil, nil, k8sWrapTransport)
 	if err != nil {
@@ -335,4 +358,44 @@ func (c *Cluster) getEtcdProcessHostMap(readyEtcdHosts []*hosts.Host) map[*hosts
 		}
 	}
 	return etcdProcessHostMap
+}
+
+func (c *Cluster) parseCloudConfig(ctx context.Context) (string, error) {
+	// check for azure cloud provider
+	if c.AzureCloudProvider.TenantID != "" {
+		c.CloudProvider.Name = AzureCloudProvider
+		jsonString, err := json.MarshalIndent(c.AzureCloudProvider, "", "\n")
+		if err != nil {
+			return "", err
+		}
+		return string(jsonString), nil
+	}
+	if len(c.CloudProvider.CloudConfig) == 0 {
+		return "", nil
+	}
+	// handle generic cloud config
+	tmpMap := make(map[string]interface{})
+	for key, value := range c.CloudProvider.CloudConfig {
+		tmpBool, err := strconv.ParseBool(value)
+		if err == nil {
+			tmpMap[key] = tmpBool
+			continue
+		}
+		tmpInt, err := strconv.ParseInt(value, 10, 64)
+		if err == nil {
+			tmpMap[key] = tmpInt
+			continue
+		}
+		tmpFloat, err := strconv.ParseFloat(value, 64)
+		if err == nil {
+			tmpMap[key] = tmpFloat
+			continue
+		}
+		tmpMap[key] = value
+	}
+	jsonString, err := json.MarshalIndent(tmpMap, "", "\n")
+	if err != nil {
+		return "", err
+	}
+	return string(jsonString), nil
 }

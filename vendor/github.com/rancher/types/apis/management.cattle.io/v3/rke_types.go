@@ -29,6 +29,20 @@ type RancherKubernetesEngineConfig struct {
 	PrivateRegistries []PrivateRegistry `yaml:"private_registries" json:"privateRegistries,omitempty"`
 	// Ingress controller used in the cluster
 	Ingress IngressConfig `yaml:"ingress" json:"ingress,omitempty"`
+	// Cluster Name used in the kube config
+	ClusterName string `yaml:"cluster_name" json:"clusterName,omitempty"`
+	// Cloud Provider options
+	CloudProvider CloudProvider `yaml:"cloud_provider" json:"cloudProvider,omitempty"`
+	// AWSCloudProvicer
+	AWSCloudProvider AWSCloudProvider `yaml:",omitempty" json:"awsCloudProvider,omitempty"`
+	// AzureCloudProvicer
+	AzureCloudProvider AzureCloudProvider `yaml:",omitempty" json:"azureCloudProvider,omitempty"`
+	// CalicoNetworkProvider
+	CalicoNetworkProvider CalicoNetworkProvider `yaml:",omitempty" json:"calicoNetworkProvider,omitempty"`
+	// CanalNetworkProvider
+	CanalNetworkProvider CanalNetworkProvider `yaml:",omitempty" json:"canalNetworkProvider,omitempty"`
+	// FlannelNetworkProvider
+	FlannelNetworkProvider FlannelNetworkProvider `yaml:",omitempty" json:"flannelNetworkProvider,omitempty"`
 }
 
 type PrivateRegistry struct {
@@ -38,29 +52,6 @@ type PrivateRegistry struct {
 	User string `yaml:"user" json:"user,omitempty"`
 	// Password for registry access
 	Password string `yaml:"password" json:"password,omitempty"`
-}
-
-type RancherSystemImages struct {
-	// RKE system images
-	RKESystemImages `yaml:",inline" json:",inline"`
-	// Kubectld image
-	Kubectld string `yaml:"kubectld" json:"kubectld,omitempty"`
-	// Etc host updater image
-	EtcHostUpdater string `yaml:"etc_host_updater" json:"etcHostUpdater,omitempty"`
-	// Kubernetes agent image
-	K8sAgent string `yaml:"k8s_agent" json:"k8sAgent,omitempty"`
-	// Kubernetes auth service agent
-	K8sAuth string `yaml:"k8s_auth" json:"k8sAuth,omitempty"`
-	// Kubernetes Dashboard image
-	Dashboard string `yaml:"dashboard" json:"dashboard,omitempty"`
-	// Heapster addon image
-	Heapster string `yaml:"heapster" json:"heapster,omitempty"`
-	// Grafana image for heapster addon
-	Grafana string `yaml:"grafana" json:"grafana,omitempty"`
-	// Influxdb image for heapster addon
-	Influxdb string `yaml:"influxdb" json:"influxdb,omitempty"`
-	// Tiller addon image
-	Tiller string `yaml:"tiller" json:"tiller,omitempty"`
 }
 
 type RKESystemImages struct {
@@ -112,6 +103,16 @@ type RKESystemImages struct {
 	Ingress string `yaml:"ingress" json:"ingress,omitempty"`
 	// Ingress Controller Backend image
 	IngressBackend string `yaml:"ingress_backend" json:"ingressBackend,omitempty"`
+	// Dashboard image
+	Dashboard string `yaml:"dashboard" json:"dashboard,omitempty"`
+	// Heapster addon image
+	Heapster string `yaml:"heapster" json:"heapster,omitempty"`
+	// Grafana image for heapster addon
+	Grafana string `yaml:"grafana" json:"grafana,omitempty"`
+	// Influxdb image for heapster addon
+	Influxdb string `yaml:"influxdb" json:"influxdb,omitempty"`
+	// Tiller addon image
+	Tiller string `yaml:"tiller" json:"tiller,omitempty"`
 }
 
 type RKEConfigNode struct {
@@ -217,6 +218,8 @@ type BaseService struct {
 	Image string `yaml:"image" json:"image,omitempty"`
 	// Extra arguments that are added to the services
 	ExtraArgs map[string]string `yaml:"extra_args" json:"extraArgs,omitempty"`
+	// Extra binds added to the nodes
+	ExtraBinds []string `yaml:"extra_binds" json:"extraBinds,omitempty"`
 }
 
 type NetworkConfig struct {
@@ -231,6 +234,8 @@ type AuthnConfig struct {
 	Strategy string `yaml:"strategy" json:"strategy,omitempty"`
 	// Authentication options
 	Options map[string]string `yaml:"options" json:"options,omitempty"`
+	// List of additional hostnames and IPs to include in the api server PKI cert
+	SANs []string `yaml:"sans" json:"sans,omitempty"`
 }
 
 type AuthzConfig struct {
@@ -261,6 +266,8 @@ type RKEConfigNodePlan struct {
 	Processes map[string]Process `json:"processes,omitempty"`
 	// List of portchecks that should be open on the node
 	PortChecks []PortCheck `json:"portChecks,omitempty"`
+	// List of files to deploy on the node
+	Files []File `json:"files,omitempty"`
 }
 
 type Process struct {
@@ -302,4 +309,95 @@ type PortCheck struct {
 	Port int `json:"port,omitempty"`
 	// Port Protocol
 	Protocol string `json:"protocol,omitempty"`
+}
+
+type CloudProvider struct {
+	// Name of the Cloud Provider
+	Name string `yaml:"name" json:"name,omitempty"`
+	// Configuration Options of Cloud Provider
+	CloudConfig map[string]string `yaml:"cloud_config" json:"cloudConfig,omitempty"`
+}
+
+type AzureCloudProvider struct {
+	// The cloud environment identifier. Takes values from https://github.com/Azure/go-autorest/blob/ec5f4903f77ed9927ac95b19ab8e44ada64c1356/autorest/azure/environments.go#L13
+	Cloud string `json:"cloud" yaml:"cloud"`
+	// The AAD Tenant ID for the Subscription that the cluster is deployed in
+	TenantID string `json:"tenantId" yaml:"tenantId"`
+	// The ID of the Azure Subscription that the cluster is deployed in
+	SubscriptionID string `json:"subscriptionId" yaml:"subscriptionId"`
+	// The name of the resource group that the cluster is deployed in
+	ResourceGroup string `json:"resourceGroup" yaml:"resourceGroup"`
+	// The location of the resource group that the cluster is deployed in
+	Location string `json:"location" yaml:"location"`
+	// The name of the VNet that the cluster is deployed in
+	VnetName string `json:"vnetName" yaml:"vnetName"`
+	// The name of the resource group that the Vnet is deployed in
+	VnetResourceGroup string `json:"vnetResourceGroup" yaml:"vnetResourceGroup"`
+	// The name of the subnet that the cluster is deployed in
+	SubnetName string `json:"subnetName" yaml:"subnetName"`
+	// The name of the security group attached to the cluster's subnet
+	SecurityGroupName string `json:"securityGroupName" yaml:"securityGroupName"`
+	// (Optional in 1.6) The name of the route table attached to the subnet that the cluster is deployed in
+	RouteTableName string `json:"routeTableName" yaml:"routeTableName"`
+	// (Optional) The name of the availability set that should be used as the load balancer backend
+	// If this is set, the Azure cloudprovider will only add nodes from that availability set to the load
+	// balancer backend pool. If this is not set, and multiple agent pools (availability sets) are used, then
+	// the cloudprovider will try to add all nodes to a single backend pool which is forbidden.
+	// In other words, if you use multiple agent pools (availability sets), you MUST set this field.
+	PrimaryAvailabilitySetName string `json:"primaryAvailabilitySetName" yaml:"primaryAvailabilitySetName"`
+	// The type of azure nodes. Candidate valudes are: vmss and standard.
+	// If not set, it will be default to standard.
+	VMType string `json:"vmType" yaml:"vmType"`
+	// The name of the scale set that should be used as the load balancer backend.
+	// If this is set, the Azure cloudprovider will only add nodes from that scale set to the load
+	// balancer backend pool. If this is not set, and multiple agent pools (scale sets) are used, then
+	// the cloudprovider will try to add all nodes to a single backend pool which is forbidden.
+	// In other words, if you use multiple agent pools (scale sets), you MUST set this field.
+	PrimaryScaleSetName string `json:"primaryScaleSetName" yaml:"primaryScaleSetName"`
+	// The ClientID for an AAD application with RBAC access to talk to Azure RM APIs
+	AADClientID string `json:"aadClientId" yaml:"aadClientId"`
+	// The ClientSecret for an AAD application with RBAC access to talk to Azure RM APIs
+	AADClientSecret string `json:"aadClientSecret" yaml:"aadClientSecret"`
+	// The path of a client certificate for an AAD application with RBAC access to talk to Azure RM APIs
+	AADClientCertPath string `json:"aadClientCertPath" yaml:"aadClientCertPath"`
+	// The password of the client certificate for an AAD application with RBAC access to talk to Azure RM APIs
+	AADClientCertPassword string `json:"aadClientCertPassword" yaml:"aadClientCertPassword"`
+	// Enable exponential backoff to manage resource request retries
+	CloudProviderBackoff bool `json:"cloudProviderBackoff" yaml:"cloudProviderBackoff"`
+	// Backoff retry limit
+	CloudProviderBackoffRetries int `json:"cloudProviderBackoffRetries" yaml:"cloudProviderBackoffRetries"`
+	// Backoff exponent
+	CloudProviderBackoffExponent int `json:"cloudProviderBackoffExponent" yaml:"cloudProviderBackoffExponent"`
+	// Backoff duration
+	CloudProviderBackoffDuration int `json:"cloudProviderBackoffDuration" yaml:"cloudProviderBackoffDuration"`
+	// Backoff jitter
+	CloudProviderBackoffJitter int `json:"cloudProviderBackoffJitter" yaml:"cloudProviderBackoffJitter"`
+	// Enable rate limiting
+	CloudProviderRateLimit bool `json:"cloudProviderRateLimit" yaml:"cloudProviderRateLimit"`
+	// Rate limit QPS
+	CloudProviderRateLimitQPS int `json:"cloudProviderRateLimitQPS" yaml:"cloudProviderRateLimitQPS"`
+	// Rate limit Bucket Size
+	CloudProviderRateLimitBucket int `json:"cloudProviderRateLimitBucket" yaml:"cloudProviderRateLimitBucket"`
+	// Use instance metadata service where possible
+	UseInstanceMetadata bool `json:"useInstanceMetadata" yaml:"useInstanceMetadata"`
+	// Use managed service identity for the virtual machine to access Azure ARM APIs
+	UseManagedIdentityExtension bool `json:"useManagedIdentityExtension"`
+	// Maximum allowed LoadBalancer Rule Count is the limit enforced by Azure Load balancer
+	MaximumLoadBalancerRuleCount int `json:"maximumLoadBalancerRuleCount"`
+}
+
+type AWSCloudProvider struct {
+}
+
+type CalicoNetworkProvider struct {
+	// Cloud provider type used with calico
+	CloudProvider string
+}
+
+type FlannelNetworkProvider struct {
+	// Alternate cloud interface for flannel
+	Iface string
+}
+
+type CanalNetworkProvider struct {
 }

@@ -2,9 +2,11 @@ package cluster
 
 import (
 	"fmt"
+	"strings"
 
 	"context"
 
+	"github.com/docker/docker/api/types"
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
@@ -15,9 +17,9 @@ import (
 )
 
 const (
-	etcdRoleLabel   = "node-role.kubernetes.io/etcd"
-	masterRoleLabel = "node-role.kubernetes.io/master"
-	workerRoleLabel = "node-role.kubernetes.io/worker"
+	etcdRoleLabel         = "node-role.kubernetes.io/etcd"
+	controlplaneRoleLabel = "node-role.kubernetes.io/controlplane"
+	workerRoleLabel       = "node-role.kubernetes.io/worker"
 )
 
 func (c *Cluster) TunnelHosts(ctx context.Context, local bool) error {
@@ -31,6 +33,10 @@ func (c *Cluster) TunnelHosts(ctx context.Context, local bool) error {
 	uniqueHosts := hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts)
 	for i := range uniqueHosts {
 		if err := uniqueHosts[i].TunnelUp(ctx, c.DockerDialerFactory); err != nil {
+			// Unsupported Docker version is NOT a connectivity problem that we can recover! So we bail out on it
+			if strings.Contains(err.Error(), "Unsupported Docker version found") {
+				return err
+			}
 			log.Warnf(ctx, "Failed to set up SSH tunneling for host [%s]: %v", uniqueHosts[i].Address, err)
 			c.InactiveHosts = append(c.InactiveHosts, uniqueHosts[i])
 		}
@@ -57,6 +63,9 @@ func (c *Cluster) InvertIndexHosts() error {
 			ToDelLabels:   map[string]string{},
 			ToAddTaints:   []string{},
 			ToDelTaints:   []string{},
+			DockerInfo: types.Info{
+				DockerRootDir: "/var/lib/docker",
+			},
 		}
 		for k, v := range host.Labels {
 			newHost.ToAddLabels[k] = v
@@ -72,7 +81,7 @@ func (c *Cluster) InvertIndexHosts() error {
 				c.EtcdHosts = append(c.EtcdHosts, &newHost)
 			case services.ControlRole:
 				newHost.IsControl = true
-				newHost.ToAddLabels[masterRoleLabel] = "true"
+				newHost.ToAddLabels[controlplaneRoleLabel] = "true"
 				c.ControlPlaneHosts = append(c.ControlPlaneHosts, &newHost)
 			case services.WorkerRole:
 				newHost.IsWorker = true
@@ -86,7 +95,7 @@ func (c *Cluster) InvertIndexHosts() error {
 			newHost.ToDelLabels[etcdRoleLabel] = "true"
 		}
 		if !newHost.IsControl {
-			newHost.ToDelLabels[masterRoleLabel] = "true"
+			newHost.ToDelLabels[controlplaneRoleLabel] = "true"
 		}
 		if !newHost.IsWorker {
 			newHost.ToDelLabels[workerRoleLabel] = "true"
@@ -115,6 +124,12 @@ func (c *Cluster) SetUpHosts(ctx context.Context) error {
 			return err
 		}
 		log.Infof(ctx, "[certificates] Successfully deployed kubernetes certificates to Cluster nodes")
+		if c.CloudProvider.Name != "" {
+			if err := deployCloudProviderConfig(ctx, hosts, c.SystemImages.Alpine, c.PrivateRegistriesMap, c.CloudConfigFile); err != nil {
+				return err
+			}
+			log.Infof(ctx, "[%s] Successfully deployed kubernetes cloud config to Cluster nodes", CloudConfigServiceName)
+		}
 	}
 	return nil
 }
