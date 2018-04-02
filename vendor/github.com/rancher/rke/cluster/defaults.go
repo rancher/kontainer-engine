@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	DefaultServiceClusterIPRange = "10.233.0.0/18"
-	DefaultClusterCIDR           = "10.233.64.0/18"
-	DefaultClusterDNSService     = "10.233.0.3"
+	DefaultServiceClusterIPRange = "10.43.0.0/16"
+	DefaultClusterCIDR           = "10.42.0.0/16"
+	DefaultClusterDNSService     = "10.43.0.10"
 	DefaultClusterDomain         = "cluster.local"
+	DefaultClusterName           = "local"
 	DefaultClusterSSHKeyPath     = "~/.ssh/id_rsa"
 
 	DefaultK8sVersion = v3.K8sV18
@@ -75,6 +76,9 @@ func (c *Cluster) setClusterDefaults(ctx context.Context) {
 	}
 	if len(c.Ingress.Provider) == 0 {
 		c.Ingress.Provider = DefaultIngressController
+	}
+	if len(c.ClusterName) == 0 {
+		c.ClusterName = DefaultClusterName
 	}
 
 	c.setClusterImageDefaults()
@@ -170,6 +174,12 @@ func (c *Cluster) setClusterNetworkDefaults() {
 		networkPluginConfigDefaultsMap = map[string]string{
 			CalicoCloudProvider: DefaultNetworkCloudProvider,
 		}
+	}
+	if c.CalicoNetworkProvider.CloudProvider != "" {
+		networkPluginConfigDefaultsMap[CalicoCloudProvider] = c.CalicoNetworkProvider.CloudProvider
+	}
+	if c.FlannelNetworkProvider.Iface != "" {
+		networkPluginConfigDefaultsMap[FlannelIface] = c.FlannelNetworkProvider.Iface
 	}
 	for k, v := range networkPluginConfigDefaultsMap {
 		setDefaultIfEmptyMapValue(c.Network.Options, k, v)

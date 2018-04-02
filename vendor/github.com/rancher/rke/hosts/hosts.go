@@ -37,7 +37,7 @@ type Host struct {
 
 const (
 	ToCleanEtcdDir       = "/var/lib/etcd"
-	ToCleanSSLDir        = "/etc/kubernetes/ssl"
+	ToCleanSSLDir        = "/etc/kubernetes"
 	ToCleanCNIConf       = "/etc/cni"
 	ToCleanCNIBin        = "/opt/cni"
 	ToCleanCNILib        = "/var/lib/cni"
@@ -114,7 +114,7 @@ func (h *Host) CleanUp(ctx context.Context, toCleanPaths []string, cleanerImage 
 		return err
 	}
 
-	if err := docker.WaitForContainer(ctx, h.DClient, CleanerContainerName); err != nil {
+	if err := docker.WaitForContainer(ctx, h.DClient, h.Address, CleanerContainerName); err != nil {
 		return err
 	}
 
