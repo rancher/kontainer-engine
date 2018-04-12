@@ -9,8 +9,9 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"regexp"
+	"strings"
 
+	"github.com/coreos/go-semver/semver"
 	ref "github.com/docker/distribution/reference"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -26,7 +27,9 @@ const (
 )
 
 var K8sDockerVersions = map[string][]string{
-	"1.8": {"1.12.6", "1.13.1", "17.03.2"},
+	"1.8":  {"1.11.x", "1.12.x", "1.13.x", "17.03.x"},
+	"1.9":  {"1.11.x", "1.12.x", "1.13.x", "17.03.x"},
+	"1.10": {"1.11.x", "1.12.x", "1.13.x", "17.03.x"},
 }
 
 func DoRunContainer(ctx context.Context, dClient *client.Client, imageCfg *container.Config, hostCfg *container.HostConfig, containerName string, hostname string, plane string, prsMap map[string]v3.PrivateRegistry) error {
@@ -159,31 +162,16 @@ func localImageExists(ctx context.Context, dClient *client.Client, hostname stri
 }
 
 func pullImage(ctx context.Context, dClient *client.Client, hostname string, containerImage string, prsMap map[string]v3.PrivateRegistry) error {
-
 	pullOptions := types.ImagePullOptions{}
-	containerNamed, err := ref.ParseNormalizedNamed(containerImage)
+
+	regAuth, prURL, err := GetImageRegistryConfig(containerImage, prsMap)
 	if err != nil {
 		return err
 	}
-
-	regURL := ref.Domain(containerNamed)
-	if pr, ok := prsMap[regURL]; ok {
-		// We do this if we have some docker.io login information
-		regAuth, err := getRegistryAuth(pr)
-		if err != nil {
-			return err
-		}
-		if pr.URL == DockerRegistryURL {
-			pullOptions.RegistryAuth = regAuth
-		} else {
-			// We have a registry, but it's not docker.io
-			// this could be public or private, ImagePull() can handle it
-			// if we provide a PrivilegeFunc
-
-			pullOptions.PrivilegeFunc = tryRegistryAuth(pr)
-			pullOptions.RegistryAuth = regAuth
-		}
+	if regAuth != "" && prURL == DockerRegistryURL {
+		pullOptions.PrivilegeFunc = tryRegistryAuth(prsMap[prURL])
 	}
+	pullOptions.RegistryAuth = regAuth
 
 	out, err := dClient.ImagePull(ctx, containerImage, pullOptions)
 	if err != nil {
@@ -310,10 +298,16 @@ func sliceEqualsIgnoreOrder(left, right []string) bool {
 }
 
 func IsSupportedDockerVersion(info types.Info, K8sVersion string) (bool, error) {
-	// Docker versions are not semver compliant since stable/edge version (17.03 and higher) so we need to check if the reported ServerVersion starts with a compatible version
+	dockerVersion, err := semver.NewVersion(info.ServerVersion)
+	if err != nil {
+		return false, err
+	}
 	for _, DockerVersion := range K8sDockerVersions[K8sVersion] {
-		DockerVersionRegexp := regexp.MustCompile("^" + DockerVersion)
-		if DockerVersionRegexp.MatchString(info.ServerVersion) {
+		supportedDockerVersion, err := convertToSemver(DockerVersion)
+		if err != nil {
+			return false, err
+		}
+		if dockerVersion.Major == supportedDockerVersion.Major && dockerVersion.Minor == supportedDockerVersion.Minor {
 			return true, nil
 		}
 
@@ -359,4 +353,27 @@ func getRegistryAuth(pr v3.PrivateRegistry) (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(encodedJSON), nil
+}
+
+func GetImageRegistryConfig(image string, prsMap map[string]v3.PrivateRegistry) (string, string, error) {
+	namedImage, err := ref.ParseNormalizedNamed(image)
+	if err != nil {
+		return "", "", err
+	}
+	regURL := ref.Domain(namedImage)
+	if pr, ok := prsMap[regURL]; ok {
+		// We do this if we have some docker.io login information
+		regAuth, err := getRegistryAuth(pr)
+		return regAuth, pr.URL, err
+	}
+	return "", "", nil
+}
+
+func convertToSemver(version string) (*semver.Version, error) {
+	compVersion := strings.SplitN(version, ".", 3)
+	if len(compVersion) != 3 {
+		return nil, fmt.Errorf("The default version is not correct")
+	}
+	compVersion[2] = "0"
+	return semver.NewVersion(strings.Join(compVersion, "."))
 }
