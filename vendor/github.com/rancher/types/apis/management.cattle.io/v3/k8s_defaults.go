@@ -14,6 +14,11 @@ var (
 		K8sV110: v110SystemImages,
 	}
 
+	// K8sVersionServiceOptions - service options per k8s version
+	K8sVersionServiceOptions = map[string]KubernetesServicesOptions{
+		K8sV110: v110ServiceOptions,
+	}
+
 	// K8SVersionToSystemImages16 - images map for 1.6. Keeping it sepate in case we have to diverge
 	K8SVersionToSystemImages16 = map[string]RKESystemImages{
 		K8sV18:  v18SystemImages,
@@ -38,11 +43,12 @@ var (
 			PluginsDocker: "plugins/docker",
 		},
 		LoggingSystemImages: LoggingSystemImages{
-			Fluentd:       "rancher/fluentd:v0.1.4",
-			FluentdHelper: "rancher/fluentd-helper:v0.1.1",
-			Elaticsearch:  "rancher/docker-elasticsearch-kubernetes:5.6.2",
-			Kibana:        "kibana:5.6.4",
-			Busybox:       "busybox",
+			Fluentd:                       "rancher/fluentd:v0.1.6",
+			FluentdHelper:                 "rancher/fluentd-helper:v0.1.2",
+			LogAggregatorFlexVolumeDriver: "rancher/log-aggregator:v0.1.2",
+			Elaticsearch:                  "rancher/docker-elasticsearch-kubernetes:5.6.2",
+			Kibana:                        "kibana:5.6.4",
+			Busybox:                       "busybox",
 		},
 	}
 
@@ -53,7 +59,7 @@ var (
 		Alpine:                    "alpine:latest",
 		NginxProxy:                "rancher/rke-nginx-proxy:v0.1.1",
 		CertDownloader:            "rancher/rke-cert-deployer:v0.1.1",
-		KubernetesServicesSidecar: "rancher/rke-service-sidekick:v0.1.1",
+		KubernetesServicesSidecar: "rancher/rke-service-sidekick:v0.1.2",
 		KubeDNS:                   "rancher/k8s-dns-kube-dns-amd64:1.14.5",
 		DNSmasq:                   "rancher/k8s-dns-dnsmasq-nanny-amd64:1.14.5",
 		KubeDNSSidecar:            "rancher/k8s-dns-sidecar-amd64:1.14.5",
@@ -69,7 +75,7 @@ var (
 		WeaveNode:                 "weaveworks/weave-kube:2.1.2",
 		WeaveCNI:                  "weaveworks/weave-npc:2.1.2",
 		PodInfraContainer:         "rancher/pause-amd64:3.0",
-		Ingress:                   "rancher/nginx-ingress-controller:0.10.2",
+		Ingress:                   "rancher/nginx-ingress-controller:0.10.2-rancher2",
 		IngressBackend:            "rancher/nginx-ingress-controller-defaultbackend:1.4",
 	}
 
@@ -96,7 +102,7 @@ var (
 		WeaveNode:                 "weaveworks/weave-kube:2.1.2",
 		WeaveCNI:                  "weaveworks/weave-npc:2.1.2",
 		PodInfraContainer:         "rancher/pause-amd64:3.0",
-		Ingress:                   "rancher/nginx-ingress-controller:0.10.2",
+		Ingress:                   "rancher/nginx-ingress-controller:0.10.2-rancher2",
 		IngressBackend:            "rancher/nginx-ingress-controller-defaultbackend:1.4",
 		Grafana:                   "rancher/heapster-grafana-amd64:v4.4.3",
 		Heapster:                  "rancher/heapster-amd64:v1.5.0",
@@ -128,12 +134,22 @@ var (
 		WeaveNode:                 "weaveworks/weave-kube:2.1.2",
 		WeaveCNI:                  "weaveworks/weave-npc:2.1.2",
 		PodInfraContainer:         "rancher/pause-amd64:3.1",
-		Ingress:                   "rancher/nginx-ingress-controller:0.10.2",
+		Ingress:                   "rancher/nginx-ingress-controller:0.10.2-rancher2",
 		IngressBackend:            "rancher/nginx-ingress-controller-defaultbackend:1.4",
 		Grafana:                   "rancher/heapster-grafana-amd64:v4.4.3",
 		Heapster:                  "rancher/heapster-amd64:v1.5.0",
 		Influxdb:                  "rancher/heapster-influxdb-amd64:v1.3.3",
 		Tiller:                    "rancher/tiller:v2.8.2",
 		Dashboard:                 "rancher/kubernetes-dashboard-amd64:v1.8.3",
+	}
+
+	// v110 service options
+	v110ServiceOptions = KubernetesServicesOptions{
+		KubeAPI: map[string]string{
+			"tls-cipher-suites": "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305",
+		},
+		Kubelet: map[string]string{
+			"tls-cipher-suites": "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305",
+		},
 	}
 )
