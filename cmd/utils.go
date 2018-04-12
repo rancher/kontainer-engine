@@ -1,7 +1,9 @@
 package cmd
 
 import (
-	"github.com/rancher/kontainer-engine/plugin"
+	"fmt"
+
+	"github.com/rancher/kontainer-engine/drivers"
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/urfave/cli"
 )
@@ -10,7 +12,12 @@ import (
 func runRPCDriver(driverName string) (types.Driver, string, error) {
 	// addrChan is the channel to receive the server listen address
 	addrChan := make(chan string)
-	plugin.Run(driverName, addrChan)
+	creator := drivers.Drivers[driverName]
+	if creator == nil {
+		return nil, "", fmt.Errorf("no driver %v found", driverName)
+	}
+
+	go types.NewServer(creator, addrChan).Serve()
 
 	addr := <-addrChan
 	rpcClient, err := types.NewClient(driverName, addr)
