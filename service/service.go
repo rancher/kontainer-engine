@@ -85,6 +85,11 @@ func (c controllerConfigGetter) GetConfig() (types.DriverOptions, error) {
 	}
 
 	driverOptions.StringOptions["name"] = c.clusterName
+	displayName := c.clusterSpec.DisplayName
+	if displayName == "" {
+		displayName = c.clusterName
+	}
+	driverOptions.StringOptions["displayName"] = displayName
 
 	return driverOptions, nil
 }
