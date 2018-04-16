@@ -21,14 +21,14 @@ var (
 
 func Start() error {
 	for name, driver := range drivers.Drivers {
-		logrus.Infof("Activating driver %s", driver)
+		logrus.Infof("Activating driver %s", name)
 		addr := make(chan string)
 		go types.NewServer(driver, addr).Serve()
 
 		Drivers[name] = driver
 		listenAddr := <-addr
 		pluginAddress[name] = listenAddr
-		logrus.Infof("Activating driver %s done", driver)
+		logrus.Infof("Activating driver %s done", name)
 	}
 	return nil
 }
