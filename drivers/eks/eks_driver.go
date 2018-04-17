@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/elb"
 	heptio "github.com/heptio/authenticator/pkg/token"
 	"github.com/rancher/kontainer-engine/drivers/util"
 	"github.com/rancher/kontainer-engine/types"
@@ -644,7 +645,58 @@ func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 		return fmt.Errorf("error getting new aws session: %v", err)
 	}
 
+	ec2svc := ec2.New(sess)
+
+	_, err = ec2svc.DeleteKeyPair(&ec2.DeleteKeyPairInput{
+		KeyName: aws.String(getEC2KeyPairName(state)),
+	})
+	if err != nil {
+		return fmt.Errorf("error deleting key pair: %v", err)
+	}
+
 	svc := cloudformation.New(sess)
+
+	resources, err := svc.DescribeStackResources(&cloudformation.DescribeStackResourcesInput{
+		StackName: aws.String(getVPCStackName(state)),
+	})
+	if err != nil {
+		return fmt.Errorf("error getting stack info")
+	}
+
+	var vpcid string
+	for _, resource := range resources.StackResources {
+		if *resource.LogicalResourceId == "VPC" {
+			vpcid = *resource.PhysicalResourceId
+			break
+		}
+	}
+	if vpcid == "" {
+		return fmt.Errorf("no vpc could be found")
+	}
+
+	networkInterfaces, err := ec2svc.DescribeNetworkInterfaces(&ec2.DescribeNetworkInterfacesInput{
+		Filters: []*ec2.Filter{
+			{Name: aws.String("vpc-id"), Values: []*string{aws.String(vpcid)}},
+		},
+	})
+
+	for _, networkInterface := range networkInterfaces.NetworkInterfaces {
+		if *networkInterface.RequesterId == "amazon-elb" {
+			split := strings.Split(*networkInterface.Description, " ")
+			if len(split) != 2 {
+				return fmt.Errorf("could not parse elb id from %v", *networkInterface.Description)
+			}
+
+			elbID := split[1]
+
+			_, err = elb.New(sess).DeleteLoadBalancer(&elb.DeleteLoadBalancerInput{
+				LoadBalancerName: aws.String(elbID),
+			})
+			if err != nil {
+				return fmt.Errorf("error deleting load balancer: %v", err)
+			}
+		}
+	}
 
 	for _, stackName := range []string{getServiceRoleName(state), getVPCStackName(state), getWorkNodeName(state)} {
 		_, err = svc.DeleteStack(&cloudformation.DeleteStackInput{
@@ -653,15 +705,6 @@ func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 		if err != nil {
 			return fmt.Errorf("error deleting stack: %v", err)
 		}
-	}
-
-	ec2svc := ec2.New(sess)
-
-	_, err = ec2svc.DeleteKeyPair(&ec2.DeleteKeyPairInput{
-		KeyName: aws.String(getEC2KeyPairName(state)),
-	})
-	if err != nil {
-		return fmt.Errorf("error deleting key pair: %v", err)
 	}
 
 	return nil
