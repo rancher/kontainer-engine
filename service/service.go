@@ -12,6 +12,7 @@ import (
 	"github.com/rancher/kontainer-engine/drivers/eks"
 	"github.com/rancher/kontainer-engine/drivers/gke"
 	"github.com/rancher/kontainer-engine/drivers/import"
+	"github.com/rancher/kontainer-engine/drivers/rke"
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"gopkg.in/yaml.v2"
@@ -199,7 +200,7 @@ func (e *engineService) convertCluster(name string, spec v3.ClusterSpec) (cluste
 		case "import":
 			driver = kubeimport.NewDriver()
 		case "rke":
-			driver = drivers.Drivers["rke"]
+			driver = rke.NewDriver()
 		}
 	}
 	clusterPlugin, err := cluster.NewCluster(driverName, name, configGetter, e.store, driver)
