@@ -88,6 +88,10 @@ func NewDriver() types.Driver {
 	return driver
 }
 
+func init() {
+	// os.Setenv(awsSharedCredentialsFile, awsCredentialsPath)
+}
+
 func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags, error) {
 	driverFlag := types.DriverFlags{
 		Options: make(map[string]*types.Flag),
@@ -117,7 +121,6 @@ func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags
 }
 
 func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
-	logrus.Infof("%v", driverOptions)
 	state := state{}
 	state.ClusterName = getValueFromDriverOptions(driverOptions, types.StringType, "name").(string)
 	state.DisplayName = getValueFromDriverOptions(driverOptions, types.StringType, "display-name", "displayName").(string)
@@ -425,7 +428,7 @@ func getVPCStackName(state state) string {
 }
 
 func (d *Driver) createConfigMap(state state, endpoint string, capem []byte, nodeInstanceRole string) error {
-	token, err := getEKSToken(state)
+	token, err := GetEKSToken(state)
 	if err != nil {
 		return fmt.Errorf("error generating token: %v", err)
 	}
@@ -481,12 +484,13 @@ func (d *Driver) createConfigMap(state state, endpoint string, capem []byte, nod
 	return nil
 }
 
-const awsAccessKeyId = "AWS_ACCESS_KEY_ID"
-const awsSecretAccessKey = "AWS_SECRET_ACCESS_KEY"
+const awsCredentialsDirectory = "./.aws"
+const awsCredentialsPath = awsCredentialsDirectory + "/credentials"
+const awsSharedCredentialsFile = "AWS_SHARED_CREDENTIALS_FILE"
 
 var awsCredentialsLocker = &sync.Mutex{}
 
-func getEKSToken(state state) (string, error) {
+func GetEKSToken(state state) (string, error) {
 	generator, err := heptio.NewGenerator()
 	if err != nil {
 		return "", fmt.Errorf("error creating generator: %v", err)
@@ -495,12 +499,27 @@ func getEKSToken(state state) (string, error) {
 	defer awsCredentialsLocker.Unlock()
 	awsCredentialsLocker.Lock()
 
+	os.Setenv(awsSharedCredentialsFile, awsCredentialsPath)
+
 	defer func() {
-		os.Unsetenv(awsAccessKeyId)
-		os.Unsetenv(awsSecretAccessKey)
+		os.Remove(awsCredentialsPath)
+		os.Remove(awsCredentialsDirectory)
+		os.Unsetenv(awsSharedCredentialsFile)
 	}()
-	os.Setenv(awsAccessKeyId, state.ClientID)
-	os.Setenv(awsSecretAccessKey, state.ClientSecret)
+	err = os.MkdirAll(awsCredentialsDirectory, 0777)
+	if err != nil {
+		return "", fmt.Errorf("error creating credentials directory: %v", err)
+	}
+
+	err = ioutil.WriteFile(awsCredentialsPath, []byte(fmt.Sprintf(
+		`[default]
+aws_access_key_id=%v
+aws_secret_access_key=%v`,
+		state.ClientID,
+		state.ClientSecret)), 0777)
+	if err != nil {
+		return "", fmt.Errorf("error writing credentials file: %v", err)
+	}
 
 	return generator.Get(state.ClusterName)
 }
