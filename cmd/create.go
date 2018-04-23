@@ -7,12 +7,6 @@ import (
 	"strings"
 
 	"github.com/rancher/kontainer-engine/cluster"
-	"github.com/rancher/kontainer-engine/drivers"
-	"github.com/rancher/kontainer-engine/drivers/aks"
-	"github.com/rancher/kontainer-engine/drivers/eks"
-	"github.com/rancher/kontainer-engine/drivers/gke"
-	"github.com/rancher/kontainer-engine/drivers/import"
-	"github.com/rancher/kontainer-engine/drivers/rke"
 	"github.com/rancher/kontainer-engine/store"
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/sirupsen/logrus"
@@ -142,28 +136,7 @@ func create(ctx *cli.Context) error {
 		return cli.ShowCommandHelp(ctx, "create")
 	}
 
-	var driver types.Driver
-	if _, ok := drivers.Drivers[driverName]; !ok {
-		rpcClient, err := types.NewClient(driverName, addr)
-		if err != nil {
-			return err
-		}
-		driver = rpcClient
-	} else {
-		switch driverName {
-		case "gke":
-			driver = gke.NewDriver()
-		case "aks":
-			driver = aks.NewDriver()
-		case "eks":
-			driver = eks.NewDriver()
-		case "import":
-			driver = kubeimport.NewDriver()
-		case "rke":
-			driver = rke.NewDriver()
-		}
-	}
-	cls, err := cluster.NewCluster(driverName, name, configGetter, persistStore, driver)
+	cls, err := cluster.NewCluster(driverName, addr, name, configGetter, persistStore)
 	if err != nil {
 		return err
 	}
