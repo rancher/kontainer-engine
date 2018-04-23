@@ -3,14 +3,15 @@ package eks
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 	"time"
-
-	"encoding/base64"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -424,12 +425,7 @@ func getVPCStackName(state state) string {
 }
 
 func (d *Driver) createConfigMap(state state, endpoint string, capem []byte, nodeInstanceRole string) error {
-	generator, err := heptio.NewGenerator()
-	if err != nil {
-		return fmt.Errorf("error creating generator: %v", err)
-	}
-
-	token, err := generator.Get(state.ClusterName)
+	token, err := getEKSToken(state)
 	if err != nil {
 		return fmt.Errorf("error generating token: %v", err)
 	}
@@ -483,6 +479,30 @@ func (d *Driver) createConfigMap(state state, endpoint string, capem []byte, nod
 	}
 
 	return nil
+}
+
+const awsAccessKeyId = "AWS_ACCESS_KEY_ID"
+const awsSecretAccessKey = "AWS_SECRET_ACCESS_KEY"
+
+var awsCredentialsLocker = &sync.Mutex{}
+
+func getEKSToken(state state) (string, error) {
+	generator, err := heptio.NewGenerator()
+	if err != nil {
+		return "", fmt.Errorf("error creating generator: %v", err)
+	}
+
+	defer awsCredentialsLocker.Unlock()
+	awsCredentialsLocker.Lock()
+
+	defer func() {
+		os.Unsetenv(awsAccessKeyId)
+		os.Unsetenv(awsSecretAccessKey)
+	}()
+	os.Setenv(awsAccessKeyId, state.ClientID)
+	os.Setenv(awsSecretAccessKey, state.ClientSecret)
+
+	return generator.Get(state.ClusterName)
 }
 
 func (d *Driver) waitForClusterReady(state state) (*eksCluster, error) {
