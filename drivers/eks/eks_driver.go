@@ -89,7 +89,7 @@ func NewDriver() types.Driver {
 }
 
 func init() {
-	// os.Setenv(awsSharedCredentialsFile, awsCredentialsPath)
+	os.Setenv(awsSharedCredentialsFile, awsCredentialsPath)
 }
 
 func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags, error) {
@@ -499,12 +499,9 @@ func GetEKSToken(state state) (string, error) {
 	defer awsCredentialsLocker.Unlock()
 	awsCredentialsLocker.Lock()
 
-	os.Setenv(awsSharedCredentialsFile, awsCredentialsPath)
-
 	defer func() {
 		os.Remove(awsCredentialsPath)
 		os.Remove(awsCredentialsDirectory)
-		os.Unsetenv(awsSharedCredentialsFile)
 	}()
 	err = os.MkdirAll(awsCredentialsDirectory, 0777)
 	if err != nil {
