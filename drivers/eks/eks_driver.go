@@ -3,14 +3,15 @@ package eks
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 	"time"
-
-	"encoding/base64"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -87,6 +88,10 @@ func NewDriver() types.Driver {
 	return driver
 }
 
+func init() {
+	os.Setenv(awsSharedCredentialsFile, awsCredentialsPath)
+}
+
 func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags, error) {
 	driverFlag := types.DriverFlags{
 		Options: make(map[string]*types.Flag),
@@ -116,7 +121,6 @@ func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags
 }
 
 func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
-	logrus.Infof("%v", driverOptions)
 	state := state{}
 	state.ClusterName = getValueFromDriverOptions(driverOptions, types.StringType, "name").(string)
 	state.DisplayName = getValueFromDriverOptions(driverOptions, types.StringType, "display-name", "displayName").(string)
@@ -424,12 +428,7 @@ func getVPCStackName(state state) string {
 }
 
 func (d *Driver) createConfigMap(state state, endpoint string, capem []byte, nodeInstanceRole string) error {
-	generator, err := heptio.NewGenerator()
-	if err != nil {
-		return fmt.Errorf("error creating generator: %v", err)
-	}
-
-	token, err := generator.Get(state.ClusterName)
+	token, err := getEKSToken(state)
 	if err != nil {
 		return fmt.Errorf("error generating token: %v", err)
 	}
@@ -483,6 +482,43 @@ func (d *Driver) createConfigMap(state state, endpoint string, capem []byte, nod
 	}
 
 	return nil
+}
+
+const awsCredentialsDirectory = "./.aws"
+const awsCredentialsPath = awsCredentialsDirectory + "/credentials"
+const awsSharedCredentialsFile = "AWS_SHARED_CREDENTIALS_FILE"
+
+var awsCredentialsLocker = &sync.Mutex{}
+
+func getEKSToken(state state) (string, error) {
+	generator, err := heptio.NewGenerator()
+	if err != nil {
+		return "", fmt.Errorf("error creating generator: %v", err)
+	}
+
+	defer awsCredentialsLocker.Unlock()
+	awsCredentialsLocker.Lock()
+
+	defer func() {
+		os.Remove(awsCredentialsPath)
+		os.Remove(awsCredentialsDirectory)
+	}()
+	err = os.MkdirAll(awsCredentialsDirectory, 0777)
+	if err != nil {
+		return "", fmt.Errorf("error creating credentials directory: %v", err)
+	}
+
+	err = ioutil.WriteFile(awsCredentialsPath, []byte(fmt.Sprintf(
+		`[default]
+aws_access_key_id=%v
+aws_secret_access_key=%v`,
+		state.ClientID,
+		state.ClientSecret)), 0777)
+	if err != nil {
+		return "", fmt.Errorf("error writing credentials file: %v", err)
+	}
+
+	return generator.Get(state.ClusterName)
 }
 
 func (d *Driver) waitForClusterReady(state state) (*eksCluster, error) {
