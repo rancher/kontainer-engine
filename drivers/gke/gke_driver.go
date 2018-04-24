@@ -276,7 +276,7 @@ func (s *state) validate() error {
 }
 
 // Create implements driver interface
-func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions) (*types.ClusterInfo, error) {
+func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types.ClusterInfo) (*types.ClusterInfo, error) {
 	state, err := getStateFromOpts(opts)
 	if err != nil {
 		return nil, err

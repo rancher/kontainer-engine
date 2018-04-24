@@ -255,7 +255,7 @@ func (d *Driver) awsHTTPRequest(state state, url string, method string, data []b
 	return body, nil
 }
 
-func (d *Driver) Create(ctx context.Context, options *types.DriverOptions) (*types.ClusterInfo, error) {
+func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *types.ClusterInfo) (*types.ClusterInfo, error) {
 	logrus.Infof("Starting create")
 
 	state, err := getStateFromOptions(options)
