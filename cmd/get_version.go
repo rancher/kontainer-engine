@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+
 	"github.com/rancher/kontainer-engine/store"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -59,6 +60,9 @@ func getVersion(ctx *cli.Context) error {
 		cluster.Driver = rpcClient
 
 		cap, err := cluster.GetCapabilities(context.Background())
+		if err != nil {
+			return fmt.Errorf("error getting capabilities: %v", err)
+		}
 
 		if cap.HasGetVersionCapability() {
 			version, err := cluster.GetVersion(context.Background())
