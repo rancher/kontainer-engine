@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+
 	"github.com/rancher/kontainer-engine/store"
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/sirupsen/logrus"
@@ -66,6 +67,9 @@ func setClusterSize(ctx *cli.Context) error {
 		cluster.Driver = rpcClient
 
 		cap, err := cluster.GetCapabilities(context.Background())
+		if err != nil {
+			return fmt.Errorf("error getting capabilities: %v", err)
+		}
 
 		if cap.HasSetClusterSizeCapability() {
 			err := cluster.SetClusterSize(context.Background(), &types.NodeCount{Count: ctx.Int64("cluster-size")})
