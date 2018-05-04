@@ -51,6 +51,7 @@ type Field struct {
 	ValidChars   string   `json:"validChars,omitempty"`
 	InvalidChars string   `json:"invalidChars,omitempty"`
 	Description  string   `json:"description,omitempty"`
+	DynamicField bool     `json:"dynamicField,omitempty"`
 }
 
 type Values struct {
