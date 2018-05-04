@@ -13,10 +13,10 @@ var Drivers map[string]types.Driver
 
 func init() {
 	Drivers = map[string]types.Driver{
-		"gke":    gke.NewDriver(),
-		"aks":    aks.NewDriver(),
-		"eks":    eks.NewDriver(),
-		"import": kubeimport.NewDriver(),
-		"rke":    rke.NewDriver(),
+		"googlekubernetesengine":        gke.NewDriver(),
+		"azurekubernetesservice":        aks.NewDriver(),
+		"amazonelasticcontainerservice": eks.NewDriver(),
+		"import":                        kubeimport.NewDriver(),
+		"rke":                           rke.NewDriver(),
 	}
 }
