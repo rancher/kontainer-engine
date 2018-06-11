@@ -9,10 +9,18 @@ kind: Job
 metadata:
   name: {{$addonName}}-deploy-job
 spec:
+  backoffLimit: 10
   template:
     metadata:
        name: pi
     spec:
+        tolerations:
+        - key: node-role.kubernetes.io/controlplane
+          operator: Exists
+          effect: NoExecute
+        - key: node-role.kubernetes.io/etcd
+          operator: Exists
+          effect: NoExecute
         hostNetwork: true
         serviceAccountName: rke-job-deployer
         nodeName: {{$nodeName}}

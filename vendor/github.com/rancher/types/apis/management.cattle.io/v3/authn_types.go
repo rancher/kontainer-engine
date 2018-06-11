@@ -84,7 +84,7 @@ type AuthConfig struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Type                string   `json:"type" norman:"noupdate"`
-	Enabled             bool     `json:"enabled,omitempty" norman:"noupdate"`
+	Enabled             bool     `json:"enabled,omitempty"`
 	AccessMode          string   `json:"accessMode,omitempty" norman:"required,notnullable,type=enum,options=required|restricted|unrestricted"`
 	AllowedPrincipalIDs []string `json:"allowedPrincipalIds,omitempty" norman:"type=array[reference[principal]]"`
 }
@@ -100,10 +100,10 @@ type GithubConfig struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	AuthConfig        `json:",inline" mapstructure:",squash"`
 
-	Hostname     string `json:"hostname,omitempty" norman:"default=github.com" norman:"noupdate"`
-	TLS          bool   `json:"tls,omitempty" norman:"notnullable,default=true" norman:"noupdate"`
-	ClientID     string `json:"clientId,omitempty" norman:"noupdate"`
-	ClientSecret string `json:"clientSecret,omitempty" norman:"noupdate,type=password"`
+	Hostname     string `json:"hostname,omitempty" norman:"default=github.com" norman:"required"`
+	TLS          bool   `json:"tls,omitempty" norman:"notnullable,default=true" norman:"required"`
+	ClientID     string `json:"clientId,omitempty" norman:"required"`
+	ClientSecret string `json:"clientSecret,omitempty" norman:"required,type=password"`
 }
 
 type GithubConfigTestOutput struct {
@@ -130,18 +130,18 @@ type ActiveDirectoryConfig struct {
 	ServiceAccountPassword      string   `json:"serviceAccountPassword,omitempty"      norman:"type=password,required"`
 	UserDisabledBitMask         int64    `json:"userDisabledBitMask,omitempty"         norman:"default=2"`
 	UserSearchBase              string   `json:"userSearchBase,omitempty"              norman:"required"`
-	UserSearchAttribute         string   `json:"userSearchAttribute,omitempty"         norman:"default=sAMAccountName"`
-	UserLoginAttribute          string   `json:"userLoginAttribute,omitempty"          norman:"default=sAMAccountName"`
-	UserObjectClass             string   `json:"userObjectClass,omitempty"             norman:"default=person"`
-	UserNameAttribute           string   `json:"userNameAttribute,omitempty"           norman:"default=name"`
-	UserEnabledAttribute        string   `json:"userEnabledAttribute,omitempty"        norman:"default=userAccountControl"`
+	UserSearchAttribute         string   `json:"userSearchAttribute,omitempty"         norman:"default=sAMAccountName|sn|givenName,required"`
+	UserLoginAttribute          string   `json:"userLoginAttribute,omitempty"          norman:"default=sAMAccountName,required"`
+	UserObjectClass             string   `json:"userObjectClass,omitempty"             norman:"default=person,required"`
+	UserNameAttribute           string   `json:"userNameAttribute,omitempty"           norman:"default=name,required"`
+	UserEnabledAttribute        string   `json:"userEnabledAttribute,omitempty"        norman:"default=userAccountControl,required"`
 	GroupSearchBase             string   `json:"groupSearchBase,omitempty"`
-	GroupSearchAttribute        string   `json:"groupSearchAttribute,omitempty"        norman:"default=sAMAccountName"`
-	GroupObjectClass            string   `json:"groupObjectClass,omitempty"            norman:"default=group"`
-	GroupNameAttribute          string   `json:"groupNameAttribute,omitempty"          norman:"default=name"`
-	GroupDNAttribute            string   `json:"groupDNAttribute,omitempty"            norman:"default=distinguishedName"`
-	GroupMemberUserAttribute    string   `json:"groupMemberUserAttribute,omitempty"    norman:"default=distinguishedName"`
-	GroupMemberMappingAttribute string   `json:"groupMemberMappingAttribute,omitempty"`
+	GroupSearchAttribute        string   `json:"groupSearchAttribute,omitempty"        norman:"default=sAMAccountName,required"`
+	GroupObjectClass            string   `json:"groupObjectClass,omitempty"            norman:"default=group,required"`
+	GroupNameAttribute          string   `json:"groupNameAttribute,omitempty"          norman:"default=name,required"`
+	GroupDNAttribute            string   `json:"groupDNAttribute,omitempty"            norman:"default=distinguishedName,required"`
+	GroupMemberUserAttribute    string   `json:"groupMemberUserAttribute,omitempty"    norman:"default=distinguishedName,required"`
+	GroupMemberMappingAttribute string   `json:"groupMemberMappingAttribute,omitempty" norman:"default=member,required"`
 	ConnectionTimeout           int64    `json:"connectionTimeout,omitempty"           norman:"default=5000"`
 }
 

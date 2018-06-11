@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	unschedulableEtcdTaint = "node-role.kubernetes.io/etcd=true:NoExecute"
+	unschedulableEtcdTaint    = "node-role.kubernetes.io/etcd=true:NoExecute"
+	unschedulableControlTaint = "node-role.kubernetes.io/controlplane=true:NoExecute"
 )
 
 func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster, updateOnly bool) error {
@@ -57,7 +58,7 @@ func reconcileWorker(ctx context.Context, currentCluster, kubeCluster *Cluster, 
 	for _, toDeleteHost := range wpToDelete {
 		toDeleteHost.IsWorker = false
 		if err := hosts.DeleteNode(ctx, toDeleteHost, kubeClient, toDeleteHost.IsControl, kubeCluster.CloudProvider.Name); err != nil {
-			return fmt.Errorf("Failed to delete worker node %s from cluster", toDeleteHost.Address)
+			return fmt.Errorf("Failed to delete worker node [%s] from cluster: %v", toDeleteHost.Address, err)
 		}
 		// attempting to clean services/files on the host
 		if err := reconcileHost(ctx, toDeleteHost, true, false, currentCluster.SystemImages.Alpine, currentCluster.DockerDialerFactory, currentCluster.PrivateRegistriesMap); err != nil {
@@ -71,6 +72,9 @@ func reconcileWorker(ctx context.Context, currentCluster, kubeCluster *Cluster, 
 		host.UpdateWorker = true
 		if host.IsEtcd {
 			host.ToDelTaints = append(host.ToDelTaints, unschedulableEtcdTaint)
+		}
+		if host.IsControl {
+			host.ToDelTaints = append(host.ToDelTaints, unschedulableControlTaint)
 		}
 	}
 	return nil
@@ -97,7 +101,7 @@ func reconcileControl(ctx context.Context, currentCluster, kubeCluster *Cluster,
 			return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
 		}
 		if err := hosts.DeleteNode(ctx, toDeleteHost, kubeClient, toDeleteHost.IsWorker, kubeCluster.CloudProvider.Name); err != nil {
-			return fmt.Errorf("Failed to delete controlplane node %s from cluster", toDeleteHost.Address)
+			return fmt.Errorf("Failed to delete controlplane node [%s] from cluster: %v", toDeleteHost.Address, err)
 		}
 		// attempting to clean services/files on the host
 		if err := reconcileHost(ctx, toDeleteHost, false, false, currentCluster.SystemImages.Alpine, currentCluster.DockerDialerFactory, currentCluster.PrivateRegistriesMap); err != nil {
@@ -162,7 +166,7 @@ func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, ku
 			continue
 		}
 		if err := hosts.DeleteNode(ctx, etcdHost, kubeClient, etcdHost.IsControl, kubeCluster.CloudProvider.Name); err != nil {
-			log.Warnf(ctx, "Failed to delete etcd node %s from cluster", etcdHost.Address)
+			log.Warnf(ctx, "Failed to delete etcd node [%s] from cluster: %v", etcdHost.Address, err)
 			continue
 		}
 		// attempting to clean services/files on the host
@@ -208,10 +212,14 @@ func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, ku
 			}
 		}
 		etcdHost.ToAddEtcdMember = false
-		readyHosts := getReadyEtcdHosts(kubeCluster.EtcdHosts)
-		etcdProcessHostMap := kubeCluster.getEtcdProcessHostMap(readyHosts)
+		kubeCluster.setReadyEtcdHosts()
 
-		if err := services.ReloadEtcdCluster(ctx, readyHosts, currentCluster.LocalConnDialerFactory, clientCert, clientkey, currentCluster.PrivateRegistriesMap, etcdProcessHostMap, kubeCluster.SystemImages.Alpine); err != nil {
+		etcdNodePlanMap := make(map[string]v3.RKEConfigNodePlan)
+		for _, etcdReadyHost := range kubeCluster.EtcdReadyHosts {
+			etcdNodePlanMap[etcdReadyHost.Address] = BuildRKEConfigNodePlan(ctx, kubeCluster, etcdReadyHost, etcdReadyHost.DockerInfo)
+		}
+
+		if err := services.ReloadEtcdCluster(ctx, kubeCluster.EtcdReadyHosts, currentCluster.LocalConnDialerFactory, clientCert, clientkey, currentCluster.PrivateRegistriesMap, etcdNodePlanMap, kubeCluster.SystemImages.Alpine); err != nil {
 			return err
 		}
 	}
@@ -235,13 +243,12 @@ func syncLabels(ctx context.Context, currentCluster, kubeCluster *Cluster) {
 	}
 }
 
-func getReadyEtcdHosts(etcdHosts []*hosts.Host) []*hosts.Host {
-	readyEtcdHosts := []*hosts.Host{}
-	for _, host := range etcdHosts {
+func (c *Cluster) setReadyEtcdHosts() {
+	c.EtcdReadyHosts = []*hosts.Host{}
+	for _, host := range c.EtcdHosts {
 		if !host.ToAddEtcdMember {
-			readyEtcdHosts = append(readyEtcdHosts, host)
+			c.EtcdReadyHosts = append(c.EtcdReadyHosts, host)
 			host.ExistingEtcdCluster = true
 		}
 	}
-	return readyEtcdHosts
 }

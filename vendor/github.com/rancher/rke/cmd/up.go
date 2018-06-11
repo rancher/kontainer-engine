@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/rancher/rke/cluster"
 	"github.com/rancher/rke/hosts"
@@ -38,7 +39,7 @@ func UpCommand() cli.Command {
 		},
 	}
 
-	upFlags = append(upFlags, sshCliOptions...)
+	upFlags = append(upFlags, commonFlags...)
 
 	return cli.Command{
 		Name:   "up",
@@ -107,7 +108,7 @@ func ClusterUp(
 		return APIURL, caCrt, clientCert, clientKey, nil, err
 	}
 
-	err = kubeCluster.SaveClusterState(ctx, rkeConfig)
+	err = kubeCluster.SaveClusterState(ctx, &kubeCluster.RancherKubernetesEngineConfig)
 	if err != nil {
 		return APIURL, caCrt, clientCert, clientKey, nil, err
 	}
@@ -137,8 +138,25 @@ func ClusterUp(
 	}
 	caCrt = string(cert.EncodeCertPEM(kubeCluster.Certificates[pki.CACertName].Certificate))
 
+	if err := checkAllIncluded(kubeCluster); err != nil {
+		return APIURL, caCrt, clientCert, clientKey, nil, err
+	}
+
 	log.Infof(ctx, "Finished building Kubernetes cluster successfully")
 	return APIURL, caCrt, clientCert, clientKey, kubeCluster.Certificates, nil
+}
+
+func checkAllIncluded(cluster *cluster.Cluster) error {
+	if len(cluster.InactiveHosts) == 0 {
+		return nil
+	}
+
+	var names []string
+	for _, host := range cluster.InactiveHosts {
+		names = append(names, host.Address)
+	}
+
+	return fmt.Errorf("Provisioning incomplete, host(s) [%s] skipped because they could not be contacted", strings.Join(names, ","))
 }
 
 func clusterUpFromCli(ctx *cli.Context) error {
@@ -181,6 +199,9 @@ func clusterUpLocal(ctx *cli.Context) error {
 		}
 		rkeConfig.Nodes = []v3.RKEConfigNode{*cluster.GetLocalRKENodeConfig()}
 	}
+
+	rkeConfig.IgnoreDockerVersion = ctx.Bool("ignore-docker-version")
+
 	_, _, _, _, _, err = ClusterUp(context.Background(), rkeConfig, nil, hosts.LocalHealthcheckFactory, nil, true, "", false, false)
 	return err
 }
