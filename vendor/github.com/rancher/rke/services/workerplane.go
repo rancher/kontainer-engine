@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	unschedulableEtcdTaint = "node-role.kubernetes.io/etcd=true:NoExecute"
+	unschedulableEtcdTaint    = "node-role.kubernetes.io/etcd=true:NoExecute"
+	unschedulableControlTaint = "node-role.kubernetes.io/controlplane=true:NoExecute"
 )
 
-func RunWorkerPlane(ctx context.Context, allHosts []*hosts.Host, localConnDialerFactory hosts.DialerFactory, prsMap map[string]v3.PrivateRegistry, processMap map[string]v3.Process, kubeletProcessHostMap map[*hosts.Host]v3.Process, certMap map[string]pki.CertificatePKI, updateWorkersOnly bool, alpineImage string) error {
+func RunWorkerPlane(ctx context.Context, allHosts []*hosts.Host, localConnDialerFactory hosts.DialerFactory, prsMap map[string]v3.PrivateRegistry, workerNodePlanMap map[string]v3.RKEConfigNodePlan, certMap map[string]pki.CertificatePKI, updateWorkersOnly bool, alpineImage string) error {
 	log.Infof(ctx, "[%s] Building up Worker Plane..", WorkerRole)
 	var errgrp errgroup.Group
 	for _, host := range allHosts {
@@ -23,15 +24,21 @@ func RunWorkerPlane(ctx context.Context, allHosts []*hosts.Host, localConnDialer
 				continue
 			}
 		}
-		if !host.IsControl && !host.IsWorker {
-			// Add unschedulable taint
-			host.ToAddTaints = append(host.ToAddTaints, unschedulableEtcdTaint)
+		if !host.IsWorker {
+			if host.IsEtcd {
+				// Add unschedulable taint
+				host.ToAddTaints = append(host.ToAddTaints, unschedulableEtcdTaint)
+			}
+			if host.IsControl {
+				// Add unschedulable taint
+				host.ToAddTaints = append(host.ToAddTaints, unschedulableControlTaint)
+			}
+
 		}
 		runHost := host
 		// maps are not thread safe
-		hostProcessMap := copyProcessMap(processMap)
+		hostProcessMap := copyProcessMap(workerNodePlanMap[runHost.Address].Processes)
 		errgrp.Go(func() error {
-			hostProcessMap[KubeletContainerName] = kubeletProcessHostMap[runHost]
 			return doDeployWorkerPlane(ctx, runHost, localConnDialerFactory, prsMap, hostProcessMap, certMap, alpineImage)
 		})
 	}

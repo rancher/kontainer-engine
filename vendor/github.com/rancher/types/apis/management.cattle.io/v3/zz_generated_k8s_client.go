@@ -33,6 +33,7 @@ type Interface interface {
 	CatalogsGetter
 	TemplatesGetter
 	TemplateVersionsGetter
+	TemplateContentsGetter
 	GroupsGetter
 	GroupMembersGetter
 	PrincipalsGetter
@@ -55,8 +56,7 @@ type Interface interface {
 	PipelineExecutionsGetter
 	PipelineExecutionLogsGetter
 	SourceCodeRepositoriesGetter
-	GlobalComposeConfigsGetter
-	ClusterComposeConfigsGetter
+	ComposeConfigsGetter
 }
 
 type Client struct {
@@ -82,6 +82,7 @@ type Client struct {
 	catalogControllers                                 map[string]CatalogController
 	templateControllers                                map[string]TemplateController
 	templateVersionControllers                         map[string]TemplateVersionController
+	templateContentControllers                         map[string]TemplateContentController
 	groupControllers                                   map[string]GroupController
 	groupMemberControllers                             map[string]GroupMemberController
 	principalControllers                               map[string]PrincipalController
@@ -104,8 +105,7 @@ type Client struct {
 	pipelineExecutionControllers                       map[string]PipelineExecutionController
 	pipelineExecutionLogControllers                    map[string]PipelineExecutionLogController
 	sourceCodeRepositoryControllers                    map[string]SourceCodeRepositoryController
-	globalComposeConfigControllers                     map[string]GlobalComposeConfigController
-	clusterComposeConfigControllers                    map[string]ClusterComposeConfigController
+	composeConfigControllers                           map[string]ComposeConfigController
 }
 
 func NewForConfig(config rest.Config) (Interface, error) {
@@ -140,6 +140,7 @@ func NewForConfig(config rest.Config) (Interface, error) {
 		catalogControllers:                                 map[string]CatalogController{},
 		templateControllers:                                map[string]TemplateController{},
 		templateVersionControllers:                         map[string]TemplateVersionController{},
+		templateContentControllers:                         map[string]TemplateContentController{},
 		groupControllers:                                   map[string]GroupController{},
 		groupMemberControllers:                             map[string]GroupMemberController{},
 		principalControllers:                               map[string]PrincipalController{},
@@ -162,8 +163,7 @@ func NewForConfig(config rest.Config) (Interface, error) {
 		pipelineExecutionControllers:                       map[string]PipelineExecutionController{},
 		pipelineExecutionLogControllers:                    map[string]PipelineExecutionLogController{},
 		sourceCodeRepositoryControllers:                    map[string]SourceCodeRepositoryController{},
-		globalComposeConfigControllers:                     map[string]GlobalComposeConfigController{},
-		clusterComposeConfigControllers:                    map[string]ClusterComposeConfigController{},
+		composeConfigControllers:                           map[string]ComposeConfigController{},
 	}, nil
 }
 
@@ -407,6 +407,19 @@ type TemplateVersionsGetter interface {
 func (c *Client) TemplateVersions(namespace string) TemplateVersionInterface {
 	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &TemplateVersionResource, TemplateVersionGroupVersionKind, templateVersionFactory{})
 	return &templateVersionClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type TemplateContentsGetter interface {
+	TemplateContents(namespace string) TemplateContentInterface
+}
+
+func (c *Client) TemplateContents(namespace string) TemplateContentInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &TemplateContentResource, TemplateContentGroupVersionKind, templateContentFactory{})
+	return &templateContentClient{
 		ns:           namespace,
 		client:       c,
 		objectClient: objectClient,
@@ -699,26 +712,13 @@ func (c *Client) SourceCodeRepositories(namespace string) SourceCodeRepositoryIn
 	}
 }
 
-type GlobalComposeConfigsGetter interface {
-	GlobalComposeConfigs(namespace string) GlobalComposeConfigInterface
+type ComposeConfigsGetter interface {
+	ComposeConfigs(namespace string) ComposeConfigInterface
 }
 
-func (c *Client) GlobalComposeConfigs(namespace string) GlobalComposeConfigInterface {
-	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &GlobalComposeConfigResource, GlobalComposeConfigGroupVersionKind, globalComposeConfigFactory{})
-	return &globalComposeConfigClient{
-		ns:           namespace,
-		client:       c,
-		objectClient: objectClient,
-	}
-}
-
-type ClusterComposeConfigsGetter interface {
-	ClusterComposeConfigs(namespace string) ClusterComposeConfigInterface
-}
-
-func (c *Client) ClusterComposeConfigs(namespace string) ClusterComposeConfigInterface {
-	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ClusterComposeConfigResource, ClusterComposeConfigGroupVersionKind, clusterComposeConfigFactory{})
-	return &clusterComposeConfigClient{
+func (c *Client) ComposeConfigs(namespace string) ComposeConfigInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ComposeConfigResource, ComposeConfigGroupVersionKind, composeConfigFactory{})
+	return &composeConfigClient{
 		ns:           namespace,
 		client:       c,
 		objectClient: objectClient,

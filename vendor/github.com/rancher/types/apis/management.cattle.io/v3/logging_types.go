@@ -19,7 +19,7 @@ type ClusterLogging struct {
 	Spec ClusterLoggingSpec `json:"spec"`
 	// Most recent observed status of the cluster. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
-	Status LoggingStatus `json:"status"`
+	Status ClusterLoggingStatus `json:"status"`
 }
 
 type ProjectLogging struct {
@@ -34,15 +34,15 @@ type ProjectLogging struct {
 	Spec ProjectLoggingSpec `json:"spec"`
 	// Most recent observed status of the cluster. More info:
 	// https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#spec-and-status
-	Status LoggingStatus `json:"status"`
+	Status ProjectLoggingStatus `json:"status"`
 }
 
 type LoggingCommonSpec struct {
 	DisplayName string `json:"displayName,omitempty"`
 
-	OutputFlushInterval int               `json:"outputFlushInterval,omitempty" norman:"default=3"`
-	OutputTags          map[string]string `json:"outputTags,omitempty"`
-
+	OutputFlushInterval int                  `json:"outputFlushInterval,omitempty" norman:"default=3"`
+	OutputTags          map[string]string    `json:"outputTags,omitempty"`
+	DockerRootDir       string               `json:"dockerRootDir" norman:"default=/var/lib/docker/containers"`
 	ElasticsearchConfig *ElasticsearchConfig `json:"elasticsearchConfig,omitempty"`
 	SplunkConfig        *SplunkConfig        `json:"splunkConfig,omitempty"`
 	KafkaConfig         *KafkaConfig         `json:"kafkaConfig,omitempty"`
@@ -62,13 +62,20 @@ type ProjectLoggingSpec struct {
 	ProjectName string `json:"projectName" norman:"type=reference[project]"`
 }
 
-type LoggingStatus struct {
-	Conditions []LoggingCondition `json:"conditions,omitempty"`
+type ClusterLoggingStatus struct {
+	Conditions  []LoggingCondition  `json:"conditions,omitempty"`
+	AppliedSpec ClusterLoggingSpec  `json:"appliedSpec,omitempty"`
+	FailedSpec  *ClusterLoggingSpec `json:"failedSpec,omitempty"`
+}
+
+type ProjectLoggingStatus struct {
+	Conditions  []LoggingCondition `json:"conditions,omitempty"`
+	AppliedSpec ProjectLoggingSpec `json:"appliedSpec,omitempty"`
 }
 
 var (
-	ClusterLoggingConditionInitialized condition.Cond = "Initialized"
-	ClusterLoggingConditionProvisioned condition.Cond = "Provisioned"
+	LoggingConditionProvisioned condition.Cond = "Provisioned"
+	LoggingConditionUpdated     condition.Cond = "Updated"
 )
 
 type LoggingCondition struct {
@@ -87,17 +94,28 @@ type LoggingCondition struct {
 }
 
 type ElasticsearchConfig struct {
-	Endpoint     string `json:"endpoint,omitempty" norman:"required"`
-	IndexPrefix  string `json:"indexPrefix,omitempty" norman:"required"`
-	DateFormat   string `json:"dateFormat,omitempty" norman:"required,type=enum,options=YYYY-MM-DD|YYYY-MM|YYYY,default=YYYY-MM-DD"`
-	AuthUserName string `json:"authUsername,omitempty"` //secret
-	AuthPassword string `json:"authPassword,omitempty"` //secret
+	Endpoint      string `json:"endpoint,omitempty" norman:"required"`
+	IndexPrefix   string `json:"indexPrefix,omitempty" norman:"required"`
+	DateFormat    string `json:"dateFormat,omitempty" norman:"required,type=enum,options=YYYY-MM-DD|YYYY-MM|YYYY,default=YYYY-MM-DD"`
+	AuthUserName  string `json:"authUsername,omitempty"` //secret
+	AuthPassword  string `json:"authPassword,omitempty"` //secret
+	Certificate   string `json:"certificate"`
+	ClientCert    string `json:"clientCert"`
+	ClientKey     string `json:"clientKey"`
+	ClientKeyPass string `json:"clientKeyPass"`
+	SSLVerify     bool   `json:"sslVerify"`
 }
 
 type SplunkConfig struct {
-	Endpoint string `json:"endpoint,omitempty" norman:"required"`
-	Source   string `json:"source,omitempty"`
-	Token    string `json:"token,omitempty" norman:"required"` //secret
+	Endpoint      string `json:"endpoint,omitempty" norman:"required"`
+	Source        string `json:"source,omitempty"`
+	Token         string `json:"token,omitempty" norman:"required"` //secret
+	Certificate   string `json:"certificate"`
+	ClientCert    string `json:"clientCert"`
+	ClientKey     string `json:"clientKey"`
+	ClientKeyPass string `json:"clientKeyPass"`
+	SSLVerify     bool   `json:"sslVerify"`
+	Index         string `json:"index"`
 }
 
 type EmbeddedConfig struct {
@@ -105,16 +123,19 @@ type EmbeddedConfig struct {
 	DateFormat            string `json:"dateFormat,omitempty" norman:"required,type=enum,options=YYYY-MM-DD|YYYY-MM|YYYY,default=YYYY-MM-DD"`
 	ElasticsearchEndpoint string `json:"elasticsearchEndpoint,omitempty" norman:"nocreate"`
 	KibanaEndpoint        string `json:"kibanaEndpoint,omitempty" norman:"nocreate"`
-	RequestsMemery        int    `json:"requestsMemory,omitempty" norman:"default=500,min=500"`
-	RequestsCPU           int    `json:"requestsCpu,omitempty" norman:"default=1000,min=1000"`
-	LimitsMemery          int    `json:"limitsMemory,omitempty"`
-	LimitsCPU             int    `json:"limitsCpu,omitempty"`
+	RequestsMemery        int    `json:"requestsMemory,omitempty" norman:"default=4096,min=512"`
+	RequestsCPU           int    `json:"requestsCpu,omitempty" norman:"default=2000,min=1000"`
+	LimitsMemery          int    `json:"limitsMemory,omitempty" norman:"default=4096,min=512"`
+	LimitsCPU             int    `json:"limitsCpu,omitempty" norman:"default=2000,min=1000"`
 }
 
 type KafkaConfig struct {
 	ZookeeperEndpoint string   `json:"zookeeperEndpoint,omitempty"`
 	BrokerEndpoints   []string `json:"brokerEndpoints,omitempty"`
 	Topic             string   `json:"topic,omitempty" norman:"required"`
+	Certificate       string   `json:"certificate"`
+	ClientCert        string   `json:"clientCert"`
+	ClientKey         string   `json:"clientKey"`
 }
 
 type SyslogConfig struct {
