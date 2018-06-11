@@ -104,8 +104,15 @@ func flatten(data map[string]interface{}, driverOptions *types.DriverOptions) {
 			driverOptions.StringOptions[k] = v.(string)
 		case bool:
 			driverOptions.BoolOptions[k] = v.(bool)
-		case []string:
-			driverOptions.StringSliceOptions[k] = &types.StringSlice{Value: v.([]string)}
+		case []interface{}:
+			var array []string
+			for _, a := range v.([]interface{}) {
+				str, ok := a.(string)
+				if ok == true {
+					array = append(array, str)
+				}
+			}
+			driverOptions.StringSliceOptions[k] = &types.StringSlice{Value: array}
 		case map[string]interface{}:
 			// hack for labels
 			if k == "labels" {
