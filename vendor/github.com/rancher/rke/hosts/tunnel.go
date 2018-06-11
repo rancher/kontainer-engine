@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"net"
 
@@ -83,7 +82,7 @@ func parsePrivateKeyWithPassPhrase(keyBuff string, passphrase []byte) (ssh.Signe
 	return ssh.ParsePrivateKeyWithPassphrase([]byte(keyBuff), passphrase)
 }
 
-func getSSHConfig(username, sshPrivateKeyString string, passphrase []byte, useAgentAuth bool) (*ssh.ClientConfig, error) {
+func getSSHConfig(username, sshPrivateKeyString string, useAgentAuth bool) (*ssh.ClientConfig, error) {
 	config := &ssh.ClientConfig{
 		User:            username,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
@@ -104,7 +103,7 @@ func getSSHConfig(username, sshPrivateKeyString string, passphrase []byte, useAg
 		}
 	}
 
-	signer, err := getPrivateKeySigner(sshPrivateKeyString, passphrase)
+	signer, err := parsePrivateKey(sshPrivateKeyString)
 	if err != nil {
 		return config, err
 	}
@@ -113,18 +112,22 @@ func getSSHConfig(username, sshPrivateKeyString string, passphrase []byte, useAg
 	return config, nil
 }
 
-func getPrivateKeySigner(sshPrivateKeyString string, passphrase []byte) (ssh.Signer, error) {
-	key, err := parsePrivateKey(sshPrivateKeyString)
-	if err != nil && strings.Contains(err.Error(), "decode encrypted private keys") {
-		key, err = parsePrivateKeyWithPassPhrase(sshPrivateKeyString, passphrase)
-	}
-	return key, err
-}
-
 func privateKeyPath(sshKeyPath string) string {
 	if sshKeyPath[:2] == "~/" {
-		sshKeyPath = filepath.Join(os.Getenv("HOME"), sshKeyPath[2:])
+		sshKeyPath = filepath.Join(userHome(), sshKeyPath[2:])
 	}
 	buff, _ := ioutil.ReadFile(sshKeyPath)
 	return string(buff)
+}
+
+func userHome() string {
+	if home := os.Getenv("HOME"); home != "" {
+		return home
+	}
+	homeDrive := os.Getenv("HOMEDRIVE")
+	homePath := os.Getenv("HOMEPATH")
+	if homeDrive != "" && homePath != "" {
+		return homeDrive + homePath
+	}
+	return os.Getenv("USERPROFILE")
 }

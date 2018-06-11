@@ -80,6 +80,15 @@ items:
               volumeMounts:
                 - name: xtables-lock
                   mountPath: /run/xtables.lock
+            - name: weave-loopback
+              command:
+                - /opt/rke/weave-loopback-cni.sh
+              image: {{.WeaveLoopbackImage}}
+              securityContext:
+                privileged: true
+              volumeMounts:
+                - name: cni-bin
+                  mountPath: /opt
           hostNetwork: true
           hostPID: true
           restartPolicy: Always
@@ -87,6 +96,12 @@ items:
             seLinuxOptions: {}
           serviceAccountName: weave-net
           tolerations:
+            - key: "node-role.kubernetes.io/controlplane"
+              operator: "Exists"
+              effect: "NoExecute"
+            - key: "node-role.kubernetes.io/etcd"
+              operator: "Exists"
+              effect: "NoExecute"
             - effect: NoExecute
               operator: Exists
           volumes:
