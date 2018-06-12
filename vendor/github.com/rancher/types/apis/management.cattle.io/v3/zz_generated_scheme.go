@@ -69,6 +69,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&TemplateList{},
 		&TemplateVersion{},
 		&TemplateVersionList{},
+		&TemplateContent{},
+		&TemplateContentList{},
 		&Group{},
 		&GroupList{},
 		&GroupMember{},
@@ -113,10 +115,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&PipelineExecutionLogList{},
 		&SourceCodeRepository{},
 		&SourceCodeRepositoryList{},
-		&GlobalComposeConfig{},
-		&GlobalComposeConfigList{},
-		&ClusterComposeConfig{},
-		&ClusterComposeConfigList{},
+		&ComposeConfig{},
+		&ComposeConfigList{},
 	)
 	return nil
 }

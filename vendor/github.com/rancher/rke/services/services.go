@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"path"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/rancher/rke/docker"
@@ -20,16 +21,19 @@ const (
 	SidekickServiceName   = "sidekick"
 	RBACAuthorizationMode = "rbac"
 
-	KubeAPIContainerName        = "kube-apiserver"
-	KubeletContainerName        = "kubelet"
-	KubeproxyContainerName      = "kube-proxy"
-	KubeControllerContainerName = "kube-controller-manager"
-	SchedulerContainerName      = "kube-scheduler"
-	EtcdContainerName           = "etcd"
-	NginxProxyContainerName     = "nginx-proxy"
-	SidekickContainerName       = "service-sidekick"
-	LogLinkContainerName        = "rke-log-linker"
-	LogCleanerContainerName     = "rke-log-cleaner"
+	KubeAPIContainerName          = "kube-apiserver"
+	KubeletContainerName          = "kubelet"
+	KubeproxyContainerName        = "kube-proxy"
+	KubeControllerContainerName   = "kube-controller-manager"
+	SchedulerContainerName        = "kube-scheduler"
+	EtcdContainerName             = "etcd"
+	EtcdSnapshotContainerName     = "etcd-rolling-snapshots"
+	EtcdSnapshotOnceContainerName = "etcd-snapshot-once"
+	EtcdRestoreContainerName      = "etcd-restore"
+	NginxProxyContainerName       = "nginx-proxy"
+	SidekickContainerName         = "service-sidekick"
+	LogLinkContainerName          = "rke-log-linker"
+	LogCleanerContainerName       = "rke-log-cleaner"
 
 	KubeAPIPort        = 6443
 	SchedulerPort      = 10251
@@ -55,7 +59,7 @@ func runSidekick(ctx context.Context, host *hosts.Host, prsMap map[string]v3.Pri
 	if err := docker.UseLocalOrPull(ctx, host.DClient, host.Address, sidecarImage, SidekickServiceName, prsMap); err != nil {
 		return err
 	}
-	if _, err := docker.CreateContiner(ctx, host.DClient, host.Address, SidekickContainerName, imageCfg, hostCfg); err != nil {
+	if _, err := docker.CreateContainer(ctx, host.DClient, host.Address, SidekickContainerName, imageCfg, hostCfg); err != nil {
 		return err
 	}
 	return nil
@@ -71,6 +75,7 @@ func GetProcessConfig(process v3.Process) (*container.Config, *container.HostCon
 		Cmd:        process.Args,
 		Env:        process.Env,
 		Image:      process.Image,
+		Labels:     process.Labels,
 	}
 	// var pidMode container.PidMode
 	// pidMode = process.PidMode
@@ -114,7 +119,7 @@ func createLogLink(ctx context.Context, host *hosts.Host, containerName, plane, 
 	}
 	hostCfg := &container.HostConfig{
 		Binds: []string{
-			"/var/lib:/var/lib",
+			fmt.Sprintf("%s:/var/lib", path.Join(host.PrefixPath, "/var/lib")),
 		},
 		Privileged: true,
 	}

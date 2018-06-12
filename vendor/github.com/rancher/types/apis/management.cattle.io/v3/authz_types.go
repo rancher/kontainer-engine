@@ -79,6 +79,7 @@ type RoleTemplate struct {
 	Builtin           bool                `json:"builtin" norman:"nocreate,noupdate"`
 	External          bool                `json:"external"`
 	Hidden            bool                `json:"hidden"`
+	Locked            bool                `json:"locked,omitempty" norman:"type=boolean"`
 	Context           string              `json:"context" norman:"type=string,options=project|cluster"`
 	RoleTemplateNames []string            `json:"roleTemplateNames,omitempty" norman:"type=array[reference[roleTemplate]]"`
 }
