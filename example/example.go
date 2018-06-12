@@ -22,15 +22,15 @@ func main() {
 		logrus.Fatal(err)
 	}
 	gkeSpec := &v3.GoogleKubernetesEngineConfig{
-		ProjectID:           "rancher-dev",
-		Zone:                "us-central1-a",
-		NodeCount:           1,
-		KubernetesDashboard: true,
-		HTTPLoadBalancing:   true,
-		ImageType:           "ubuntu",
-		LegacyAbac:          true,
-		Locations:           []string{"us-central1-a", "us-central1-b"},
-		Credential:          string(data),
+		ProjectID:                 "rancher-dev",
+		Zone:                      "us-central1-a",
+		NodeCount:                 1,
+		EnableKubernetesDashboard: true,
+		DisableHTTPLoadBalancing:  false,
+		ImageType:                 "ubuntu",
+		EnableLegacyAbac:          true,
+		Locations:                 []string{"us-central1-a", "us-central1-b"},
+		Credential:                string(data),
 	}
 	spec := v3.ClusterSpec{
 		GoogleKubernetesEngineConfig: gkeSpec,
