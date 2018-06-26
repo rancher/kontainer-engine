@@ -239,10 +239,10 @@ var (
 		"v1.10.3-rancher2-1": {
 			Etcd:                      m("quay.io/coreos/etcd:v3.1.12"),
 			Kubernetes:                m("rancher/hyperkube:v1.10.3-rancher2"),
-			Alpine:                    m("rancher/rke-tools:v0.1.9"),
-			NginxProxy:                m("rancher/rke-tools:v0.1.9"),
-			CertDownloader:            m("rancher/rke-tools:v0.1.9"),
-			KubernetesServicesSidecar: m("rancher/rke-tools:v0.1.9"),
+			Alpine:                    m("rancher/rke-tools:v0.1.10"),
+			NginxProxy:                m("rancher/rke-tools:v0.1.10"),
+			CertDownloader:            m("rancher/rke-tools:v0.1.10"),
+			KubernetesServicesSidecar: m("rancher/rke-tools:v0.1.10"),
 			KubeDNS:                   m("gcr.io/google_containers/k8s-dns-kube-dns-amd64:1.14.8"),
 			DNSmasq:                   m("gcr.io/google_containers/k8s-dns-dnsmasq-nanny-amd64:1.14.8"),
 			KubeDNSSidecar:            m("gcr.io/google_containers/k8s-dns-sidecar-amd64:1.14.8"),
@@ -300,7 +300,7 @@ var (
 			PluginsDocker: m("plugins/docker:17.12"),
 		},
 		LoggingSystemImages: LoggingSystemImages{
-			Fluentd:                       m("rancher/fluentd:v0.1.8"),
+			Fluentd:                       m("rancher/fluentd:v0.1.9"),
 			FluentdHelper:                 m("rancher/fluentd-helper:v0.1.2"),
 			LogAggregatorFlexVolumeDriver: m("rancher/log-aggregator:v0.1.3"),
 			Elaticsearch:                  m("quay.io/pires/docker-elasticsearch-kubernetes:5.6.2"),
