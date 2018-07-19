@@ -6,7 +6,7 @@ import (
 
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
-	check "gopkg.in/check.v1"
+	"gopkg.in/check.v1"
 )
 
 // Hook up gocheck into the "go test" runner.
@@ -48,13 +48,17 @@ func (s *StubTestSuite) TestFlatten(c *check.C) {
 	flatten(opts, &driverOptions)
 	fmt.Println(driverOptions)
 	boolResult := map[string]bool{
-		"enableAlphaFeature": true,
+		"enableAlphaFeature":      true,
+		"noStackdriverLogging":    false,
+		"noNetworkPolicy":         false,
+		"noStackdriverMonitoring": false,
 	}
 	stringResult := map[string]string{
-		"projectId":     "test",
-		"zone":          "test",
-		"masterVersion": "1.7.1",
-		"nodeVersion":   "1.7.1",
+		"projectId":         "test",
+		"zone":              "test",
+		"masterVersion":     "1.7.1",
+		"maintenanceWindow": "",
+		"nodeVersion":       "1.7.1",
 	}
 	intResult := map[string]int64{
 		"diskSizeGb": 50,
