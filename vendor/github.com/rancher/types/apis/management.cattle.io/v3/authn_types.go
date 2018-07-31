@@ -276,8 +276,8 @@ type SamlConfig struct {
 	AuthConfig        `json:",inline" mapstructure:",squash"`
 
 	IDPMetadataContent string `json:"idpMetadataContent" norman:"required"`
-	SPSelfSignedCert   string `json:"spCert"             norman:"required"`
-	SPSelfSignedKey    string `json:"spKey"              norman:"required"`
+	SpCert             string `json:"spCert"             norman:"required"`
+	SpKey              string `json:"spKey"              norman:"required"`
 	GroupsField        string `json:"groupsField"        norman:"required"`
 	DisplayNameField   string `json:"displayNameField"   norman:"required"`
 	UserNameField      string `json:"userNameField"      norman:"required"`
@@ -285,10 +285,18 @@ type SamlConfig struct {
 	RancherAPIHost     string `json:"rancherApiHost"     norman:"required"`
 }
 
+type SamlConfigTestInput struct {
+	FinalRedirectURL string `json:"finalRedirectUrl"`
+}
+
+type SamlConfigTestOutput struct {
+	IdpRedirectURL string `json:"idpRedirectUrl"`
+}
+
 type PingConfig struct {
 	SamlConfig `json:",inline" mapstructure:",squash"`
 }
 
-type SamlConfigTestInput struct {
-	FinalRedirectURL string `json:"finalRedirectUrl"`
+type ADFSConfig struct {
+	SamlConfig `json:",inline" mapstructure:",squash"`
 }
