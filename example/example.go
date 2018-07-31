@@ -21,12 +21,13 @@ func main() {
 	if err != nil {
 		logrus.Fatal(err)
 	}
+	b := true
 	gkeSpec := &v3.GoogleKubernetesEngineConfig{
 		ProjectID:                 "rancher-dev",
 		Zone:                      "us-central1-a",
 		NodeCount:                 1,
 		EnableKubernetesDashboard: true,
-		DisableHTTPLoadBalancing:  false,
+		EnableHTTPLoadBalancing:   &b,
 		ImageType:                 "ubuntu",
 		EnableLegacyAbac:          true,
 		Locations:                 []string{"us-central1-a", "us-central1-b"},
