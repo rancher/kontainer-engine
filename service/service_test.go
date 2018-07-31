@@ -48,10 +48,7 @@ func (s *StubTestSuite) TestFlatten(c *check.C) {
 	flatten(opts, &driverOptions)
 	fmt.Println(driverOptions)
 	boolResult := map[string]bool{
-		"enableAlphaFeature":      true,
-		"noStackdriverLogging":    false,
-		"noNetworkPolicy":         false,
-		"noStackdriverMonitoring": false,
+		"enableAlphaFeature": true,
 	}
 	stringResult := map[string]string{
 		"projectId":         "test",
