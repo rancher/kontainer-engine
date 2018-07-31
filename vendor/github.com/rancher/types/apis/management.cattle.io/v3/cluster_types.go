@@ -69,6 +69,8 @@ type ClusterSpec struct {
 	AmazonElasticContainerServiceConfig  *AmazonElasticContainerServiceConfig `json:"amazonElasticContainerServiceConfig,omitempty"`
 	DefaultPodSecurityPolicyTemplateName string                               `json:"defaultPodSecurityPolicyTemplateName,omitempty" norman:"type=reference[podSecurityPolicyTemplate]"`
 	DefaultClusterRoleForProjectMembers  string                               `json:"defaultClusterRoleForProjectMembers,omitempty" norman:"type=reference[roleTemplate]"`
+	DockerRootDir                        string                               `json:"dockerRootDir,omitempty" norman:"default=/var/lib/docker"`
+	EnableNetworkPolicy                  *bool                                `json:"enableNetworkPolicy" norman:"default=false"`
 }
 
 type ImportedConfig struct {
@@ -95,6 +97,7 @@ type ClusterStatus struct {
 	Limits                               v1.ResourceList          `json:"limits,omitempty"`
 	Version                              *version.Info            `json:"version,omitempty"`
 	AppliedPodSecurityPolicyTemplateName string                   `json:"appliedPodSecurityPolicyTemplateId"`
+	AppliedEnableNetworkPolicy           bool                     `json:"appliedEnableNetworkPolicy" norman:"nocreate,noupdate,default=false"`
 }
 
 type ClusterComponentStatus struct {
@@ -144,13 +147,13 @@ type GoogleKubernetesEngineConfig struct {
 	// Enable alpha feature
 	EnableAlphaFeature bool `json:"enableAlphaFeature,omitempty"`
 	// Configuration for the HTTP (L7) load balancing controller addon
-	DisableHTTPLoadBalancing bool `json:"disableHttpLoadBalancing,omitempty"`
+	EnableHTTPLoadBalancing *bool `json:"enableHttpLoadBalancing,omitempty" norman:"default=true"`
 	// Configuration for the horizontal pod autoscaling feature, which increases or decreases the number of replica pods a replication controller has based on the resource usage of the existing pods
-	DisableHorizontalPodAutoscaling bool `json:"disableHorizontalPodAutoscaling,omitempty"`
+	EnableHorizontalPodAutoscaling *bool `json:"enableHorizontalPodAutoscaling,omitempty" norman:"default=true"`
 	// Configuration for the Kubernetes Dashboard
 	EnableKubernetesDashboard bool `json:"enableKubernetesDashboard,omitempty"`
 	// Configuration for NetworkPolicy
-	DisableNetworkPolicyConfig bool `json:"disableNetworkPolicyConfig,omitempty"`
+	EnableNetworkPolicyConfig *bool `json:"enableNetworkPolicyConfig,omitempty" norman:"default=true"`
 	// The list of Google Compute Engine locations in which the cluster's nodes should be located
 	Locations []string `json:"locations,omitempty"`
 	// Image Type
@@ -160,11 +163,10 @@ type GoogleKubernetesEngineConfig struct {
 	// Sub Network
 	SubNetwork string `json:"subNetwork,omitempty"`
 	// Configuration for LegacyAbac
-	EnableLegacyAbac        bool   `json:"enableLegacyAbac,omitempty"`
-	NoStackdriverLogging    bool   `json:"noStackdriverLogging"`
-	NoStackdriverMonitoring bool   `json:"noStackdriverMonitoring"`
-	NoNetworkPolicy         bool   `json:"noNetworkPolicy"`
-	MaintenanceWindow       string `json:"maintenanceWindow"`
+	EnableLegacyAbac            bool   `json:"enableLegacyAbac,omitempty"`
+	EnableStackdriverLogging    *bool  `json:"enableStackdriverLogging,omitempty" norman:"default=true"`
+	EnableStackdriverMonitoring *bool  `json:"enableStackdriverMonitoring,omitempty" norman:"default=true"`
+	MaintenanceWindow           string `json:"maintenanceWindow"`
 }
 
 type AzureKubernetesServiceConfig struct {
