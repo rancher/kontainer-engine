@@ -53,7 +53,7 @@ type BastionHost struct {
 	// SSH Agent Auth enable
 	SSHAgentAuth bool `yaml:"ssh_agent_auth,omitempty" json:"sshAgentAuth,omitempty"`
 	// SSH Private Key
-	SSHKey string `yaml:"ssh_key" json:"sshKey,omitempty"`
+	SSHKey string `yaml:"ssh_key" json:"sshKey,omitempty" norman:"type=password"`
 	// SSH Private Key Path
 	SSHKeyPath string `yaml:"ssh_key_path" json:"sshKeyPath,omitempty"`
 }
@@ -326,6 +326,8 @@ type Process struct {
 	HealthCheck HealthCheck `json:"healthCheck,omitempty"`
 	// Process docker container Labels
 	Labels map[string]string `json:"labels,omitempty"`
+	// Process docker publish container's port to host
+	Publish []string `json:"publish,omitempty"`
 }
 
 type HealthCheck struct {
