@@ -38,6 +38,7 @@ import (
 )
 
 var amiForRegion = map[string]string{
+	"eu-west-1": "ami-066110c1a7466949e",
 	"us-west-2": "ami-73a6e20b",
 	"us-east-1": "ami-dea4d5a1",
 }
