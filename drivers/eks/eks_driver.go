@@ -303,7 +303,7 @@ func (d *Driver) createStack(svc *cloudformation.CloudFormation, name string, di
 					continue
 				}
 
-				if *event.ResourceStatus == "CREATE_FAILED" && *event.LogicalResourceId == "VPC" {
+				if *event.ResourceStatus == "CREATE_FAILED" {
 					reason = *event.ResourceStatusReason
 					break
 				}
