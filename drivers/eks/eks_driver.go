@@ -539,7 +539,7 @@ func isDuplicateKeyError(err error) bool {
 }
 
 func isClusterConflict(err error) bool {
-	return strings.Contains(err.Error(), "http response code was: 409")
+	return err.Error() == "409"
 }
 
 func getEC2KeyPairName(state state) string {
