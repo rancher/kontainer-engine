@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/iam"
@@ -733,10 +734,63 @@ func getParameterValueFromOutput(key string, outputs []*cloudformation.Output) s
 func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, options *types.DriverOptions) (*types.ClusterInfo, error) {
 	logrus.Infof("Starting update")
 
-	// nothing can be updated so just return
+	state, err := getStateFromOptions(options)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing state: %v", err)
+	}
+
+	oldState, err := getState(info)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing state: %v", err)
+	}
+
+	if (oldState.MaximumASGSize == state.MaximumASGSize) && (oldState.MinimumASGSize == state.MinimumASGSize) {
+		logrus.Infof("Not updating, auto scaling group sizes already match")
+		return info, storeState(info, state)
+	}
+
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String(state.Region),
+		Credentials: credentials.NewStaticCredentials(
+			state.ClientID,
+			state.ClientSecret,
+			"",
+		),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error getting new aws session: %v", err)
+	}
+
+	svc := autoscaling.New(sess)
+
+	describeTagsResult, err := svc.DescribeTags(&autoscaling.DescribeTagsInput{
+		Filters: []*autoscaling.Filter{
+			&autoscaling.Filter{
+				Name:   aws.String("key"),
+				Values: []*string{aws.String("kubernetes.io/cluster/" + state.ClusterName)},
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error getting tags: %v", err)
+	}
+	if len(describeTagsResult.Tags) != 1 {
+		return nil, fmt.Errorf("found %d tags for %s", len(describeTagsResult.Tags), state.ClusterName)
+	}
+	resourceID := describeTagsResult.Tags[0].ResourceId
+
+	_, updateErr := svc.UpdateAutoScalingGroup(&autoscaling.UpdateAutoScalingGroupInput{
+		AutoScalingGroupName: resourceID,
+		MinSize:              &state.MinimumASGSize,
+		MaxSize:              &state.MaximumASGSize,
+		DesiredCapacity:      &state.MaximumASGSize,
+	})
+	if updateErr != nil {
+		return nil, fmt.Errorf("error updating auto scaling group: %v", err)
+	}
 
 	logrus.Infof("Update complete")
-	return info, nil
+	return info, storeState(info, state)
 }
 
 func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types.ClusterInfo, error) {
