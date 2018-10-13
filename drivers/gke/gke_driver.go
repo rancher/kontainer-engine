@@ -193,6 +193,11 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 		Usage: "When to performance updates on the nodes, in 24-hour time (e.g. \"19:00\")",
 	}
 
+	driverFlag.Options["scopes"] = &types.Flag{
+		Type:  types.StringSliceType,
+		Usage: "The scopes to assign to the launched cluster",
+	}
+
 	return &driverFlag, nil
 }
 
@@ -266,6 +271,10 @@ func getStateFromOpts(driverOptions *types.DriverOptions) (state, error) {
 	d.EnableStackdriverLogging, _ = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "enable-stackdriver-logging", "enableStackdriverLogging").(*bool)
 	d.EnableStackdriverMonitoring, _ = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "enable-stackdriver-monitoring", "enableStackdriverMonitoring").(*bool)
 	d.MaintenanceWindow = options.GetValueFromDriverOptions(driverOptions, types.StringType, "maintenance-window", "maintenanceWindow").(string)
+	scopes := options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "scopes").(*types.StringSlice)
+	for _, scope := range scopes.Value {
+		d.NodeConfig.OauthScopes = append(d.NodeConfig.OauthScopes, scope)
+	}
 
 	return d, d.validate()
 }
