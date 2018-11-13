@@ -5,9 +5,11 @@ import (
 	"fmt"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/go-connections/nat"
 	"github.com/rancher/rke/docker"
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/log"
+	"github.com/rancher/rke/util"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 )
@@ -39,6 +41,8 @@ const (
 	KubeControllerPort = 10252
 	KubeletPort        = 10250
 	KubeproxyPort      = 10256
+
+	WorkerThreads = util.WorkerThreads
 )
 
 func runSidekick(ctx context.Context, host *hosts.Host, prsMap map[string]v3.PrivateRegistry, sidecarProcess v3.Process) error {
@@ -46,15 +50,27 @@ func runSidekick(ctx context.Context, host *hosts.Host, prsMap map[string]v3.Pri
 	if err != nil {
 		return err
 	}
+	imageCfg, hostCfg, _ := GetProcessConfig(sidecarProcess)
+	isUpgradable := false
 	if isRunning {
-		log.Infof(ctx, "[%s] Sidekick container already created on host [%s]", SidekickServiceName, host.Address)
-		return nil
+		isUpgradable, err = docker.IsContainerUpgradable(ctx, host.DClient, imageCfg, hostCfg, SidekickContainerName, host.Address, SidekickServiceName)
+		if err != nil {
+			return err
+		}
+
+		if !isUpgradable {
+			log.Infof(ctx, "[%s] Sidekick container already created on host [%s]", SidekickServiceName, host.Address)
+			return nil
+		}
 	}
 
-	imageCfg, hostCfg, _ := GetProcessConfig(sidecarProcess)
-	sidecarImage := sidecarProcess.Image
-	if err := docker.UseLocalOrPull(ctx, host.DClient, host.Address, sidecarImage, SidekickServiceName, prsMap); err != nil {
+	if err := docker.UseLocalOrPull(ctx, host.DClient, host.Address, sidecarProcess.Image, SidekickServiceName, prsMap); err != nil {
 		return err
+	}
+	if isUpgradable {
+		if err := docker.DoRemoveContainer(ctx, host.DClient, SidekickContainerName, host.Address); err != nil {
+			return err
+		}
 	}
 	if _, err := docker.CreateContainer(ctx, host.DClient, host.Address, SidekickContainerName, imageCfg, hostCfg); err != nil {
 		return err
@@ -76,12 +92,14 @@ func GetProcessConfig(process v3.Process) (*container.Config, *container.HostCon
 	}
 	// var pidMode container.PidMode
 	// pidMode = process.PidMode
+	_, portBindings, _ := nat.ParsePortSpecs(process.Publish)
 	hostCfg := &container.HostConfig{
-		VolumesFrom: process.VolumesFrom,
-		Binds:       process.Binds,
-		NetworkMode: container.NetworkMode(process.NetworkMode),
-		PidMode:     container.PidMode(process.PidMode),
-		Privileged:  process.Privileged,
+		VolumesFrom:  process.VolumesFrom,
+		Binds:        process.Binds,
+		NetworkMode:  container.NetworkMode(process.NetworkMode),
+		PidMode:      container.PidMode(process.PidMode),
+		Privileged:   process.Privileged,
+		PortBindings: portBindings,
 	}
 	if len(process.RestartPolicy) > 0 {
 		hostCfg.RestartPolicy = container.RestartPolicy{Name: process.RestartPolicy}

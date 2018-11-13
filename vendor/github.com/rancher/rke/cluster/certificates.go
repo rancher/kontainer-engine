@@ -12,76 +12,22 @@ import (
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
+	"github.com/rancher/rke/util"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/cert"
 )
 
-func SetUpAuthentication(ctx context.Context, kubeCluster, currentCluster *Cluster) error {
+type RotateCertificatesFlags struct {
+	RotateCACerts    bool
+	RotateComponents []string
+}
+
+func SetUpAuthentication(ctx context.Context, kubeCluster, currentCluster *Cluster, fullState *FullState) error {
 	if kubeCluster.Authentication.Strategy == X509AuthenticationProvider {
-		var err error
-		if currentCluster != nil {
-			kubeCluster.Certificates = currentCluster.Certificates
-		} else {
-			var backupPlane string
-			var backupHosts []*hosts.Host
-			if len(kubeCluster.Services.Etcd.ExternalURLs) > 0 {
-				backupPlane = ControlPlane
-				backupHosts = kubeCluster.ControlPlaneHosts
-			} else {
-				// Save certificates on etcd and controlplane hosts
-				backupPlane = fmt.Sprintf("%s,%s", EtcdPlane, ControlPlane)
-				backupHosts = hosts.GetUniqueHostList(kubeCluster.EtcdHosts, kubeCluster.ControlPlaneHosts, nil)
-			}
-			log.Infof(ctx, "[certificates] Attempting to recover certificates from backup on [%s] hosts", backupPlane)
-
-			kubeCluster.Certificates, err = fetchBackupCertificates(ctx, backupHosts, kubeCluster)
-			if err != nil {
-				return err
-			}
-			if kubeCluster.Certificates != nil {
-				log.Infof(ctx, "[certificates] Certificate backup found on [%s] hosts", backupPlane)
-
-				// make sure I have all the etcd certs, We need handle dialer failure for etcd nodes https://github.com/rancher/rancher/issues/12898
-				for _, host := range kubeCluster.EtcdHosts {
-					certName := pki.GetEtcdCrtName(host.InternalAddress)
-					if kubeCluster.Certificates[certName].Certificate == nil {
-						if kubeCluster.Certificates, err = pki.RegenerateEtcdCertificate(ctx,
-							kubeCluster.Certificates,
-							host,
-							kubeCluster.EtcdHosts,
-							kubeCluster.ClusterDomain,
-							kubeCluster.KubernetesServiceIP); err != nil {
-							return err
-						}
-					}
-				}
-				// this is the case of adding controlplane node on empty cluster with only etcd nodes
-				if kubeCluster.Certificates[pki.KubeAdminCertName].Config == "" && len(kubeCluster.ControlPlaneHosts) > 0 {
-					if err := rebuildLocalAdminConfig(ctx, kubeCluster); err != nil {
-						return err
-					}
-					kubeCluster.Certificates, err = regenerateAPICertificate(kubeCluster, kubeCluster.Certificates)
-					if err != nil {
-						return fmt.Errorf("Failed to regenerate KubeAPI certificate %v", err)
-					}
-				}
-				return nil
-			}
-			log.Infof(ctx, "[certificates] No Certificate backup found on [%s] hosts", backupPlane)
-
-			kubeCluster.Certificates, err = pki.GenerateRKECerts(ctx, kubeCluster.RancherKubernetesEngineConfig, kubeCluster.LocalKubeConfigPath, "")
-			if err != nil {
-				return fmt.Errorf("Failed to generate Kubernetes certificates: %v", err)
-			}
-
-			log.Infof(ctx, "[certificates] Temporarily saving certs to [%s] hosts", backupPlane)
-			if err := deployBackupCertificates(ctx, backupHosts, kubeCluster); err != nil {
-				return err
-			}
-			log.Infof(ctx, "[certificates] Saved certs to [%s] hosts", backupPlane)
-		}
+		kubeCluster.Certificates = fullState.DesiredState.CertificatesBundle
+		return nil
 	}
 	return nil
 }
@@ -100,8 +46,13 @@ func regenerateAPICertificate(c *Cluster, certificates map[string]pki.Certificat
 	return certificates, nil
 }
 
-func getClusterCerts(ctx context.Context, kubeClient *kubernetes.Clientset, etcdHosts []*hosts.Host) (map[string]pki.CertificatePKI, error) {
+func GetClusterCertsFromKubernetes(ctx context.Context, kubeCluster *Cluster) (map[string]pki.CertificatePKI, error) {
 	log.Infof(ctx, "[certificates] Getting Cluster certificates from Kubernetes")
+
+	k8sClient, err := k8s.NewClient(kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create Kubernetes Client: %v", err)
+	}
 	certificatesNames := []string{
 		pki.CACertName,
 		pki.KubeAPICertName,
@@ -110,39 +61,69 @@ func getClusterCerts(ctx context.Context, kubeClient *kubernetes.Clientset, etcd
 		pki.KubeControllerCertName,
 		pki.KubeSchedulerCertName,
 		pki.KubeAdminCertName,
+		pki.APIProxyClientCertName,
+		pki.RequestHeaderCACertName,
+		pki.ServiceAccountTokenKeyName,
 	}
 
-	for _, etcdHost := range etcdHosts {
+	for _, etcdHost := range kubeCluster.EtcdHosts {
 		etcdName := pki.GetEtcdCrtName(etcdHost.InternalAddress)
 		certificatesNames = append(certificatesNames, etcdName)
 	}
 
 	certMap := make(map[string]pki.CertificatePKI)
 	for _, certName := range certificatesNames {
-		secret, err := k8s.GetSecret(kubeClient, certName)
-		if err != nil && !strings.HasPrefix(certName, "kube-etcd") {
+		secret, err := k8s.GetSecret(k8sClient, certName)
+		if err != nil && !strings.HasPrefix(certName, "kube-etcd") &&
+			!strings.Contains(certName, pki.RequestHeaderCACertName) &&
+			!strings.Contains(certName, pki.APIProxyClientCertName) &&
+			!strings.Contains(certName, pki.ServiceAccountTokenKeyName) {
 			return nil, err
 		}
-		// If I can't find an etcd cert, I will not fail and will create it later.
-		if secret == nil && strings.HasPrefix(certName, "kube-etcd") {
+		// If I can't find an etcd, requestheader, or proxy client cert, I will not fail and will create it later.
+		if (secret == nil || secret.Data == nil) &&
+			(strings.HasPrefix(certName, "kube-etcd") ||
+				strings.Contains(certName, pki.RequestHeaderCACertName) ||
+				strings.Contains(certName, pki.APIProxyClientCertName) ||
+				strings.Contains(certName, pki.ServiceAccountTokenKeyName)) {
 			certMap[certName] = pki.CertificatePKI{}
 			continue
 		}
 
-		secretCert, _ := cert.ParseCertsPEM(secret.Data["Certificate"])
-		secretKey, _ := cert.ParsePrivateKeyPEM(secret.Data["Key"])
-		secretConfig := string(secret.Data["Config"])
-		certMap[certName] = pki.CertificatePKI{
-			Certificate:   secretCert[0],
-			Key:           secretKey.(*rsa.PrivateKey),
-			Config:        secretConfig,
-			EnvName:       string(secret.Data["EnvName"]),
-			ConfigEnvName: string(secret.Data["ConfigEnvName"]),
-			KeyEnvName:    string(secret.Data["KeyEnvName"]),
-			Path:          string(secret.Data["Path"]),
-			KeyPath:       string(secret.Data["KeyPath"]),
-			ConfigPath:    string(secret.Data["ConfigPath"]),
+		secretCert, err := cert.ParseCertsPEM(secret.Data["Certificate"])
+		if err != nil {
+			return nil, fmt.Errorf("Failed to parse certificate of %s: %v", certName, err)
 		}
+		secretKey, err := cert.ParsePrivateKeyPEM(secret.Data["Key"])
+		if err != nil {
+			return nil, fmt.Errorf("Failed to parse private key of %s: %v", certName, err)
+		}
+		secretConfig := string(secret.Data["Config"])
+		if len(secretCert) == 0 || secretKey == nil {
+			return nil, fmt.Errorf("certificate or key of %s is not found", certName)
+		}
+		certificatePEM := string(cert.EncodeCertPEM(secretCert[0]))
+		keyPEM := string(cert.EncodePrivateKeyPEM(secretKey.(*rsa.PrivateKey)))
+
+		certMap[certName] = pki.CertificatePKI{
+			Certificate:    secretCert[0],
+			Key:            secretKey.(*rsa.PrivateKey),
+			CertificatePEM: certificatePEM,
+			KeyPEM:         keyPEM,
+			Config:         secretConfig,
+			EnvName:        string(secret.Data["EnvName"]),
+			ConfigEnvName:  string(secret.Data["ConfigEnvName"]),
+			KeyEnvName:     string(secret.Data["KeyEnvName"]),
+			Path:           string(secret.Data["Path"]),
+			KeyPath:        string(secret.Data["KeyPath"]),
+			ConfigPath:     string(secret.Data["ConfigPath"]),
+		}
+	}
+	// Handle service account token key issue
+	kubeAPICert := certMap[pki.KubeAPICertName]
+	if certMap[pki.ServiceAccountTokenKeyName].Key == nil {
+		log.Infof(ctx, "[certificates] Creating service account token key")
+		certMap[pki.ServiceAccountTokenKeyName] = pki.ToCertObject(pki.ServiceAccountTokenKeyName, pki.ServiceAccountTokenKeyName, "", kubeAPICert.Certificate, kubeAPICert.Key)
 	}
 	log.Infof(ctx, "[certificates] Successfully fetched Cluster certificates from Kubernetes")
 	return certMap, nil
@@ -208,57 +189,39 @@ func saveCertToKubernetes(kubeClient *kubernetes.Clientset, crtName string, crt 
 
 func deployBackupCertificates(ctx context.Context, backupHosts []*hosts.Host, kubeCluster *Cluster) error {
 	var errgrp errgroup.Group
-
-	for _, host := range backupHosts {
-		runHost := host
+	hostsQueue := util.GetObjectQueue(backupHosts)
+	for w := 0; w < WorkerThreads; w++ {
 		errgrp.Go(func() error {
-			return pki.DeployCertificatesOnHost(ctx, runHost, kubeCluster.Certificates, kubeCluster.SystemImages.CertDownloader, pki.TempCertPath, kubeCluster.PrivateRegistriesMap)
+			var errList []error
+			for host := range hostsQueue {
+				err := pki.DeployCertificatesOnHost(ctx, host.(*hosts.Host), kubeCluster.Certificates, kubeCluster.SystemImages.CertDownloader, pki.TempCertPath, kubeCluster.PrivateRegistriesMap)
+				if err != nil {
+					errList = append(errList, err)
+				}
+			}
+			return util.ErrList(errList)
 		})
 	}
 	return errgrp.Wait()
 }
 
-func fetchBackupCertificates(ctx context.Context, backupHosts []*hosts.Host, kubeCluster *Cluster) (map[string]pki.CertificatePKI, error) {
-	var err error
-	certificates := map[string]pki.CertificatePKI{}
-	for _, host := range backupHosts {
-		certificates, err = pki.FetchCertificatesFromHost(ctx, kubeCluster.EtcdHosts, host, kubeCluster.SystemImages.Alpine, kubeCluster.LocalKubeConfigPath, kubeCluster.PrivateRegistriesMap)
-		if certificates != nil {
-			return certificates, nil
-		}
-	}
-	// reporting the last error only.
-	return nil, err
-}
-
-func fetchCertificatesFromEtcd(ctx context.Context, kubeCluster *Cluster) ([]byte, []byte, error) {
-	// Get kubernetes certificates from the etcd hosts
-	certificates := map[string]pki.CertificatePKI{}
-	var err error
-	for _, host := range kubeCluster.EtcdHosts {
-		certificates, err = pki.FetchCertificatesFromHost(ctx, kubeCluster.EtcdHosts, host, kubeCluster.SystemImages.Alpine, kubeCluster.LocalKubeConfigPath, kubeCluster.PrivateRegistriesMap)
-		if certificates != nil {
-			break
-		}
-	}
-	if err != nil || certificates == nil {
-		return nil, nil, fmt.Errorf("Failed to fetch certificates from etcd hosts: %v", err)
-	}
-	clientCert := cert.EncodeCertPEM(certificates[pki.KubeNodeCertName].Certificate)
-	clientkey := cert.EncodePrivateKeyPEM(certificates[pki.KubeNodeCertName].Key)
-	return clientCert, clientkey, nil
-}
-
 func (c *Cluster) SaveBackupCertificateBundle(ctx context.Context) error {
-	backupHosts := c.getBackupHosts()
 	var errgrp errgroup.Group
 
-	for _, host := range backupHosts {
-		runHost := host
+	hostsQueue := util.GetObjectQueue(c.getBackupHosts())
+	for w := 0; w < WorkerThreads; w++ {
 		errgrp.Go(func() error {
-			return pki.SaveBackupBundleOnHost(ctx, runHost, c.SystemImages.Alpine, services.EtcdSnapshotPath, c.PrivateRegistriesMap)
+			var errList []error
+			for host := range hostsQueue {
+				err := pki.SaveBackupBundleOnHost(ctx, host.(*hosts.Host), c.SystemImages.Alpine, services.EtcdSnapshotPath, c.PrivateRegistriesMap)
+				if err != nil {
+					errList = append(errList, err)
+				}
+			}
+			return util.ErrList(errList)
 		})
 	}
+
 	return errgrp.Wait()
 }
 
@@ -266,16 +229,20 @@ func (c *Cluster) ExtractBackupCertificateBundle(ctx context.Context) error {
 	backupHosts := c.getBackupHosts()
 	var errgrp errgroup.Group
 	errList := []string{}
-	for _, host := range backupHosts {
-		runHost := host
+
+	hostsQueue := util.GetObjectQueue(backupHosts)
+	for w := 0; w < WorkerThreads; w++ {
 		errgrp.Go(func() error {
-			if err := pki.ExtractBackupBundleOnHost(ctx, runHost, c.SystemImages.Alpine, services.EtcdSnapshotPath, c.PrivateRegistriesMap); err != nil {
-				errList = append(errList, fmt.Errorf(
-					"Failed to extract certificate bundle on host [%s], please make sure etcd bundle exist in /opt/rke/etcd-snapshots/pki.bundle.tar.gz: %v", runHost.Address, err).Error())
+			for host := range hostsQueue {
+				if err := pki.ExtractBackupBundleOnHost(ctx, host.(*hosts.Host), c.SystemImages.Alpine, services.EtcdSnapshotPath, c.PrivateRegistriesMap); err != nil {
+					errList = append(errList, fmt.Errorf(
+						"Failed to extract certificate bundle on host [%s], please make sure etcd bundle exist in /opt/rke/etcd-snapshots/pki.bundle.tar.gz: %v", host.(*hosts.Host).Address, err).Error())
+				}
 			}
 			return nil
 		})
 	}
+
 	errgrp.Wait()
 	if len(errList) == len(backupHosts) {
 		return fmt.Errorf(strings.Join(errList, ","))
@@ -292,4 +259,82 @@ func (c *Cluster) getBackupHosts() []*hosts.Host {
 		backupHosts = hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, nil)
 	}
 	return backupHosts
+}
+
+func regenerateAPIAggregationCerts(c *Cluster, certificates map[string]pki.CertificatePKI) (map[string]pki.CertificatePKI, error) {
+	logrus.Debugf("[certificates] Regenerating Kubernetes API server aggregation layer requestheader client CA certificates")
+	requestHeaderCACrt, requestHeaderCAKey, err := pki.GenerateCACertAndKey(pki.RequestHeaderCACertName, nil)
+	if err != nil {
+		return nil, err
+	}
+	certificates[pki.RequestHeaderCACertName] = pki.ToCertObject(pki.RequestHeaderCACertName, "", "", requestHeaderCACrt, requestHeaderCAKey)
+
+	//generate API server proxy client key and certs
+	logrus.Debugf("[certificates] Regenerating Kubernetes API server proxy client certificates")
+	apiserverProxyClientCrt, apiserverProxyClientKey, err := pki.GenerateSignedCertAndKey(requestHeaderCACrt, requestHeaderCAKey, true, pki.APIProxyClientCertName, nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	certificates[pki.APIProxyClientCertName] = pki.ToCertObject(pki.APIProxyClientCertName, "", "", apiserverProxyClientCrt, apiserverProxyClientKey)
+	return certificates, nil
+}
+
+func RotateRKECertificates(ctx context.Context, c *Cluster, flags ExternalFlags, rotateflags RotateCertificatesFlags, clusterState *FullState) error {
+	var (
+		serviceAccountTokenKey string
+	)
+	componentsCertsFuncMap := map[string]pki.GenFunc{
+		services.KubeAPIContainerName:        pki.GenerateKubeAPICertificate,
+		services.KubeControllerContainerName: pki.GenerateKubeControllerCertificate,
+		services.SchedulerContainerName:      pki.GenerateKubeSchedulerCertificate,
+		services.KubeproxyContainerName:      pki.GenerateKubeProxyCertificate,
+		services.KubeletContainerName:        pki.GenerateKubeNodeCertificate,
+		services.EtcdContainerName:           pki.GenerateEtcdCertificates,
+	}
+	if rotateflags.RotateCACerts {
+		// rotate CA cert and RequestHeader CA cert
+		if err := pki.GenerateRKECACerts(ctx, c.Certificates, flags.ClusterFilePath, flags.ConfigDir); err != nil {
+			return err
+		}
+		rotateflags.RotateComponents = nil
+	}
+	for _, k8sComponent := range rotateflags.RotateComponents {
+		genFunc := componentsCertsFuncMap[k8sComponent]
+		if genFunc != nil {
+			if err := genFunc(ctx, c.Certificates, c.RancherKubernetesEngineConfig, flags.ClusterFilePath, flags.ConfigDir, true); err != nil {
+				return err
+			}
+		}
+	}
+	if len(rotateflags.RotateComponents) == 0 {
+		// do not rotate service account token
+		if c.Certificates[pki.ServiceAccountTokenKeyName].Key != nil {
+			serviceAccountTokenKey = string(cert.EncodePrivateKeyPEM(c.Certificates[pki.ServiceAccountTokenKeyName].Key))
+		}
+		if err := pki.GenerateRKEServicesCerts(ctx, c.Certificates, c.RancherKubernetesEngineConfig, flags.ClusterFilePath, flags.ConfigDir, true); err != nil {
+			return err
+		}
+		if serviceAccountTokenKey != "" {
+			privateKey, err := cert.ParsePrivateKeyPEM([]byte(serviceAccountTokenKey))
+			if err != nil {
+				return err
+			}
+			c.Certificates[pki.ServiceAccountTokenKeyName] = pki.ToCertObject(
+				pki.ServiceAccountTokenKeyName,
+				pki.ServiceAccountTokenKeyName,
+				"",
+				c.Certificates[pki.ServiceAccountTokenKeyName].Certificate,
+				privateKey.(*rsa.PrivateKey))
+		}
+	}
+	clusterState.DesiredState.CertificatesBundle = c.Certificates
+	clusterState.DesiredState.RancherKubernetesEngineConfig = &c.RancherKubernetesEngineConfig
+	return nil
+}
+
+func GetRotateCertsFlags(rotateCACerts bool, components []string) RotateCertificatesFlags {
+	return RotateCertificatesFlags{
+		RotateCACerts:    rotateCACerts,
+		RotateComponents: components,
+	}
 }

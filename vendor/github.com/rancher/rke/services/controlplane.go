@@ -6,20 +6,30 @@ import (
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
+	"github.com/rancher/rke/util"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"golang.org/x/sync/errgroup"
 )
 
 func RunControlPlane(ctx context.Context, controlHosts []*hosts.Host, localConnDialerFactory hosts.DialerFactory, prsMap map[string]v3.PrivateRegistry, cpNodePlanMap map[string]v3.RKEConfigNodePlan, updateWorkersOnly bool, alpineImage string, certMap map[string]pki.CertificatePKI) error {
+	if updateWorkersOnly {
+		return nil
+	}
 	log.Infof(ctx, "[%s] Building up Controller Plane..", ControlRole)
 	var errgrp errgroup.Group
-	for _, host := range controlHosts {
-		runHost := host
-		if updateWorkersOnly {
-			continue
-		}
+
+	hostsQueue := util.GetObjectQueue(controlHosts)
+	for w := 0; w < WorkerThreads; w++ {
 		errgrp.Go(func() error {
-			return doDeployControlHost(ctx, runHost, localConnDialerFactory, prsMap, cpNodePlanMap[host.Address].Processes, alpineImage, certMap)
+			var errList []error
+			for host := range hostsQueue {
+				runHost := host.(*hosts.Host)
+				err := doDeployControlHost(ctx, runHost, localConnDialerFactory, prsMap, cpNodePlanMap[runHost.Address].Processes, alpineImage, certMap)
+				if err != nil {
+					errList = append(errList, err)
+				}
+			}
+			return util.ErrList(errList)
 		})
 	}
 	if err := errgrp.Wait(); err != nil {
@@ -31,42 +41,80 @@ func RunControlPlane(ctx context.Context, controlHosts []*hosts.Host, localConnD
 
 func RemoveControlPlane(ctx context.Context, controlHosts []*hosts.Host, force bool) error {
 	log.Infof(ctx, "[%s] Tearing down the Controller Plane..", ControlRole)
-	for _, host := range controlHosts {
-		// remove KubeAPI
-		if err := removeKubeAPI(ctx, host); err != nil {
-			return err
-		}
-
-		// remove KubeController
-		if err := removeKubeController(ctx, host); err != nil {
-			return nil
-		}
-
-		// remove scheduler
-		err := removeScheduler(ctx, host)
-		if err != nil {
-			return err
-		}
-
-		// check if the host already is a worker
-		if host.IsWorker {
-			log.Infof(ctx, "[%s] Host [%s] is already a worker host, skipping delete kubelet and kubeproxy.", ControlRole, host.Address)
-		} else {
-			// remove KubeAPI
-			if err := removeKubelet(ctx, host); err != nil {
-				return err
+	var errgrp errgroup.Group
+	hostsQueue := util.GetObjectQueue(controlHosts)
+	for w := 0; w < WorkerThreads; w++ {
+		errgrp.Go(func() error {
+			var errList []error
+			for host := range hostsQueue {
+				runHost := host.(*hosts.Host)
+				if err := removeKubeAPI(ctx, runHost); err != nil {
+					errList = append(errList, err)
+				}
+				if err := removeKubeController(ctx, runHost); err != nil {
+					errList = append(errList, err)
+				}
+				if err := removeScheduler(ctx, runHost); err != nil {
+					errList = append(errList, err)
+				}
+				// force is true in remove, false in reconcile
+				if force {
+					if err := removeKubelet(ctx, runHost); err != nil {
+						errList = append(errList, err)
+					}
+					if err := removeKubeproxy(ctx, runHost); err != nil {
+						errList = append(errList, err)
+					}
+					if err := removeSidekick(ctx, runHost); err != nil {
+						errList = append(errList, err)
+					}
+				}
 			}
-			// remove KubeController
-			if err := removeKubeproxy(ctx, host); err != nil {
-				return nil
-			}
-			// remove Sidekick
-			if err := removeSidekick(ctx, host); err != nil {
-				return err
-			}
-		}
+			return util.ErrList(errList)
+		})
 	}
+
+	if err := errgrp.Wait(); err != nil {
+		return err
+	}
+
 	log.Infof(ctx, "[%s] Successfully tore down Controller Plane..", ControlRole)
+	return nil
+}
+
+func RestartControlPlane(ctx context.Context, controlHosts []*hosts.Host) error {
+	log.Infof(ctx, "[%s] Restarting the Controller Plane..", ControlRole)
+	var errgrp errgroup.Group
+
+	hostsQueue := util.GetObjectQueue(controlHosts)
+	for w := 0; w < WorkerThreads; w++ {
+		errgrp.Go(func() error {
+			var errList []error
+			for host := range hostsQueue {
+				runHost := host.(*hosts.Host)
+				// restart KubeAPI
+				if err := restartKubeAPI(ctx, runHost); err != nil {
+					errList = append(errList, err)
+				}
+
+				// restart KubeController
+				if err := restartKubeController(ctx, runHost); err != nil {
+					errList = append(errList, err)
+				}
+
+				// restart scheduler
+				err := restartScheduler(ctx, runHost)
+				if err != nil {
+					errList = append(errList, err)
+				}
+			}
+			return util.ErrList(errList)
+		})
+	}
+	if err := errgrp.Wait(); err != nil {
+		return err
+	}
+	log.Infof(ctx, "[%s] Successfully restarted Controller Plane..", ControlRole)
 	return nil
 }
 

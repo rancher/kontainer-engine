@@ -29,6 +29,20 @@ type dialer struct {
 	bastionDialer   *dialer
 }
 
+type DialersOptions struct {
+	DockerDialerFactory    DialerFactory
+	LocalConnDialerFactory DialerFactory
+	K8sWrapTransport       k8s.WrapTransport
+}
+
+func GetDialerOptions(d, l DialerFactory, w k8s.WrapTransport) DialersOptions {
+	return DialersOptions{
+		DockerDialerFactory:    d,
+		LocalConnDialerFactory: l,
+		K8sWrapTransport:       w,
+	}
+}
+
 func newDialer(h *Host, kind string) (*dialer, error) {
 	// Check for Bastion host connection
 	var bastionDialer *dialer
@@ -40,7 +54,7 @@ func newDialer(h *Host, kind string) (*dialer, error) {
 			netConn:         "tcp",
 			useSSHAgentAuth: h.SSHAgentAuth,
 		}
-		if bastionDialer.sshKeyString == "" {
+		if bastionDialer.sshKeyString == "" && !bastionDialer.useSSHAgentAuth {
 			var err error
 			bastionDialer.sshKeyString, err = privateKeyPath(h.BastionHost.SSHKeyPath)
 			if err != nil {
@@ -59,7 +73,7 @@ func newDialer(h *Host, kind string) (*dialer, error) {
 		bastionDialer:   bastionDialer,
 	}
 
-	if dialer.sshKeyString == "" {
+	if dialer.sshKeyString == "" && !dialer.useSSHAgentAuth {
 		var err error
 		dialer.sshKeyString, err = privateKeyPath(h.SSHKeyPath)
 		if err != nil {
@@ -113,6 +127,8 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 			return nil, fmt.Errorf("Unable to access node with address [%s] using SSH. Please check if you are able to SSH to the node using the specified SSH Private Key and if you have configured the correct SSH username. Error: %v", d.sshAddress, err)
 		} else if strings.Contains(err.Error(), "cannot decode encrypted private keys") {
 			return nil, fmt.Errorf("Unable to access node with address [%s] using SSH. Using encrypted private keys is only supported using ssh-agent. Please configure the option `ssh_agent_auth: true` in the configuration file or use --ssh-agent-auth as a parameter when running RKE. This will use the `SSH_AUTH_SOCK` environment variable. Error: %v", d.sshAddress, err)
+		} else if strings.Contains(err.Error(), "operation timed out") {
+			return nil, fmt.Errorf("Unable to access node with address [%s] using SSH. Please check if the node is up and is accepting SSH connections or check network policies and firewall rules. Error: %v", d.sshAddress, err)
 		}
 		return nil, fmt.Errorf("Failed to dial ssh using address [%s]: %v", d.sshAddress, err)
 	}
@@ -125,7 +141,12 @@ func (d *dialer) Dial(network, addr string) (net.Conn, error) {
 
 	remote, err := conn.Dial(network, addr)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to access the Docker socket (%s). Please check if the configured user can execute `docker ps` on the node, and if the SSH server version is at least version 6.7 or higher. If you are using RedHat/CentOS, you can't use the user `root`. Please refer to the documentation for more instructions. Error: %v", addr, err)
+		if strings.Contains(err.Error(), "connect failed") {
+			return nil, fmt.Errorf("Unable to access the service on %s. The service might be still starting up. Error: %v", addr, err)
+		} else if strings.Contains(err.Error(), "administratively prohibited") {
+			return nil, fmt.Errorf("Unable to access the Docker socket (%s). Please check if the configured user can execute `docker ps` on the node, and if the SSH server version is at least version 6.7 or higher. If you are using RedHat/CentOS, you can't use the user `root`. Please refer to the documentation for more instructions. Error: %v", addr, err)
+		}
+		return nil, fmt.Errorf("Failed to dial to %s: %v", addr, err)
 	}
 	return remote, err
 }

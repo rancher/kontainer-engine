@@ -4,55 +4,63 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
+	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/rancher/rke/authz"
-	"github.com/rancher/rke/cloudprovider"
 	"github.com/rancher/rke/docker"
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/k8s"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
+	"github.com/rancher/rke/util"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
+	"k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/cert"
 )
 
 type Cluster struct {
-	v3.RancherKubernetesEngineConfig `yaml:",inline"`
 	ConfigPath                       string
-	LocalKubeConfigPath              string
-	EtcdHosts                        []*hosts.Host
-	WorkerHosts                      []*hosts.Host
+	ConfigDir                        string
+	CloudConfigFile                  string
 	ControlPlaneHosts                []*hosts.Host
-	InactiveHosts                    []*hosts.Host
-	EtcdReadyHosts                   []*hosts.Host
-	KubeClient                       *kubernetes.Clientset
-	KubernetesServiceIP              net.IP
 	Certificates                     map[string]pki.CertificatePKI
 	ClusterDomain                    string
 	ClusterCIDR                      string
 	ClusterDNSServer                 string
 	DockerDialerFactory              hosts.DialerFactory
+	EtcdHosts                        []*hosts.Host
+	EtcdReadyHosts                   []*hosts.Host
+	InactiveHosts                    []*hosts.Host
+	K8sWrapTransport                 k8s.WrapTransport
+	KubeClient                       *kubernetes.Clientset
+	KubernetesServiceIP              net.IP
+	LocalKubeConfigPath              string
 	LocalConnDialerFactory           hosts.DialerFactory
 	PrivateRegistriesMap             map[string]v3.PrivateRegistry
-	K8sWrapTransport                 k8s.WrapTransport
+	StateFilePath                    string
 	UseKubectlDeploy                 bool
 	UpdateWorkersOnly                bool
-	CloudConfigFile                  string
+	v3.RancherKubernetesEngineConfig `yaml:",inline"`
+	WorkerHosts                      []*hosts.Host
 }
 
 const (
 	X509AuthenticationProvider = "x509"
 	StateConfigMapName         = "cluster-state"
+	FullStateConfigMapName     = "full-cluster-state"
 	UpdateStateTimeout         = 30
 	GetStateTimeout            = 30
 	KubernetesClientTimeOut    = 30
+	SyncWorkers                = 10
 	NoneAuthorizationMode      = "none"
 	LocalNodeAddress           = "127.0.0.1"
 	LocalNodeHostname          = "localhost"
@@ -61,6 +69,12 @@ const (
 	ControlPlane               = "controlPlane"
 	WorkerPlane                = "workerPlan"
 	EtcdPlane                  = "etcd"
+
+	KubeAppLabel = "k8s-app"
+	AppLabel     = "app"
+	NameLabel    = "name"
+
+	WorkerThreads = util.WorkerThreads
 )
 
 func (c *Cluster) DeployControlPlane(ctx context.Context) error {
@@ -132,76 +146,70 @@ func ParseConfig(clusterFile string) (*v3.RancherKubernetesEngineConfig, error) 
 	return &rkeConfig, nil
 }
 
-func ParseCluster(
-	ctx context.Context,
-	rkeConfig *v3.RancherKubernetesEngineConfig,
-	clusterFilePath, configDir string,
-	dockerDialerFactory,
-	localConnDialerFactory hosts.DialerFactory,
-	k8sWrapTransport k8s.WrapTransport) (*Cluster, error) {
-	var err error
+func InitClusterObject(ctx context.Context, rkeConfig *v3.RancherKubernetesEngineConfig, flags ExternalFlags) (*Cluster, error) {
+	// basic cluster object from rkeConfig
 	c := &Cluster{
 		RancherKubernetesEngineConfig: *rkeConfig,
-		ConfigPath:                    clusterFilePath,
-		DockerDialerFactory:           dockerDialerFactory,
-		LocalConnDialerFactory:        localConnDialerFactory,
+		ConfigPath:                    flags.ClusterFilePath,
+		ConfigDir:                     flags.ConfigDir,
+		StateFilePath:                 GetStateFilePath(flags.ClusterFilePath, flags.ConfigDir),
 		PrivateRegistriesMap:          make(map[string]v3.PrivateRegistry),
-		K8sWrapTransport:              k8sWrapTransport,
 	}
+	if len(c.ConfigPath) == 0 {
+		c.ConfigPath = pki.ClusterConfig
+	}
+	// set kube_config and state file
+	c.LocalKubeConfigPath = pki.GetLocalKubeConfig(c.ConfigPath, c.ConfigDir)
+	c.StateFilePath = GetStateFilePath(c.ConfigPath, c.ConfigDir)
+
 	// Setting cluster Defaults
 	c.setClusterDefaults(ctx)
-
+	// extract cluster network configuration
+	c.setNetworkOptions()
+	// Register cloud provider
+	if err := c.setCloudProvider(); err != nil {
+		return nil, fmt.Errorf("Failed to register cloud provider: %v", err)
+	}
+	// set hosts groups
 	if err := c.InvertIndexHosts(); err != nil {
 		return nil, fmt.Errorf("Failed to classify hosts from config file: %v", err)
 	}
-
+	// validate cluster configuration
 	if err := c.ValidateCluster(); err != nil {
 		return nil, fmt.Errorf("Failed to validate cluster: %v", err)
 	}
+	return c, nil
+}
 
+func (c *Cluster) setNetworkOptions() error {
+	var err error
 	c.KubernetesServiceIP, err = pki.GetKubernetesServiceIP(c.Services.KubeAPI.ServiceClusterIPRange)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get Kubernetes Service IP: %v", err)
+		return fmt.Errorf("Failed to get Kubernetes Service IP: %v", err)
 	}
 	c.ClusterDomain = c.Services.Kubelet.ClusterDomain
 	c.ClusterCIDR = c.Services.KubeController.ClusterCIDR
 	c.ClusterDNSServer = c.Services.Kubelet.ClusterDNSServer
-	if len(c.ConfigPath) == 0 {
-		c.ConfigPath = pki.ClusterConfig
-	}
-	c.LocalKubeConfigPath = pki.GetLocalKubeConfig(c.ConfigPath, configDir)
+	return nil
+}
 
-	for _, pr := range c.PrivateRegistries {
-		if pr.URL == "" {
-			pr.URL = docker.DockerRegistryURL
-		}
-		c.PrivateRegistriesMap[pr.URL] = pr
-	}
-	// Get Cloud Provider
-	p, err := cloudprovider.InitCloudProvider(c.CloudProvider)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to initialize cloud provider: %v", err)
-	}
-	if p != nil {
-		c.CloudConfigFile, err = p.GenerateCloudConfigFile()
-		if err != nil {
-			return nil, fmt.Errorf("Failed to parse cloud config file: %v", err)
-		}
-		c.CloudProvider.Name = p.GetName()
-		if c.CloudProvider.Name == "" {
-			return nil, fmt.Errorf("Name of the cloud provider is not defined for custom provider")
-		}
-	}
-
+func (c *Cluster) SetupDialers(ctx context.Context, dailersOptions hosts.DialersOptions) error {
+	c.DockerDialerFactory = dailersOptions.DockerDialerFactory
+	c.LocalConnDialerFactory = dailersOptions.LocalConnDialerFactory
+	c.K8sWrapTransport = dailersOptions.K8sWrapTransport
 	// Create k8s wrap transport for bastion host
 	if len(c.BastionHost.Address) > 0 {
 		var err error
 		c.K8sWrapTransport, err = hosts.BastionHostWrapTransport(c.BastionHost)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return c, nil
+	return nil
+}
+
+func RebuildKubeconfig(ctx context.Context, kubeCluster *Cluster) error {
+	return rebuildLocalAdminConfig(ctx, kubeCluster)
 }
 
 func rebuildLocalAdminConfig(ctx context.Context, kubeCluster *Cluster) error {
@@ -239,7 +247,7 @@ func rebuildLocalAdminConfig(ctx context.Context, kubeCluster *Cluster) error {
 
 func isLocalConfigWorking(ctx context.Context, localKubeConfigPath string, k8sWrapTransport k8s.WrapTransport) bool {
 	if _, err := GetK8sVersion(localKubeConfigPath, k8sWrapTransport); err != nil {
-		log.Infof(ctx, "[reconcile] Local config is not vaild, rebuilding admin config")
+		log.Infof(ctx, "[reconcile] Local config is not valid, rebuilding admin config")
 		return false
 	}
 	return true
@@ -270,10 +278,13 @@ func getLocalAdminConfigWithNewAddress(localConfigPath, cpAddress string, cluste
 		string(config.KeyData))
 }
 
-func ApplyAuthzResources(ctx context.Context, rkeConfig v3.RancherKubernetesEngineConfig, clusterFilePath, configDir string, k8sWrapTransport k8s.WrapTransport) error {
+func ApplyAuthzResources(ctx context.Context, rkeConfig v3.RancherKubernetesEngineConfig, flags ExternalFlags, dailersOptions hosts.DialersOptions) error {
 	// dialer factories are not needed here since we are not uses docker only k8s jobs
-	kubeCluster, err := ParseCluster(ctx, &rkeConfig, clusterFilePath, configDir, nil, nil, k8sWrapTransport)
+	kubeCluster, err := InitClusterObject(ctx, &rkeConfig, flags)
 	if err != nil {
+		return err
+	}
+	if err := kubeCluster.SetupDialers(ctx, dailersOptions); err != nil {
 		return err
 	}
 	if len(kubeCluster.ControlPlaneHosts) == 0 {
@@ -315,40 +326,108 @@ func (c *Cluster) deployAddons(ctx context.Context) error {
 	return nil
 }
 
-func (c *Cluster) SyncLabelsAndTaints(ctx context.Context) error {
+func (c *Cluster) SyncLabelsAndTaints(ctx context.Context, currentCluster *Cluster) error {
+	// Handle issue when deleting all controlplane nodes https://github.com/rancher/rancher/issues/15810
+	if currentCluster != nil {
+		cpToDelete := hosts.GetToDeleteHosts(currentCluster.ControlPlaneHosts, c.ControlPlaneHosts, c.InactiveHosts)
+		if len(cpToDelete) == len(currentCluster.ControlPlaneHosts) {
+			log.Infof(ctx, "[sync] Cleaning left control plane nodes from reconcilation")
+			for _, toDeleteHost := range cpToDelete {
+				if err := cleanControlNode(ctx, c, currentCluster, toDeleteHost); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	if len(c.ControlPlaneHosts) > 0 {
 		log.Infof(ctx, "[sync] Syncing nodes Labels and Taints")
 		k8sClient, err := k8s.NewClient(c.LocalKubeConfigPath, c.K8sWrapTransport)
 		if err != nil {
 			return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
 		}
-		for _, host := range hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts) {
-			if err := k8s.SetAddressesAnnotations(k8sClient, host.HostnameOverride, host.InternalAddress, host.Address); err != nil {
-				return err
-			}
-			if err := k8s.SyncLabels(k8sClient, host.HostnameOverride, host.ToAddLabels, host.ToDelLabels); err != nil {
-				return err
-			}
-			// Taints are not being added by user
-			if err := k8s.SyncTaints(k8sClient, host.HostnameOverride, host.ToAddTaints, host.ToDelTaints); err != nil {
-				return err
-			}
+		hostList := hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts)
+		var errgrp errgroup.Group
+		hostQueue := make(chan *hosts.Host, len(hostList))
+		for _, host := range hostList {
+			hostQueue <- host
+		}
+		close(hostQueue)
+
+		for i := 0; i < SyncWorkers; i++ {
+			w := i
+			errgrp.Go(func() error {
+				var errs []error
+				for host := range hostQueue {
+					logrus.Debugf("worker [%d] starting sync for node [%s]", w, host.HostnameOverride)
+					if err := setNodeAnnotationsLabelsTaints(k8sClient, host); err != nil {
+						errs = append(errs, err)
+					}
+				}
+				if len(errs) > 0 {
+					return fmt.Errorf("%v", errs)
+				}
+				return nil
+			})
+		}
+		if err := errgrp.Wait(); err != nil {
+			return err
 		}
 		log.Infof(ctx, "[sync] Successfully synced nodes Labels and Taints")
 	}
 	return nil
 }
 
+func setNodeAnnotationsLabelsTaints(k8sClient *kubernetes.Clientset, host *hosts.Host) error {
+	node := &v1.Node{}
+	var err error
+	for retries := 0; retries <= 5; retries++ {
+		node, err = k8s.GetNode(k8sClient, host.HostnameOverride)
+		if err != nil {
+			logrus.Debugf("[hosts] Can't find node by name [%s], retrying..", host.HostnameOverride)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		oldNode := node.DeepCopy()
+		k8s.SetNodeAddressesAnnotations(node, host.InternalAddress, host.Address)
+		k8s.SyncNodeLabels(node, host.ToAddLabels, host.ToDelLabels)
+		k8s.SyncNodeTaints(node, host.ToAddTaints, host.ToDelTaints)
+
+		if reflect.DeepEqual(oldNode, node) {
+			logrus.Debugf("skipping syncing labels for node [%s]", node.Name)
+			return nil
+		}
+		_, err = k8sClient.CoreV1().Nodes().Update(node)
+		if err != nil {
+			logrus.Debugf("Error syncing labels for node [%s]: %v", node.Name, err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		return nil
+	}
+	return err
+}
+
 func (c *Cluster) PrePullK8sImages(ctx context.Context) error {
 	log.Infof(ctx, "Pre-pulling kubernetes images")
 	var errgrp errgroup.Group
-	hosts := hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts)
-	for _, host := range hosts {
-		runHost := host
+	hostList := hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts)
+	hostsQueue := util.GetObjectQueue(hostList)
+	for w := 0; w < WorkerThreads; w++ {
 		errgrp.Go(func() error {
-			return docker.UseLocalOrPull(ctx, runHost.DClient, runHost.Address, c.SystemImages.Kubernetes, "pre-deploy", c.PrivateRegistriesMap)
+			var errList []error
+			for host := range hostsQueue {
+				runHost := host.(*hosts.Host)
+				err := docker.UseLocalOrPull(ctx, runHost.DClient, runHost.Address, c.SystemImages.Kubernetes, "pre-deploy", c.PrivateRegistriesMap)
+				if err != nil {
+					errList = append(errList, err)
+				}
+			}
+			return util.ErrList(errList)
 		})
 	}
+
 	if err := errgrp.Wait(); err != nil {
 		return err
 	}
@@ -360,12 +439,15 @@ func ConfigureCluster(
 	ctx context.Context,
 	rkeConfig v3.RancherKubernetesEngineConfig,
 	crtBundle map[string]pki.CertificatePKI,
-	clusterFilePath, configDir string,
-	k8sWrapTransport k8s.WrapTransport,
+	flags ExternalFlags,
+	dailersOptions hosts.DialersOptions,
 	useKubectl bool) error {
 	// dialer factories are not needed here since we are not uses docker only k8s jobs
-	kubeCluster, err := ParseCluster(ctx, &rkeConfig, clusterFilePath, configDir, nil, nil, k8sWrapTransport)
+	kubeCluster, err := InitClusterObject(ctx, &rkeConfig, flags)
 	if err != nil {
+		return err
+	}
+	if err := kubeCluster.SetupDialers(ctx, dailersOptions); err != nil {
 		return err
 	}
 	kubeCluster.UseKubectlDeploy = useKubectl
@@ -382,4 +464,57 @@ func ConfigureCluster(
 		}
 	}
 	return nil
+}
+
+func RestartClusterPods(ctx context.Context, kubeCluster *Cluster) error {
+	log.Infof(ctx, "Restarting network, ingress, and metrics pods")
+	// this will remove the pods created by RKE and let the controller creates them again
+	kubeClient, err := k8s.NewClient(kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport)
+	if err != nil {
+		return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
+	}
+	labelsList := []string{
+		fmt.Sprintf("%s=%s", KubeAppLabel, CalicoNetworkPlugin),
+		fmt.Sprintf("%s=%s", KubeAppLabel, FlannelNetworkPlugin),
+		fmt.Sprintf("%s=%s", KubeAppLabel, CanalNetworkPlugin),
+		fmt.Sprintf("%s=%s", NameLabel, WeaveNetworkPlugin),
+		fmt.Sprintf("%s=%s", AppLabel, NginxIngressAddonAppName),
+		fmt.Sprintf("%s=%s", KubeAppLabel, DefaultMonitoringProvider),
+		fmt.Sprintf("%s=%s", KubeAppLabel, KubeDNSAddonAppName),
+		fmt.Sprintf("%s=%s", KubeAppLabel, KubeDNSAutoscalerAppName),
+	}
+	var errgrp errgroup.Group
+	labelQueue := util.GetObjectQueue(labelsList)
+	for w := 0; w < services.WorkerThreads; w++ {
+		errgrp.Go(func() error {
+			var errList []error
+			for label := range labelQueue {
+				runLabel := label.(string)
+				// list pods to be deleted
+				pods, err := k8s.ListPodsByLabel(kubeClient, runLabel)
+				if err != nil {
+					errList = append(errList, err)
+				}
+				// delete pods
+				err = k8s.DeletePods(kubeClient, pods)
+				if err != nil {
+					errList = append(errList, err)
+				}
+			}
+			return util.ErrList(errList)
+		})
+	}
+	if err := errgrp.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Cluster) GetHostInfoMap() map[string]types.Info {
+	hostsInfoMap := make(map[string]types.Info)
+	allHosts := hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts)
+	for _, host := range allHosts {
+		hostsInfoMap[host.Address] = host.DockerInfo
+	}
+	return hostsInfoMap
 }

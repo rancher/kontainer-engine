@@ -109,7 +109,7 @@ type RKESystemImages struct {
 	//CanalFlannel image
 	CanalFlannel string `yaml:"canal_flannel" json:"canalFlannel,omitempty"`
 	// Weave Node image
-	WeaveNode string `yaml:"wave_node" json:"weaveNode,omitempty"`
+	WeaveNode string `yaml:"weave_node" json:"weaveNode,omitempty"`
 	// Weave CNI image
 	WeaveCNI string `yaml:"weave_cni" json:"weaveCni,omitempty"`
 	// Pod infra container image
@@ -178,11 +178,11 @@ type ETCDService struct {
 	// External etcd prefix
 	Path string `yaml:"path" json:"path,omitempty"`
 	// Etcd Recurring snapshot Service
-	Snapshot bool `yaml:"snapshot" json:"snapshot,omitempty"`
+	Snapshot *bool `yaml:"snapshot" json:"snapshot,omitempty" norman:"default=true"`
 	// Etcd snapshot Retention period
-	Retention string `yaml:"retention" json:"retention,omitempty"`
+	Retention string `yaml:"retention" json:"retention,omitempty" norman:"default=72h"`
 	// Etcd snapshot Creation period
-	Creation string `yaml:"creation" json:"creation,omitempty"`
+	Creation string `yaml:"creation" json:"creation,omitempty" norman:"default=12h"`
 }
 
 type KubeAPIService struct {

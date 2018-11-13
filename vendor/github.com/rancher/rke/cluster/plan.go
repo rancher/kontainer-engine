@@ -18,18 +18,30 @@ import (
 	"github.com/rancher/rke/k8s"
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
+	"github.com/rancher/rke/util"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
+	"github.com/sirupsen/logrus"
 )
 
 const (
 	EtcdPathPrefix     = "/registry"
 	ContainerNameLabel = "io.rancher.rke.container.name"
 	CloudConfigSumEnv  = "RKE_CLOUD_CONFIG_CHECKSUM"
+
+	DefaultToolsEntrypoint        = "/opt/rke-tools/entrypoint.sh"
+	DefaultToolsEntrypointVersion = "0.1.13"
+	LegacyToolsEntrypoint         = "/opt/rke/entrypoint.sh"
+
+	KubeletDockerConfigEnv     = "RKE_KUBELET_DOCKER_CONFIG"
+	KubeletDockerConfigFileEnv = "RKE_KUBELET_DOCKER_FILE"
+	KubeletDockerConfigPath    = "/var/lib/kubelet/config.json"
 )
+
+var admissionControlOptionNames = []string{"enable-admission-plugins", "admission-control"}
 
 func GeneratePlan(ctx context.Context, rkeConfig *v3.RancherKubernetesEngineConfig, hostsInfoMap map[string]types.Info) (v3.RKEPlan, error) {
 	clusterPlan := v3.RKEPlan{}
-	myCluster, err := ParseCluster(ctx, rkeConfig, "", "", nil, nil, nil)
+	myCluster, err := InitClusterObject(ctx, rkeConfig, ExternalFlags{})
 	if err != nil {
 		return clusterPlan, err
 	}
@@ -102,33 +114,39 @@ func (c *Cluster) BuildKubeAPIProcess(prefixPath string) v3.Process {
 	}
 
 	Command := []string{
-		"/opt/rke/entrypoint.sh",
+		c.getRKEToolsEntryPoint(),
 		"kube-apiserver",
 	}
 
 	CommandArgs := map[string]string{
-		"insecure-bind-address":           "127.0.0.1",
-		"bind-address":                    "0.0.0.0",
-		"insecure-port":                   "0",
-		"secure-port":                     "6443",
-		"cloud-provider":                  c.CloudProvider.Name,
-		"allow-privileged":                "true",
-		"kubelet-preferred-address-types": "InternalIP,ExternalIP,Hostname",
-		"service-cluster-ip-range":        c.Services.KubeAPI.ServiceClusterIPRange,
-		"service-node-port-range":         c.Services.KubeAPI.ServiceNodePortRange,
-		"admission-control":               "ServiceAccount,NamespaceLifecycle,LimitRanger,PersistentVolumeLabel,DefaultStorageClass,ResourceQuota,DefaultTolerationSeconds",
-		"storage-backend":                 "etcd3",
-		"client-ca-file":                  pki.GetCertPath(pki.CACertName),
-		"tls-cert-file":                   pki.GetCertPath(pki.KubeAPICertName),
-		"tls-private-key-file":            pki.GetKeyPath(pki.KubeAPICertName),
-		"kubelet-client-certificate":      pki.GetCertPath(pki.KubeAPICertName),
-		"kubelet-client-key":              pki.GetKeyPath(pki.KubeAPICertName),
-		"service-account-key-file":        pki.GetKeyPath(pki.KubeAPICertName),
-		"etcd-cafile":                     etcdCAClientCert,
-		"etcd-certfile":                   etcdClientCert,
-		"etcd-keyfile":                    etcdClientKey,
-		"etcd-servers":                    etcdConnectionString,
-		"etcd-prefix":                     etcdPathPrefix,
+		"insecure-bind-address":              "127.0.0.1",
+		"bind-address":                       "0.0.0.0",
+		"insecure-port":                      "0",
+		"secure-port":                        "6443",
+		"cloud-provider":                     c.CloudProvider.Name,
+		"allow-privileged":                   "true",
+		"kubelet-preferred-address-types":    "InternalIP,ExternalIP,Hostname",
+		"service-cluster-ip-range":           c.Services.KubeAPI.ServiceClusterIPRange,
+		"service-node-port-range":            c.Services.KubeAPI.ServiceNodePortRange,
+		"storage-backend":                    "etcd3",
+		"client-ca-file":                     pki.GetCertPath(pki.CACertName),
+		"tls-cert-file":                      pki.GetCertPath(pki.KubeAPICertName),
+		"tls-private-key-file":               pki.GetKeyPath(pki.KubeAPICertName),
+		"kubelet-client-certificate":         pki.GetCertPath(pki.KubeAPICertName),
+		"kubelet-client-key":                 pki.GetKeyPath(pki.KubeAPICertName),
+		"service-account-key-file":           pki.GetKeyPath(pki.ServiceAccountTokenKeyName),
+		"etcd-cafile":                        etcdCAClientCert,
+		"etcd-certfile":                      etcdClientCert,
+		"etcd-keyfile":                       etcdClientKey,
+		"etcd-servers":                       etcdConnectionString,
+		"etcd-prefix":                        etcdPathPrefix,
+		"requestheader-client-ca-file":       pki.GetCertPath(pki.RequestHeaderCACertName),
+		"requestheader-allowed-names":        pki.APIProxyClientCertName,
+		"proxy-client-key-file":              pki.GetKeyPath(pki.APIProxyClientCertName),
+		"proxy-client-cert-file":             pki.GetCertPath(pki.APIProxyClientCertName),
+		"requestheader-extra-headers-prefix": "X-Remote-Extra-",
+		"requestheader-group-headers":        "X-Remote-Group",
+		"requestheader-username-headers":     "X-Remote-User",
 	}
 	if len(c.CloudProvider.Name) > 0 && c.CloudProvider.Name != aws.AWSCloudProviderName {
 		CommandArgs["cloud-config"] = CloudConfigPath
@@ -142,6 +160,11 @@ func (c *Cluster) BuildKubeAPIProcess(prefixPath string) v3.Process {
 	serviceOptions := c.GetKubernetesServicesOptions()
 	if serviceOptions.KubeAPI != nil {
 		for k, v := range serviceOptions.KubeAPI {
+			// if the value is empty, we remove that option
+			if len(v) == 0 {
+				delete(CommandArgs, k)
+				continue
+			}
 			CommandArgs[k] = v
 		}
 	}
@@ -155,7 +178,12 @@ func (c *Cluster) BuildKubeAPIProcess(prefixPath string) v3.Process {
 	}
 	if c.Services.KubeAPI.PodSecurityPolicy {
 		CommandArgs["runtime-config"] = "extensions/v1beta1/podsecuritypolicy=true"
-		CommandArgs["admission-control"] = CommandArgs["admission-control"] + ",PodSecurityPolicy"
+		for _, optionName := range admissionControlOptionNames {
+			if _, ok := CommandArgs[optionName]; ok {
+				CommandArgs[optionName] = CommandArgs[optionName] + ",PodSecurityPolicy"
+				break
+			}
+		}
 	}
 
 	VolumesFrom := []string{
@@ -188,7 +216,7 @@ func (c *Cluster) BuildKubeAPIProcess(prefixPath string) v3.Process {
 		Name:                    services.KubeAPIContainerName,
 		Command:                 Command,
 		VolumesFrom:             VolumesFrom,
-		Binds:                   Binds,
+		Binds:                   getUniqStringList(Binds),
 		Env:                     getUniqStringList(c.Services.KubeAPI.ExtraEnv),
 		NetworkMode:             "host",
 		RestartPolicy:           "always",
@@ -203,25 +231,25 @@ func (c *Cluster) BuildKubeAPIProcess(prefixPath string) v3.Process {
 
 func (c *Cluster) BuildKubeControllerProcess(prefixPath string) v3.Process {
 	Command := []string{
-		"/opt/rke/entrypoint.sh",
+		c.getRKEToolsEntryPoint(),
 		"kube-controller-manager",
 	}
 
 	CommandArgs := map[string]string{
-		"address":                     "0.0.0.0",
-		"cloud-provider":              c.CloudProvider.Name,
-		"allow-untagged-cloud":        "true",
-		"configure-cloud-routes":      "false",
-		"leader-elect":                "true",
-		"kubeconfig":                  pki.GetConfigPath(pki.KubeControllerCertName),
-		"enable-hostpath-provisioner": "false",
-		"node-monitor-grace-period":   "40s",
-		"pod-eviction-timeout":        "5m0s",
-		"v": "2",
+		"address":                          "0.0.0.0",
+		"cloud-provider":                   c.CloudProvider.Name,
+		"allow-untagged-cloud":             "true",
+		"configure-cloud-routes":           "false",
+		"leader-elect":                     "true",
+		"kubeconfig":                       pki.GetConfigPath(pki.KubeControllerCertName),
+		"enable-hostpath-provisioner":      "false",
+		"node-monitor-grace-period":        "40s",
+		"pod-eviction-timeout":             "5m0s",
+		"v":                                "2",
 		"allocate-node-cidrs":              "true",
 		"cluster-cidr":                     c.ClusterCIDR,
 		"service-cluster-ip-range":         c.Services.KubeController.ServiceClusterIPRange,
-		"service-account-private-key-file": pki.GetKeyPath(pki.KubeAPICertName),
+		"service-account-private-key-file": pki.GetKeyPath(pki.ServiceAccountTokenKeyName),
 		"root-ca-file":                     pki.GetCertPath(pki.CACertName),
 	}
 	if len(c.CloudProvider.Name) > 0 && c.CloudProvider.Name != aws.AWSCloudProviderName {
@@ -236,6 +264,11 @@ func (c *Cluster) BuildKubeControllerProcess(prefixPath string) v3.Process {
 	serviceOptions := c.GetKubernetesServicesOptions()
 	if serviceOptions.KubeController != nil {
 		for k, v := range serviceOptions.KubeController {
+			// if the value is empty, we remove that option
+			if len(v) == 0 {
+				delete(CommandArgs, k)
+				continue
+			}
 			CommandArgs[k] = v
 		}
 	}
@@ -274,7 +307,7 @@ func (c *Cluster) BuildKubeControllerProcess(prefixPath string) v3.Process {
 		Command:                 Command,
 		Args:                    args,
 		VolumesFrom:             VolumesFrom,
-		Binds:                   Binds,
+		Binds:                   getUniqStringList(Binds),
 		Env:                     getUniqStringList(c.Services.KubeController.ExtraEnv),
 		NetworkMode:             "host",
 		RestartPolicy:           "always",
@@ -290,33 +323,34 @@ func (c *Cluster) BuildKubeControllerProcess(prefixPath string) v3.Process {
 func (c *Cluster) BuildKubeletProcess(host *hosts.Host, prefixPath string) v3.Process {
 
 	Command := []string{
-		"/opt/rke/entrypoint.sh",
+		c.getRKEToolsEntryPoint(),
 		"kubelet",
 	}
 
 	CommandArgs := map[string]string{
-		"v":                         "2",
-		"address":                   "0.0.0.0",
-		"cadvisor-port":             "0",
-		"read-only-port":            "0",
-		"cluster-domain":            c.ClusterDomain,
-		"pod-infra-container-image": c.Services.Kubelet.InfraContainerImage,
-		"cgroups-per-qos":           "True",
-		"enforce-node-allocatable":  "",
-		"hostname-override":         host.HostnameOverride,
-		"cluster-dns":               c.ClusterDNSServer,
-		"network-plugin":            "cni",
-		"cni-conf-dir":              "/etc/cni/net.d",
-		"cni-bin-dir":               "/opt/cni/bin",
-		"resolv-conf":               "/etc/resolv.conf",
-		"allow-privileged":          "true",
-		"cloud-provider":            c.CloudProvider.Name,
-		"kubeconfig":                pki.GetConfigPath(pki.KubeNodeCertName),
-		"client-ca-file":            pki.GetCertPath(pki.CACertName),
-		"anonymous-auth":            "false",
-		"volume-plugin-dir":         path.Join(prefixPath, "/var/lib/kubelet/volumeplugins"),
-		"fail-swap-on":              strconv.FormatBool(c.Services.Kubelet.FailSwapOn),
-		"root-dir":                  path.Join(prefixPath, "/var/lib/kubelet"),
+		"v":                            "2",
+		"address":                      "0.0.0.0",
+		"cadvisor-port":                "0", //depricated in 1.12
+		"read-only-port":               "0",
+		"cluster-domain":               c.ClusterDomain,
+		"pod-infra-container-image":    c.Services.Kubelet.InfraContainerImage,
+		"cgroups-per-qos":              "True",
+		"enforce-node-allocatable":     "",
+		"hostname-override":            host.HostnameOverride,
+		"cluster-dns":                  c.ClusterDNSServer,
+		"network-plugin":               "cni",
+		"cni-conf-dir":                 "/etc/cni/net.d",
+		"cni-bin-dir":                  "/opt/cni/bin",
+		"resolv-conf":                  "/etc/resolv.conf",
+		"allow-privileged":             "true",
+		"cloud-provider":               c.CloudProvider.Name,
+		"kubeconfig":                   pki.GetConfigPath(pki.KubeNodeCertName),
+		"client-ca-file":               pki.GetCertPath(pki.CACertName),
+		"anonymous-auth":               "false",
+		"volume-plugin-dir":            "/var/lib/kubelet/volumeplugins",
+		"fail-swap-on":                 strconv.FormatBool(c.Services.Kubelet.FailSwapOn),
+		"root-dir":                     path.Join(prefixPath, "/var/lib/kubelet"),
+		"authentication-token-webhook": "true",
 	}
 	if host.IsControl && !host.IsWorker {
 		CommandArgs["register-with-taints"] = unschedulableControlTaint
@@ -332,10 +366,26 @@ func (c *Cluster) BuildKubeletProcess(host *hosts.Host, prefixPath string) v3.Pr
 			c.Services.Kubelet.ExtraEnv,
 			fmt.Sprintf("%s=%s", CloudConfigSumEnv, getCloudConfigChecksum(c.CloudProvider)))
 	}
+	if len(c.PrivateRegistriesMap) > 0 {
+		kubeletDcokerConfig, _ := docker.GetKubeletDockerConfig(c.PrivateRegistriesMap)
+		c.Services.Kubelet.ExtraEnv = append(
+			c.Services.Kubelet.ExtraEnv,
+			fmt.Sprintf("%s=%s", KubeletDockerConfigEnv,
+				b64.StdEncoding.EncodeToString([]byte(kubeletDcokerConfig))))
+
+		c.Services.Kubelet.ExtraEnv = append(
+			c.Services.Kubelet.ExtraEnv,
+			fmt.Sprintf("%s=%s", KubeletDockerConfigFileEnv, path.Join(prefixPath, KubeletDockerConfigPath)))
+	}
 	// check if our version has specific options for this component
 	serviceOptions := c.GetKubernetesServicesOptions()
 	if serviceOptions.Kubelet != nil {
 		for k, v := range serviceOptions.Kubelet {
+			// if the value is empty, we remove that option
+			if len(v) == 0 {
+				delete(CommandArgs, k)
+				continue
+			}
 			CommandArgs[k] = v
 		}
 	}
@@ -363,6 +413,10 @@ func (c *Cluster) BuildKubeletProcess(host *hosts.Host, prefixPath string) v3.Pr
 		"/usr:/host/usr:ro",
 		"/etc:/host/etc:ro",
 	}
+	// Special case to simplify using flex volumes
+	if path.Join(prefixPath, "/var/lib/kubelet") != "/var/lib/kubelet" {
+		Binds = append(Binds, "/var/lib/kubelet/volumeplugins:/var/lib/kubelet/volumeplugins:shared,z")
+	}
 
 	for arg, value := range c.Services.Kubelet.ExtraArgs {
 		if _, ok := c.Services.Kubelet.ExtraArgs[arg]; ok {
@@ -386,7 +440,7 @@ func (c *Cluster) BuildKubeletProcess(host *hosts.Host, prefixPath string) v3.Pr
 		Name:                    services.KubeletContainerName,
 		Command:                 Command,
 		VolumesFrom:             VolumesFrom,
-		Binds:                   Binds,
+		Binds:                   getUniqStringList(Binds),
 		Env:                     getUniqStringList(c.Services.Kubelet.ExtraEnv),
 		NetworkMode:             "host",
 		RestartPolicy:           "always",
@@ -403,13 +457,13 @@ func (c *Cluster) BuildKubeletProcess(host *hosts.Host, prefixPath string) v3.Pr
 
 func (c *Cluster) BuildKubeProxyProcess(host *hosts.Host, prefixPath string) v3.Process {
 	Command := []string{
-		"/opt/rke/entrypoint.sh",
+		c.getRKEToolsEntryPoint(),
 		"kube-proxy",
 	}
 
 	CommandArgs := map[string]string{
-		"cluster-cidr": c.ClusterCIDR,
-		"v":            "2",
+		"cluster-cidr":         c.ClusterCIDR,
+		"v":                    "2",
 		"healthz-bind-address": "0.0.0.0",
 		"hostname-override":    host.HostnameOverride,
 		"kubeconfig":           pki.GetConfigPath(pki.KubeProxyCertName),
@@ -419,6 +473,11 @@ func (c *Cluster) BuildKubeProxyProcess(host *hosts.Host, prefixPath string) v3.
 	serviceOptions := c.GetKubernetesServicesOptions()
 	if serviceOptions.Kubeproxy != nil {
 		for k, v := range serviceOptions.Kubeproxy {
+			// if the value is empty, we remove that option
+			if len(v) == 0 {
+				delete(CommandArgs, k)
+				continue
+			}
 			CommandArgs[k] = v
 		}
 	}
@@ -448,17 +507,17 @@ func (c *Cluster) BuildKubeProxyProcess(host *hosts.Host, prefixPath string) v3.
 	}
 	registryAuthConfig, _, _ := docker.GetImageRegistryConfig(c.Services.Kubeproxy.Image, c.PrivateRegistriesMap)
 	return v3.Process{
-		Name:          services.KubeproxyContainerName,
-		Command:       Command,
-		VolumesFrom:   VolumesFrom,
-		Binds:         Binds,
-		Env:           c.Services.Kubeproxy.ExtraEnv,
-		NetworkMode:   "host",
-		RestartPolicy: "always",
-		PidMode:       "host",
-		Privileged:    true,
-		HealthCheck:   healthCheck,
-		Image:         c.Services.Kubeproxy.Image,
+		Name:                    services.KubeproxyContainerName,
+		Command:                 Command,
+		VolumesFrom:             VolumesFrom,
+		Binds:                   getUniqStringList(Binds),
+		Env:                     c.Services.Kubeproxy.ExtraEnv,
+		NetworkMode:             "host",
+		RestartPolicy:           "always",
+		PidMode:                 "host",
+		Privileged:              true,
+		HealthCheck:             healthCheck,
+		Image:                   c.Services.Kubeproxy.Image,
 		ImageRegistryAuthConfig: registryAuthConfig,
 		Labels: map[string]string{
 			ContainerNameLabel: services.KubeproxyContainerName,
@@ -481,12 +540,12 @@ func (c *Cluster) BuildProxyProcess() v3.Process {
 		Name: services.NginxProxyContainerName,
 		Env:  Env,
 		// we do this to force container update when CP hosts change.
-		Args:          Env,
-		Command:       []string{"nginx-proxy"},
-		NetworkMode:   "host",
-		RestartPolicy: "always",
-		HealthCheck:   v3.HealthCheck{},
-		Image:         c.SystemImages.NginxProxy,
+		Args:                    Env,
+		Command:                 []string{"nginx-proxy"},
+		NetworkMode:             "host",
+		RestartPolicy:           "always",
+		HealthCheck:             v3.HealthCheck{},
+		Image:                   c.SystemImages.NginxProxy,
 		ImageRegistryAuthConfig: registryAuthConfig,
 		Labels: map[string]string{
 			ContainerNameLabel: services.NginxProxyContainerName,
@@ -496,7 +555,7 @@ func (c *Cluster) BuildProxyProcess() v3.Process {
 
 func (c *Cluster) BuildSchedulerProcess(prefixPath string) v3.Process {
 	Command := []string{
-		"/opt/rke/entrypoint.sh",
+		c.getRKEToolsEntryPoint(),
 		"kube-scheduler",
 	}
 
@@ -511,6 +570,11 @@ func (c *Cluster) BuildSchedulerProcess(prefixPath string) v3.Process {
 	serviceOptions := c.GetKubernetesServicesOptions()
 	if serviceOptions.Scheduler != nil {
 		for k, v := range serviceOptions.Scheduler {
+			// if the value is empty, we remove that option
+			if len(v) == 0 {
+				delete(CommandArgs, k)
+				continue
+			}
 			CommandArgs[k] = v
 		}
 	}
@@ -542,7 +606,7 @@ func (c *Cluster) BuildSchedulerProcess(prefixPath string) v3.Process {
 	return v3.Process{
 		Name:                    services.SchedulerContainerName,
 		Command:                 Command,
-		Binds:                   Binds,
+		Binds:                   getUniqStringList(Binds),
 		Env:                     c.Services.Scheduler.ExtraEnv,
 		VolumesFrom:             VolumesFrom,
 		NetworkMode:             "host",
@@ -647,7 +711,7 @@ func (c *Cluster) BuildEtcdProcess(host *hosts.Host, etcdHosts []*hosts.Host, pr
 	return v3.Process{
 		Name:                    services.EtcdContainerName,
 		Args:                    args,
-		Binds:                   Binds,
+		Binds:                   getUniqStringList(Binds),
 		Env:                     Env,
 		NetworkMode:             "host",
 		RestartPolicy:           "always",
@@ -700,7 +764,7 @@ func getTagMajorVersion(tag string) string {
 }
 
 func getCloudConfigChecksum(config v3.CloudProvider) string {
-	configByteSum := md5.Sum([]byte(fmt.Sprintf("%s", config)))
+	configByteSum := md5.Sum([]byte(fmt.Sprintf("%v", config)))
 	return fmt.Sprintf("%x", configByteSum)
 }
 
@@ -714,4 +778,25 @@ func getUniqStringList(l []string) []string {
 		}
 	}
 	return ul
+}
+
+func (c *Cluster) getRKEToolsEntryPoint() string {
+	v := strings.Split(c.SystemImages.KubernetesServicesSidecar, ":")
+	last := v[len(v)-1]
+
+	logrus.Debugf("Extracted version [%s] from image [%s]", last, c.SystemImages.KubernetesServicesSidecar)
+
+	sv, err := util.StrToSemVer(last)
+	if err != nil {
+		return DefaultToolsEntrypoint
+	}
+	svdefault, err := util.StrToSemVer(DefaultToolsEntrypointVersion)
+	if err != nil {
+		return DefaultToolsEntrypoint
+	}
+
+	if sv.LessThan(*svdefault) {
+		return LegacyToolsEntrypoint
+	}
+	return DefaultToolsEntrypoint
 }
