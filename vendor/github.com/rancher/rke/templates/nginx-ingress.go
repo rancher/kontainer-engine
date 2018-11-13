@@ -15,7 +15,7 @@ metadata:
     app: ingress-nginx
 data:
 {{ range $k,$v := .Options }}
-  {{ $k }}: {{ $v }}
+  {{ $k }}: "{{ $v }}"
 {{ end }}
 ---
 kind: ConfigMap
@@ -71,6 +71,7 @@ rules:
       - "extensions"
     resources:
       - ingresses
+      - daemonsets
     verbs:
       - get
       - list
@@ -175,6 +176,15 @@ spec:
         prometheus.io/port: '10254'
         prometheus.io/scrape: 'true'
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                - key: beta.kubernetes.io/os
+                  operator: NotIn
+                  values:
+                    - windows
       hostNetwork: true
       nodeSelector:
       {{ range $k, $v := .NodeSelector }}
@@ -183,16 +193,6 @@ spec:
       {{if eq .RBACConfig "rbac"}}
       serviceAccountName: nginx-ingress-serviceaccount
       {{ end }}
-      initContainers:
-      - command:
-        - sh
-        - -c
-        - sysctl -w net.core.somaxconn=32768; sysctl -w net.ipv4.ip_local_port_range="1024 65535"
-        image: {{.AlpineImage}}
-        imagePullPolicy: IfNotPresent
-        name: sysctl
-        securityContext:
-          privileged: true
       containers:
         - name: nginx-ingress-controller
           image: {{.IngressImage}}
@@ -206,6 +206,13 @@ spec:
           {{ range $k, $v := .ExtraArgs }}
             - --{{ $k }}{{if ne $v "" }}={{ $v }}{{end}}
           {{ end }}
+          securityContext:
+            capabilities:
+                drop:
+                - ALL
+                add:
+                - NET_BIND_SERVICE
+            runAsUser: 33
           env:
             - name: POD_NAME
               valueFrom:

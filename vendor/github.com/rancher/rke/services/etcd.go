@@ -3,7 +3,6 @@ package services
 import (
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,19 +15,23 @@ import (
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
+	"github.com/rancher/rke/util"
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
-	EtcdSnapshotPath = "/opt/rke/etcd-snapshots"
-	EtcdRestorePath  = "/opt/rke/etcd-snapshots-restore/"
-	EtcdDataDir      = "/var/lib/rancher/etcd/"
+	EtcdSnapshotPath     = "/opt/rke/etcd-snapshots/"
+	EtcdRestorePath      = "/opt/rke/etcd-snapshots-restore/"
+	EtcdDataDir          = "/var/lib/rancher/etcd/"
+	EtcdInitWaitTime     = 10
+	EtcdSnapshotWaitTime = 5
 )
 
 type EtcdSnapshot struct {
 	// Enable or disable snapshot creation
-	Snapshot bool
+	Snapshot *bool
 	// Creation period of the etcd snapshots
 	Creation string
 	// Retention period of the etcd snapshots
@@ -54,11 +57,15 @@ func RunEtcdPlane(
 		if err := docker.DoRunContainer(ctx, host.DClient, imageCfg, hostCfg, EtcdContainerName, host.Address, ETCDRole, prsMap); err != nil {
 			return err
 		}
-		if etcdSnapshot.Snapshot {
+		if *etcdSnapshot.Snapshot == true {
 			if err := RunEtcdSnapshotSave(ctx, host, prsMap, alpineImage, etcdSnapshot.Creation, etcdSnapshot.Retention, EtcdSnapshotContainerName, false); err != nil {
 				return err
 			}
 			if err := pki.SaveBackupBundleOnHost(ctx, host, alpineImage, EtcdSnapshotPath, prsMap); err != nil {
+				return err
+			}
+		} else {
+			if err := docker.DoRemoveContainer(ctx, host.DClient, EtcdSnapshotContainerName, host.Address); err != nil {
 				return err
 			}
 		}
@@ -70,29 +77,64 @@ func RunEtcdPlane(
 	return nil
 }
 
+func RestartEtcdPlane(ctx context.Context, etcdHosts []*hosts.Host) error {
+	log.Infof(ctx, "[%s] Restarting up etcd plane..", ETCDRole)
+	var errgrp errgroup.Group
+
+	hostsQueue := util.GetObjectQueue(etcdHosts)
+	for w := 0; w < WorkerThreads; w++ {
+		errgrp.Go(func() error {
+			var errList []error
+			for host := range hostsQueue {
+				runHost := host.(*hosts.Host)
+				if err := docker.DoRestartContainer(ctx, runHost.DClient, EtcdContainerName, runHost.Address); err != nil {
+					errList = append(errList, err)
+				}
+			}
+			return util.ErrList(errList)
+		})
+	}
+	if err := errgrp.Wait(); err != nil {
+		return err
+	}
+	log.Infof(ctx, "[%s] Successfully restarted etcd plane..", ETCDRole)
+	return nil
+}
+
 func RemoveEtcdPlane(ctx context.Context, etcdHosts []*hosts.Host, force bool) error {
 	log.Infof(ctx, "[%s] Tearing down etcd plane..", ETCDRole)
-	for _, host := range etcdHosts {
-		err := docker.DoRemoveContainer(ctx, host.DClient, EtcdContainerName, host.Address)
-		if err != nil {
-			return err
-		}
-		if !host.IsWorker || !host.IsControl || force {
-			// remove unschedulable kubelet on etcd host
-			if err := removeKubelet(ctx, host); err != nil {
-				return err
-			}
-			if err := removeKubeproxy(ctx, host); err != nil {
-				return err
-			}
-			if err := removeNginxProxy(ctx, host); err != nil {
-				return err
-			}
-			if err := removeSidekick(ctx, host); err != nil {
-				return err
-			}
-		}
 
+	var errgrp errgroup.Group
+	hostsQueue := util.GetObjectQueue(etcdHosts)
+	for w := 0; w < WorkerThreads; w++ {
+		errgrp.Go(func() error {
+			var errList []error
+			for host := range hostsQueue {
+				runHost := host.(*hosts.Host)
+				if err := docker.DoRemoveContainer(ctx, runHost.DClient, EtcdContainerName, runHost.Address); err != nil {
+					errList = append(errList, err)
+				}
+				if !runHost.IsWorker || !runHost.IsControl || force {
+					// remove unschedulable kubelet on etcd host
+					if err := removeKubelet(ctx, runHost); err != nil {
+						errList = append(errList, err)
+					}
+					if err := removeKubeproxy(ctx, runHost); err != nil {
+						errList = append(errList, err)
+					}
+					if err := removeNginxProxy(ctx, runHost); err != nil {
+						errList = append(errList, err)
+					}
+					if err := removeSidekick(ctx, runHost); err != nil {
+						errList = append(errList, err)
+					}
+				}
+			}
+			return util.ErrList(errList)
+		})
+	}
+	if err := errgrp.Wait(); err != nil {
+		return err
 	}
 	log.Infof(ctx, "[%s] Successfully tore down etcd plane..", ETCDRole)
 	return nil
@@ -162,17 +204,15 @@ func RemoveEtcdMember(ctx context.Context, etcdHost *hosts.Host, etcdHosts []*ho
 	return nil
 }
 
-func ReloadEtcdCluster(ctx context.Context, readyEtcdHosts []*hosts.Host, localConnDialerFactory hosts.DialerFactory, cert, key []byte, prsMap map[string]v3.PrivateRegistry, etcdNodePlanMap map[string]v3.RKEConfigNodePlan, alpineImage string) error {
-	for _, etcdHost := range readyEtcdHosts {
-		imageCfg, hostCfg, _ := GetProcessConfig(etcdNodePlanMap[etcdHost.Address].Processes[EtcdContainerName])
-		if err := docker.DoRunContainer(ctx, etcdHost.DClient, imageCfg, hostCfg, EtcdContainerName, etcdHost.Address, ETCDRole, prsMap); err != nil {
-			return err
-		}
-		if err := createLogLink(ctx, etcdHost, EtcdContainerName, ETCDRole, alpineImage, prsMap); err != nil {
-			return err
-		}
+func ReloadEtcdCluster(ctx context.Context, readyEtcdHosts []*hosts.Host, newHost *hosts.Host, localConnDialerFactory hosts.DialerFactory, cert, key []byte, prsMap map[string]v3.PrivateRegistry, etcdNodePlanMap map[string]v3.RKEConfigNodePlan, alpineImage string) error {
+	imageCfg, hostCfg, _ := GetProcessConfig(etcdNodePlanMap[newHost.Address].Processes[EtcdContainerName])
+	if err := docker.DoRunContainer(ctx, newHost.DClient, imageCfg, hostCfg, EtcdContainerName, newHost.Address, ETCDRole, prsMap); err != nil {
+		return err
 	}
-	time.Sleep(10 * time.Second)
+	if err := createLogLink(ctx, newHost, EtcdContainerName, ETCDRole, alpineImage, prsMap); err != nil {
+		return err
+	}
+	time.Sleep(EtcdInitWaitTime * time.Second)
 	var healthy bool
 	for _, host := range readyEtcdHosts {
 		_, _, healthCheckURL := GetProcessConfig(etcdNodePlanMap[host.Address].Processes[EtcdContainerName])
@@ -226,7 +266,7 @@ func RunEtcdSnapshotSave(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 	log.Infof(ctx, "[etcd] Saving snapshot [%s] on host [%s]", name, etcdHost.Address)
 	imageCfg := &container.Config{
 		Cmd: []string{
-			"/opt/rke/rke-etcd-backup",
+			"/opt/rke-tools/rke-etcd-backup",
 			"rolling-backup",
 			"--cacert", pki.GetCertPath(pki.CACertName),
 			"--cert", pki.GetCertPath(pki.KubeNodeCertName),
@@ -247,7 +287,8 @@ func RunEtcdSnapshotSave(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 		Binds: []string{
 			fmt.Sprintf("%s:/backup", EtcdSnapshotPath),
 			fmt.Sprintf("%s:/etc/kubernetes:z", path.Join(etcdHost.PrefixPath, "/etc/kubernetes"))},
-		NetworkMode: container.NetworkMode("host"),
+		NetworkMode:   container.NetworkMode("host"),
+		RestartPolicy: container.RestartPolicy{Name: "always"},
 	}
 
 	if once {
@@ -260,18 +301,34 @@ func RunEtcdSnapshotSave(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 		}
 		return docker.RemoveContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdSnapshotOnceContainerName)
 	}
-	return docker.DoRunContainer(ctx, etcdHost.DClient, imageCfg, hostCfg, EtcdSnapshotContainerName, etcdHost.Address, ETCDRole, prsMap)
+	if err := docker.DoRunContainer(ctx, etcdHost.DClient, imageCfg, hostCfg, EtcdSnapshotContainerName, etcdHost.Address, ETCDRole, prsMap); err != nil {
+		return err
+	}
+	// check if the container exited with error
+	snapshotCont, err := docker.InspectContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdSnapshotContainerName)
+	if err != nil {
+		return err
+	}
+	time.Sleep(EtcdSnapshotWaitTime * time.Second)
+	if snapshotCont.State.Status == "exited" || snapshotCont.State.Restarting {
+		log.Warnf(ctx, "Etcd rolling snapshot container failed to start correctly")
+		return docker.RemoveContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdSnapshotContainerName)
+
+	}
+	return nil
 }
 
 func RestoreEtcdSnapshot(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry, etcdRestoreImage, snapshotName, initCluster string) error {
 	log.Infof(ctx, "[etcd] Restoring [%s] snapshot on etcd host [%s]", snapshotName, etcdHost.Address)
 	nodeName := pki.GetEtcdCrtName(etcdHost.InternalAddress)
-	snapshotPath := filepath.Join(EtcdSnapshotPath, snapshotName)
+	snapshotPath := fmt.Sprintf("%s%s", EtcdSnapshotPath, snapshotName)
 
+	// make sure that restore path is empty otherwise etcd restore will fail
 	imageCfg := &container.Config{
 		Cmd: []string{
 			"sh", "-c", strings.Join([]string{
-				"/usr/local/bin/etcdctl",
+				"rm -rf", EtcdRestorePath,
+				"&& /usr/local/bin/etcdctl",
 				fmt.Sprintf("--endpoints=[%s:2379]", etcdHost.InternalAddress),
 				"--cacert", pki.GetCertPath(pki.CACertName),
 				"--cert", pki.GetCertPath(nodeName),
@@ -304,7 +361,15 @@ func RestoreEtcdSnapshot(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 		return err
 	}
 	if status != 0 {
-		return fmt.Errorf("Failed to run etcd restore container, exit status is: %d", status)
+		containerLog, err := docker.GetContainerLogsStdoutStderr(ctx, etcdHost.DClient, EtcdRestoreContainerName, "5", false)
+		if err != nil {
+			return err
+		}
+		if err := docker.RemoveContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdRestoreContainerName); err != nil {
+			return err
+		}
+		// printing the restore container's logs
+		return fmt.Errorf("Failed to run etcd restore container, exit status is: %d, container logs: %s", status, containerLog)
 	}
 	return docker.RemoveContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdRestoreContainerName)
 }

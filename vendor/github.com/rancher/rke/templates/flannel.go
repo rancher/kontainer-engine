@@ -75,7 +75,7 @@ data:
     {
       "Network": "{{.ClusterCIDR}}",
       "Backend": {
-        "Type": "vxlan"
+        "Type": "{{.FlannelBackend.Type}}"
       }
     }
 ---
@@ -94,6 +94,15 @@ spec:
         tier: node
         k8s-app: flannel
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                - key: beta.kubernetes.io/os
+                  operator: NotIn
+                  values:
+                    - windows
       serviceAccountName: flannel
       containers:
       - name: kube-flannel
@@ -148,12 +157,19 @@ spec:
           mountPath: /host/opt/cni/bin/
       hostNetwork: true
       tolerations:
+      {{- if eq .ClusterVersion "v1.12" }}
+      - operator: Exists
+        effect: NoSchedule
+      - operator: Exists
+        effect: NoExecute
+      {{- else }}
       - key: node-role.kubernetes.io/controlplane
         operator: Exists
         effect: NoSchedule
       - key: node-role.kubernetes.io/etcd
         operator: Exists
         effect: NoExecute
+      {{- end }}
       volumes:
         - name: run
           hostPath:

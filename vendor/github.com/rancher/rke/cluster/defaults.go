@@ -2,7 +2,11 @@ package cluster
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
+	"github.com/rancher/rke/cloudprovider"
+	"github.com/rancher/rke/docker"
 	"github.com/rancher/rke/k8s"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/services"
@@ -30,9 +34,24 @@ const (
 	DefaultNetworkCloudProvider = "none"
 
 	DefaultIngressController         = "nginx"
-	DefaultEtcdBackupCreationPeriod  = "5m0s"
-	DefaultEtcdBackupRetentionPeriod = "24h"
+	DefaultEtcdBackupCreationPeriod  = "12h"
+	DefaultEtcdBackupRetentionPeriod = "72h"
+	DefaultEtcdSnapshot              = true
+	DefaultMonitoringProvider        = "metrics-server"
+
+	DefaultEtcdHeartbeatIntervalName  = "heartbeat-interval"
+	DefaultEtcdHeartbeatIntervalValue = "500"
+	DefaultEtcdElectionTimeoutName    = "election-timeout"
+	DefaultEtcdElectionTimeoutValue   = "5000"
 )
+
+type ExternalFlags struct {
+	ConfigDir        string
+	ClusterFilePath  string
+	DisablePortCheck bool
+	Local            bool
+	UpdateOnly       bool
+}
 
 func setDefaultIfEmptyMapValue(configMap map[string]string, key string, value string) {
 	if _, ok := configMap[key]; !ok {
@@ -80,6 +99,7 @@ func (c *Cluster) setClusterDefaults(ctx context.Context) {
 			c.Nodes[i].Port = DefaultSSHPort
 		}
 
+		c.Nodes[i].HostnameOverride = strings.ToLower(c.Nodes[i].HostnameOverride)
 		// For now, you can set at the global level only.
 		c.Nodes[i].SSHAgentAuth = c.SSHAgentAuth
 	}
@@ -103,6 +123,17 @@ func (c *Cluster) setClusterDefaults(ctx context.Context) {
 	if c.AddonJobTimeout == 0 {
 		c.AddonJobTimeout = k8s.DefaultTimeout
 	}
+	if len(c.Monitoring.Provider) == 0 {
+		c.Monitoring.Provider = DefaultMonitoringProvider
+	}
+
+	//set docker private registry URL
+	for _, pr := range c.PrivateRegistries {
+		if pr.URL == "" {
+			pr.URL = docker.DockerRegistryURL
+		}
+		c.PrivateRegistriesMap[pr.URL] = pr
+	}
 	c.setClusterImageDefaults()
 	c.setClusterServicesDefaults()
 	c.setClusterNetworkDefaults()
@@ -116,6 +147,12 @@ func (c *Cluster) setClusterServicesDefaults() {
 	c.Services.Kubelet.Image = c.SystemImages.Kubernetes
 	c.Services.Kubeproxy.Image = c.SystemImages.Kubernetes
 	c.Services.Etcd.Image = c.SystemImages.Etcd
+
+	// enable etcd snapshots by default
+	if c.Services.Etcd.Snapshot == nil {
+		defaultSnapshot := DefaultEtcdSnapshot
+		c.Services.Etcd.Snapshot = &defaultSnapshot
+	}
 
 	serviceConfigDefaultsMap := map[*string]string{
 		&c.Services.KubeAPI.ServiceClusterIPRange:        DefaultServiceClusterIPRange,
@@ -132,38 +169,56 @@ func (c *Cluster) setClusterServicesDefaults() {
 	for k, v := range serviceConfigDefaultsMap {
 		setDefaultIfEmpty(k, v)
 	}
+	// Add etcd timeouts
+	if c.Services.Etcd.ExtraArgs == nil {
+		c.Services.Etcd.ExtraArgs = make(map[string]string)
+	}
+	if _, ok := c.Services.Etcd.ExtraArgs[DefaultEtcdElectionTimeoutName]; !ok {
+		c.Services.Etcd.ExtraArgs[DefaultEtcdElectionTimeoutName] = DefaultEtcdElectionTimeoutValue
+	}
+	if _, ok := c.Services.Etcd.ExtraArgs[DefaultEtcdHeartbeatIntervalName]; !ok {
+		c.Services.Etcd.ExtraArgs[DefaultEtcdHeartbeatIntervalName] = DefaultEtcdHeartbeatIntervalValue
+	}
 }
 
 func (c *Cluster) setClusterImageDefaults() {
+	var privRegURL string
 	imageDefaults, ok := v3.K8sVersionToRKESystemImages[c.Version]
 	if !ok {
 		imageDefaults = v3.K8sVersionToRKESystemImages[DefaultK8sVersion]
 	}
 
+	for _, privReg := range c.PrivateRegistries {
+		if privReg.IsDefault {
+			privRegURL = privReg.URL
+			break
+		}
+	}
 	systemImagesDefaultsMap := map[*string]string{
-		&c.SystemImages.Alpine:                    imageDefaults.Alpine,
-		&c.SystemImages.NginxProxy:                imageDefaults.NginxProxy,
-		&c.SystemImages.CertDownloader:            imageDefaults.CertDownloader,
-		&c.SystemImages.KubeDNS:                   imageDefaults.KubeDNS,
-		&c.SystemImages.KubeDNSSidecar:            imageDefaults.KubeDNSSidecar,
-		&c.SystemImages.DNSmasq:                   imageDefaults.DNSmasq,
-		&c.SystemImages.KubeDNSAutoscaler:         imageDefaults.KubeDNSAutoscaler,
-		&c.SystemImages.KubernetesServicesSidecar: imageDefaults.KubernetesServicesSidecar,
-		&c.SystemImages.Etcd:                      imageDefaults.Etcd,
-		&c.SystemImages.Kubernetes:                imageDefaults.Kubernetes,
-		&c.SystemImages.PodInfraContainer:         imageDefaults.PodInfraContainer,
-		&c.SystemImages.Flannel:                   imageDefaults.Flannel,
-		&c.SystemImages.FlannelCNI:                imageDefaults.FlannelCNI,
-		&c.SystemImages.CalicoNode:                imageDefaults.CalicoNode,
-		&c.SystemImages.CalicoCNI:                 imageDefaults.CalicoCNI,
-		&c.SystemImages.CalicoCtl:                 imageDefaults.CalicoCtl,
-		&c.SystemImages.CanalNode:                 imageDefaults.CanalNode,
-		&c.SystemImages.CanalCNI:                  imageDefaults.CanalCNI,
-		&c.SystemImages.CanalFlannel:              imageDefaults.CanalFlannel,
-		&c.SystemImages.WeaveNode:                 imageDefaults.WeaveNode,
-		&c.SystemImages.WeaveCNI:                  imageDefaults.WeaveCNI,
-		&c.SystemImages.Ingress:                   imageDefaults.Ingress,
-		&c.SystemImages.IngressBackend:            imageDefaults.IngressBackend,
+		&c.SystemImages.Alpine:                    d(imageDefaults.Alpine, privRegURL),
+		&c.SystemImages.NginxProxy:                d(imageDefaults.NginxProxy, privRegURL),
+		&c.SystemImages.CertDownloader:            d(imageDefaults.CertDownloader, privRegURL),
+		&c.SystemImages.KubeDNS:                   d(imageDefaults.KubeDNS, privRegURL),
+		&c.SystemImages.KubeDNSSidecar:            d(imageDefaults.KubeDNSSidecar, privRegURL),
+		&c.SystemImages.DNSmasq:                   d(imageDefaults.DNSmasq, privRegURL),
+		&c.SystemImages.KubeDNSAutoscaler:         d(imageDefaults.KubeDNSAutoscaler, privRegURL),
+		&c.SystemImages.KubernetesServicesSidecar: d(imageDefaults.KubernetesServicesSidecar, privRegURL),
+		&c.SystemImages.Etcd:                      d(imageDefaults.Etcd, privRegURL),
+		&c.SystemImages.Kubernetes:                d(imageDefaults.Kubernetes, privRegURL),
+		&c.SystemImages.PodInfraContainer:         d(imageDefaults.PodInfraContainer, privRegURL),
+		&c.SystemImages.Flannel:                   d(imageDefaults.Flannel, privRegURL),
+		&c.SystemImages.FlannelCNI:                d(imageDefaults.FlannelCNI, privRegURL),
+		&c.SystemImages.CalicoNode:                d(imageDefaults.CalicoNode, privRegURL),
+		&c.SystemImages.CalicoCNI:                 d(imageDefaults.CalicoCNI, privRegURL),
+		&c.SystemImages.CalicoCtl:                 d(imageDefaults.CalicoCtl, privRegURL),
+		&c.SystemImages.CanalNode:                 d(imageDefaults.CanalNode, privRegURL),
+		&c.SystemImages.CanalCNI:                  d(imageDefaults.CanalCNI, privRegURL),
+		&c.SystemImages.CanalFlannel:              d(imageDefaults.CanalFlannel, privRegURL),
+		&c.SystemImages.WeaveNode:                 d(imageDefaults.WeaveNode, privRegURL),
+		&c.SystemImages.WeaveCNI:                  d(imageDefaults.WeaveCNI, privRegURL),
+		&c.SystemImages.Ingress:                   d(imageDefaults.Ingress, privRegURL),
+		&c.SystemImages.IngressBackend:            d(imageDefaults.IngressBackend, privRegURL),
+		&c.SystemImages.MetricsServer:             d(imageDefaults.MetricsServer, privRegURL),
 	}
 
 	for k, v := range systemImagesDefaultsMap {
@@ -185,6 +240,14 @@ func (c *Cluster) setClusterNetworkDefaults() {
 		networkPluginConfigDefaultsMap = map[string]string{
 			CalicoCloudProvider: DefaultNetworkCloudProvider,
 		}
+	case FlannelNetworkPlugin:
+		networkPluginConfigDefaultsMap = map[string]string{
+			FlannelBackendType: "vxlan",
+		}
+	case CanalNetworkPlugin:
+		networkPluginConfigDefaultsMap = map[string]string{
+			CanalFlannelBackendType: "vxlan",
+		}
 	}
 	if c.Network.CalicoNetworkProvider != nil {
 		setDefaultIfEmpty(&c.Network.CalicoNetworkProvider.CloudProvider, DefaultNetworkCloudProvider)
@@ -192,11 +255,47 @@ func (c *Cluster) setClusterNetworkDefaults() {
 	}
 	if c.Network.FlannelNetworkProvider != nil {
 		networkPluginConfigDefaultsMap[FlannelIface] = c.Network.FlannelNetworkProvider.Iface
+
 	}
 	if c.Network.CanalNetworkProvider != nil {
 		networkPluginConfigDefaultsMap[CanalIface] = c.Network.CanalNetworkProvider.Iface
 	}
 	for k, v := range networkPluginConfigDefaultsMap {
 		setDefaultIfEmptyMapValue(c.Network.Options, k, v)
+	}
+}
+
+func d(image, defaultRegistryURL string) string {
+	if len(defaultRegistryURL) == 0 {
+		return image
+	}
+	return fmt.Sprintf("%s/%s", defaultRegistryURL, image)
+}
+
+func (c *Cluster) setCloudProvider() error {
+	p, err := cloudprovider.InitCloudProvider(c.CloudProvider)
+	if err != nil {
+		return fmt.Errorf("Failed to initialize cloud provider: %v", err)
+	}
+	if p != nil {
+		c.CloudConfigFile, err = p.GenerateCloudConfigFile()
+		if err != nil {
+			return fmt.Errorf("Failed to parse cloud config file: %v", err)
+		}
+		c.CloudProvider.Name = p.GetName()
+		if c.CloudProvider.Name == "" {
+			return fmt.Errorf("Name of the cloud provider is not defined for custom provider")
+		}
+	}
+	return nil
+}
+
+func GetExternalFlags(local, updateOnly, disablePortCheck bool, configDir, clusterFilePath string) ExternalFlags {
+	return ExternalFlags{
+		Local:            local,
+		UpdateOnly:       updateOnly,
+		DisablePortCheck: disablePortCheck,
+		ConfigDir:        configDir,
+		ClusterFilePath:  clusterFilePath,
 	}
 }

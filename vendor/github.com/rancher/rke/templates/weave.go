@@ -24,6 +24,15 @@ items:
           labels:
             name: weave-net
         spec:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                    - key: beta.kubernetes.io/os
+                      operator: NotIn
+                      values:
+                        - windows
           containers:
             - name: weave
               command:
@@ -82,7 +91,7 @@ items:
                   mountPath: /run/xtables.lock
             - name: weave-loopback
               command:
-                - /opt/rke/weave-loopback-cni.sh
+                - /opt/rke-tools/weave-loopback-cni.sh
               image: {{.WeaveLoopbackImage}}
               securityContext:
                 privileged: true
@@ -163,6 +172,13 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - ''
+    resources:
+      - nodes/status
+    verbs:
+      - patch
+      - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRoleBinding
