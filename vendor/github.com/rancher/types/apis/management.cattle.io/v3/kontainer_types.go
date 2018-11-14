@@ -26,13 +26,17 @@ type KontainerDriverStatus struct {
 }
 
 type KontainerDriverSpec struct {
-	URL                 string   `json:"url" norman:"required"`
-	Checksum            string   `json:"checksum"`
-	BuiltIn             bool     `json:"builtIn"`
-	CreateDynamicSchema bool     `json:"createDynamicSchema" norman:"default=true"`
-	Active              bool     `json:"active"`
-	UIURL               string   `json:"uiUrl"`
-	WhitelistDomains    []string `json:"whitelistDomains,omitempty"`
+	URL              string   `json:"url" norman:"required"`
+	Checksum         string   `json:"checksum"`
+	BuiltIn          bool     `json:"builtIn" norman:"noupdate"`
+	Active           bool     `json:"active"`
+	UIURL            string   `json:"uiUrl"`
+	WhitelistDomains []string `json:"whitelistDomains,omitempty"`
 }
 
-var KontainerDriverConditionDownloaded condition.Cond = "Downloaded"
+var (
+	KontainerDriverConditionDownloaded condition.Cond = "Downloaded"
+	KontainerDriverConditionInstalled  condition.Cond = "Installed"
+	KontainerDriverConditionActive     condition.Cond = "Active"
+	KontainerDriverConditionInactive   condition.Cond = "Inactive"
+)
