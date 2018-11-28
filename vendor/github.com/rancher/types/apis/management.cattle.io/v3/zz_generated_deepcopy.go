@@ -1174,22 +1174,10 @@ func (in *ClusterSpec) DeepCopyInto(out *ClusterSpec) {
 		*out = new(ImportedConfig)
 		**out = **in
 	}
-	if in.GoogleKubernetesEngineConfig != nil {
-		in, out := &in.GoogleKubernetesEngineConfig, &out.GoogleKubernetesEngineConfig
-		*out = (*in).DeepCopy()
-	}
-	if in.AzureKubernetesServiceConfig != nil {
-		in, out := &in.AzureKubernetesServiceConfig, &out.AzureKubernetesServiceConfig
-		*out = (*in).DeepCopy()
-	}
 	if in.RancherKubernetesEngineConfig != nil {
 		in, out := &in.RancherKubernetesEngineConfig, &out.RancherKubernetesEngineConfig
 		*out = new(RancherKubernetesEngineConfig)
 		(*in).DeepCopyInto(*out)
-	}
-	if in.AmazonElasticContainerServiceConfig != nil {
-		in, out := &in.AmazonElasticContainerServiceConfig, &out.AmazonElasticContainerServiceConfig
-		*out = (*in).DeepCopy()
 	}
 	if in.GenericEngineConfig != nil {
 		in, out := &in.GenericEngineConfig, &out.GenericEngineConfig
@@ -3409,20 +3397,6 @@ func (in *NodeSpec) DeepCopyInto(out *NodeSpec) {
 	}
 	if in.DesiredNodeAnnotations != nil {
 		in, out := &in.DesiredNodeAnnotations, &out.DesiredNodeAnnotations
-		*out = make(map[string]string, len(*in))
-		for key, val := range *in {
-			(*out)[key] = val
-		}
-	}
-	if in.CurrentNodeLabels != nil {
-		in, out := &in.CurrentNodeLabels, &out.CurrentNodeLabels
-		*out = make(map[string]string, len(*in))
-		for key, val := range *in {
-			(*out)[key] = val
-		}
-	}
-	if in.CurrentNodeAnnotations != nil {
-		in, out := &in.CurrentNodeAnnotations, &out.CurrentNodeAnnotations
 		*out = make(map[string]string, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val

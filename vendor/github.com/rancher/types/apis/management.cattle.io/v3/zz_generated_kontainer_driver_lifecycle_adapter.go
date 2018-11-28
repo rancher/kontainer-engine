@@ -15,16 +15,6 @@ type kontainerDriverLifecycleAdapter struct {
 	lifecycle KontainerDriverLifecycle
 }
 
-func (w *kontainerDriverLifecycleAdapter) HasCreate() bool {
-	o, ok := w.lifecycle.(lifecycle.ObjectLifecycleCondition)
-	return !ok || o.HasCreate()
-}
-
-func (w *kontainerDriverLifecycleAdapter) HasFinalize() bool {
-	o, ok := w.lifecycle.(lifecycle.ObjectLifecycleCondition)
-	return !ok || o.HasFinalize()
-}
-
 func (w *kontainerDriverLifecycleAdapter) Create(obj runtime.Object) (runtime.Object, error) {
 	o, err := w.lifecycle.Create(obj.(*KontainerDriver))
 	if o == nil {
