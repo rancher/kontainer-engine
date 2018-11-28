@@ -22,33 +22,33 @@ func main() {
 		logrus.Fatal(err)
 	}
 	b := true
-	gkeSpec := &v3.MapStringInterface{
-		"projectId":                 "rancher-dev",
-		"zone":                      "us-central1-a",
-		"nodeCount":                 1,
-		"enableKubernetesDashboard": true,
-		"enableHttpLoadBalancing":   &b,
-		"imageType":                 "ubuntu",
-		"enableLegacyAbac":          true,
-		"locations":                 []string{"us-central1-a", "us-central1-b"},
-		"credential":                string(data),
+	gkeSpec := &v3.GoogleKubernetesEngineConfig{
+		ProjectID:                 "rancher-dev",
+		Zone:                      "us-central1-a",
+		NodeCount:                 1,
+		EnableKubernetesDashboard: true,
+		EnableHTTPLoadBalancing:   &b,
+		ImageType:                 "ubuntu",
+		EnableLegacyAbac:          true,
+		Locations:                 []string{"us-central1-a", "us-central1-b"},
+		Credential:                string(data),
 	}
 	spec := v3.ClusterSpec{
-		GenericEngineConfig: gkeSpec,
+		GoogleKubernetesEngineConfig: gkeSpec,
 	}
 
 	// You should really implement your own store
 	store := store.CLIPersistStore{}
 	service := service.NewEngineService(store)
 
-	endpoint, token, cert, err := service.Create(context.Background(), "daishan-test", &v3.KontainerDriver{}, spec)
+	endpoint, token, cert, err := service.Create(context.Background(), "daishan-test", spec)
 	if err != nil {
 		logrus.Fatal(err)
 	}
 	fmt.Println(endpoint)
 	fmt.Println(token)
 	fmt.Println(cert)
-	err = service.Remove(context.Background(), "daishan-test", &v3.KontainerDriver{}, spec)
+	err = service.Remove(context.Background(), "daishan-test", spec)
 	if err != nil {
 		logrus.Fatal(err)
 	}

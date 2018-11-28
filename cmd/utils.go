@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/rancher/kontainer-engine/drivers"
-	"github.com/rancher/kontainer-engine/service"
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/urfave/cli"
 )
@@ -18,7 +17,7 @@ func runRPCDriver(driverName string) (types.Driver, string, error) {
 		return nil, "", fmt.Errorf("no driver %v found", driverName)
 	}
 
-	go types.NewServer(creator, addrChan).ServeOrDie(service.ListenAddress)
+	go types.NewServer(creator, addrChan).Serve()
 
 	addr := <-addrChan
 	rpcClient, err := types.NewClient(driverName, addr)
