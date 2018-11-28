@@ -15,16 +15,6 @@ type sourceCodeProviderLifecycleAdapter struct {
 	lifecycle SourceCodeProviderLifecycle
 }
 
-func (w *sourceCodeProviderLifecycleAdapter) HasCreate() bool {
-	o, ok := w.lifecycle.(lifecycle.ObjectLifecycleCondition)
-	return !ok || o.HasCreate()
-}
-
-func (w *sourceCodeProviderLifecycleAdapter) HasFinalize() bool {
-	o, ok := w.lifecycle.(lifecycle.ObjectLifecycleCondition)
-	return !ok || o.HasFinalize()
-}
-
 func (w *sourceCodeProviderLifecycleAdapter) Create(obj runtime.Object) (runtime.Object, error) {
 	o, err := w.lifecycle.Create(obj.(*SourceCodeProvider))
 	if o == nil {

@@ -15,16 +15,6 @@ type templateLifecycleAdapter struct {
 	lifecycle TemplateLifecycle
 }
 
-func (w *templateLifecycleAdapter) HasCreate() bool {
-	o, ok := w.lifecycle.(lifecycle.ObjectLifecycleCondition)
-	return !ok || o.HasCreate()
-}
-
-func (w *templateLifecycleAdapter) HasFinalize() bool {
-	o, ok := w.lifecycle.(lifecycle.ObjectLifecycleCondition)
-	return !ok || o.HasFinalize()
-}
-
 func (w *templateLifecycleAdapter) Create(obj runtime.Object) (runtime.Object, error) {
 	o, err := w.lifecycle.Create(obj.(*Template))
 	if o == nil {

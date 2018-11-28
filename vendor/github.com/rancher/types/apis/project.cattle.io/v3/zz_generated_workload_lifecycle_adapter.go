@@ -15,16 +15,6 @@ type workloadLifecycleAdapter struct {
 	lifecycle WorkloadLifecycle
 }
 
-func (w *workloadLifecycleAdapter) HasCreate() bool {
-	o, ok := w.lifecycle.(lifecycle.ObjectLifecycleCondition)
-	return !ok || o.HasCreate()
-}
-
-func (w *workloadLifecycleAdapter) HasFinalize() bool {
-	o, ok := w.lifecycle.(lifecycle.ObjectLifecycleCondition)
-	return !ok || o.HasFinalize()
-}
-
 func (w *workloadLifecycleAdapter) Create(obj runtime.Object) (runtime.Object, error) {
 	o, err := w.lifecycle.Create(obj.(*Workload))
 	if o == nil {

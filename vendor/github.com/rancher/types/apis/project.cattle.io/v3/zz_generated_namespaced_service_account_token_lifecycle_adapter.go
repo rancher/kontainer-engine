@@ -15,16 +15,6 @@ type namespacedServiceAccountTokenLifecycleAdapter struct {
 	lifecycle NamespacedServiceAccountTokenLifecycle
 }
 
-func (w *namespacedServiceAccountTokenLifecycleAdapter) HasCreate() bool {
-	o, ok := w.lifecycle.(lifecycle.ObjectLifecycleCondition)
-	return !ok || o.HasCreate()
-}
-
-func (w *namespacedServiceAccountTokenLifecycleAdapter) HasFinalize() bool {
-	o, ok := w.lifecycle.(lifecycle.ObjectLifecycleCondition)
-	return !ok || o.HasFinalize()
-}
-
 func (w *namespacedServiceAccountTokenLifecycleAdapter) Create(obj runtime.Object) (runtime.Object, error) {
 	o, err := w.lifecycle.Create(obj.(*NamespacedServiceAccountToken))
 	if o == nil {
