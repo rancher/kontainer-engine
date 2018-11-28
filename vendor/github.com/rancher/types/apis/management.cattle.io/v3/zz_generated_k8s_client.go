@@ -59,6 +59,9 @@ type Interface interface {
 	ComposeConfigsGetter
 	ProjectCatalogsGetter
 	ClusterCatalogsGetter
+	MultiClusterAppsGetter
+	GlobalDNSsGetter
+	GlobalDNSProvidersGetter
 	KontainerDriversGetter
 }
 
@@ -102,6 +105,10 @@ type Clients struct {
 	ComposeConfig                           ComposeConfigClient
 	ProjectCatalog                          ProjectCatalogClient
 	ClusterCatalog                          ClusterCatalogClient
+	MultiClusterApp                         MultiClusterAppClient
+	GlobalDNS                               GlobalDNSClient
+	GlobalDNSProvider                       GlobalDNSProviderClient
+	KontainerDriver                         KontainerDriverClient
 }
 
 type Client struct {
@@ -148,6 +155,9 @@ type Client struct {
 	composeConfigControllers                           map[string]ComposeConfigController
 	projectCatalogControllers                          map[string]ProjectCatalogController
 	clusterCatalogControllers                          map[string]ClusterCatalogController
+	multiClusterAppControllers                         map[string]MultiClusterAppController
+	globalDnsControllers                               map[string]GlobalDNSController
+	globalDnsProviderControllers                       map[string]GlobalDNSProviderController
 	kontainerDriverControllers                         map[string]KontainerDriverController
 }
 
@@ -300,6 +310,18 @@ func NewClientsFromInterface(iface Interface) *Clients {
 		ClusterCatalog: &clusterCatalogClient2{
 			iface: iface.ClusterCatalogs(""),
 		},
+		MultiClusterApp: &multiClusterAppClient2{
+			iface: iface.MultiClusterApps(""),
+		},
+		GlobalDNS: &globalDnsClient2{
+			iface: iface.GlobalDNSs(""),
+		},
+		GlobalDNSProvider: &globalDnsProviderClient2{
+			iface: iface.GlobalDNSProviders(""),
+		},
+		KontainerDriver: &kontainerDriverClient2{
+			iface: iface.KontainerDrivers(""),
+		},
 	}
 }
 
@@ -355,6 +377,9 @@ func NewForConfig(config rest.Config) (Interface, error) {
 		composeConfigControllers:                           map[string]ComposeConfigController{},
 		projectCatalogControllers:                          map[string]ProjectCatalogController{},
 		clusterCatalogControllers:                          map[string]ClusterCatalogController{},
+		multiClusterAppControllers:                         map[string]MultiClusterAppController{},
+		globalDnsControllers:                               map[string]GlobalDNSController{},
+		globalDnsProviderControllers:                       map[string]GlobalDNSProviderController{},
 		kontainerDriverControllers:                         map[string]KontainerDriverController{},
 	}, nil
 }
@@ -872,6 +897,45 @@ type ClusterCatalogsGetter interface {
 func (c *Client) ClusterCatalogs(namespace string) ClusterCatalogInterface {
 	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &ClusterCatalogResource, ClusterCatalogGroupVersionKind, clusterCatalogFactory{})
 	return &clusterCatalogClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type MultiClusterAppsGetter interface {
+	MultiClusterApps(namespace string) MultiClusterAppInterface
+}
+
+func (c *Client) MultiClusterApps(namespace string) MultiClusterAppInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &MultiClusterAppResource, MultiClusterAppGroupVersionKind, multiClusterAppFactory{})
+	return &multiClusterAppClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type GlobalDNSsGetter interface {
+	GlobalDNSs(namespace string) GlobalDNSInterface
+}
+
+func (c *Client) GlobalDNSs(namespace string) GlobalDNSInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &GlobalDNSResource, GlobalDNSGroupVersionKind, globalDnsFactory{})
+	return &globalDnsClient{
+		ns:           namespace,
+		client:       c,
+		objectClient: objectClient,
+	}
+}
+
+type GlobalDNSProvidersGetter interface {
+	GlobalDNSProviders(namespace string) GlobalDNSProviderInterface
+}
+
+func (c *Client) GlobalDNSProviders(namespace string) GlobalDNSProviderInterface {
+	objectClient := objectclient.NewObjectClient(namespace, c.restClient, &GlobalDNSProviderResource, GlobalDNSProviderGroupVersionKind, globalDnsProviderFactory{})
+	return &globalDnsProviderClient{
 		ns:           namespace,
 		client:       c,
 		objectClient: objectClient,

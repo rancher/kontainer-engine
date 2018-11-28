@@ -75,7 +75,10 @@ type ClusterSpec struct {
 	Internal                             bool                           `json:"internal" norman:"nocreate,noupdate"`
 	DesiredAgentImage                    string                         `json:"desiredAgentImage"`
 	ImportedConfig                       *ImportedConfig                `json:"importedConfig,omitempty" norman:"nocreate,noupdate"`
+	GoogleKubernetesEngineConfig         *MapStringInterface            `json:"googleKubernetesEngineConfig,omitempty"`
+	AzureKubernetesServiceConfig         *MapStringInterface            `json:"azureKubernetesServiceConfig,omitempty"`
 	RancherKubernetesEngineConfig        *RancherKubernetesEngineConfig `json:"rancherKubernetesEngineConfig,omitempty"`
+	AmazonElasticContainerServiceConfig  *MapStringInterface            `json:"amazonElasticContainerServiceConfig,omitempty"`
 	GenericEngineConfig                  *MapStringInterface            `json:"genericEngineConfig,omitempty"`
 	DefaultPodSecurityPolicyTemplateName string                         `json:"defaultPodSecurityPolicyTemplateName,omitempty" norman:"type=reference[podSecurityPolicyTemplate]"`
 	DefaultClusterRoleForProjectMembers  string                         `json:"defaultClusterRoleForProjectMembers,omitempty" norman:"type=reference[roleTemplate]"`
