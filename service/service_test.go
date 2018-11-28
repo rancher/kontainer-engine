@@ -23,18 +23,18 @@ func (s *StubTestSuite) SetUpSuite(c *check.C) {
 }
 
 func (s *StubTestSuite) TestFlatten(c *check.C) {
-	config := v3.GoogleKubernetesEngineConfig{
-		ProjectID:  "test",
-		Zone:       "test",
-		DiskSizeGb: 50,
-		Labels: map[string]string{
+	config := v3.MapStringInterface{
+		"projectId":  "test",
+		"zone":       "test",
+		"diskSizeGb": 50,
+		"labels": map[string]string{
 			"foo": "bar",
 		},
-		EnableAlphaFeature: true,
+		"enableAlphaFeature": true,
+		"masterVersion":      "1.7.1",
+		"nodeVersion":        "1.7.1",
+		"nodeCount":          3,
 	}
-	config.MasterVersion = "1.7.1"
-	config.NodeVersion = "1.7.1"
-	config.NodeCount = 3
 	opts, err := toMap(config, "json")
 	if err != nil {
 		c.Fatal(err)
@@ -51,11 +51,10 @@ func (s *StubTestSuite) TestFlatten(c *check.C) {
 		"enableAlphaFeature": true,
 	}
 	stringResult := map[string]string{
-		"projectId":         "test",
-		"zone":              "test",
-		"masterVersion":     "1.7.1",
-		"maintenanceWindow": "",
-		"nodeVersion":       "1.7.1",
+		"projectId":     "test",
+		"zone":          "test",
+		"masterVersion": "1.7.1",
+		"nodeVersion":   "1.7.1",
 	}
 	intResult := map[string]int64{
 		"diskSizeGb": 50,
