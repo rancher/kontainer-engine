@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	defaultNamespace = "default"
-	clusterAdmin     = "cluster-admin"
-	netesDefault     = "netes-default"
+	kubeSystemNamespace = "kube-system"
+	clusterAdmin        = "cluster-admin"
+	netesDefault        = "netes-default"
 )
 
 // GenerateServiceAccountToken generate a serviceAccountToken for clusterAdmin given a rest clientset
@@ -28,7 +28,7 @@ func GenerateServiceAccountToken(clientset kubernetes.Interface) (string, error)
 		},
 	}
 
-	_, err := clientset.CoreV1().ServiceAccounts(defaultNamespace).Create(serviceAccount)
+	_, err := clientset.CoreV1().ServiceAccounts(kubeSystemNamespace).Create(serviceAccount)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return "", fmt.Errorf("error creating service account: %v", err)
 	}
@@ -65,7 +65,7 @@ func GenerateServiceAccountToken(clientset kubernetes.Interface) (string, error)
 			{
 				Kind:      "ServiceAccount",
 				Name:      serviceAccount.Name,
-				Namespace: "default",
+				Namespace: kubeSystemNamespace,
 				APIGroup:  v1.GroupName,
 			},
 		},
@@ -82,13 +82,13 @@ func GenerateServiceAccountToken(clientset kubernetes.Interface) (string, error)
 	start := time.Millisecond * 250
 	for i := 0; i < 5; i++ {
 		time.Sleep(start)
-		if serviceAccount, err = clientset.CoreV1().ServiceAccounts(defaultNamespace).Get(serviceAccount.Name, metav1.GetOptions{}); err != nil {
+		if serviceAccount, err = clientset.CoreV1().ServiceAccounts(kubeSystemNamespace).Get(serviceAccount.Name, metav1.GetOptions{}); err != nil {
 			return "", fmt.Errorf("error getting service account: %v", err)
 		}
 
 		if len(serviceAccount.Secrets) > 0 {
 			secret := serviceAccount.Secrets[0]
-			secretObj, err := clientset.CoreV1().Secrets(defaultNamespace).Get(secret.Name, metav1.GetOptions{})
+			secretObj, err := clientset.CoreV1().Secrets(kubeSystemNamespace).Get(secret.Name, metav1.GetOptions{})
 			if err != nil {
 				return "", fmt.Errorf("error getting secret: %v", err)
 			}
