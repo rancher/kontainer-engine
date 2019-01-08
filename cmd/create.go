@@ -136,7 +136,7 @@ func create(ctx *cli.Context) error {
 		return cli.ShowCommandHelp(ctx, "create")
 	}
 
-	cls, err := cluster.NewCluster(driverName, addr, name, configGetter, persistStore)
+	cls, err := cluster.NewCluster(driverName, name, addr, configGetter, persistStore)
 	if err != nil {
 		return err
 	}
@@ -182,6 +182,11 @@ func getDriverFlags(opts *types.DriverFlags) []cli.Flag {
 				Usage: v.Usage,
 			})
 		case "bool":
+			flags = append(flags, cli.BoolFlag{
+				Name:  k,
+				Usage: v.Usage,
+			})
+		case "boolPtr":
 			flags = append(flags, cli.BoolFlag{
 				Name:  k,
 				Usage: v.Usage,
