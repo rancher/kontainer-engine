@@ -1,30 +1,27 @@
 package aks
 
 import (
-	"regexp"
-	"strings"
-
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"time"
-
 	"github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2018-03-31/containerservice"
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2017-05-10/resources"
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/pkg/errors"
 	"github.com/rancher/kontainer-engine/drivers/options"
 	"github.com/rancher/kontainer-engine/drivers/util"
 	"github.com/rancher/kontainer-engine/types"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
+	"io/ioutil"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"regexp"
+	"strings"
+	"time"
 )
 
 var truePointer = true
@@ -44,32 +41,48 @@ type state struct {
 	// The name that is displayed to the user on the Rancher UI
 	DisplayName string
 
-	AgentDNSPrefix              string
-	AgentVMSize                 string
-	Count                       int64
-	KubernetesVersion           string
-	Location                    string
-	OsDiskSizeGB                int64
-	SubscriptionID              string
-	ResourceGroup               string
-	AgentPoolName               string
-	MasterDNSPrefix             string
-	SSHPublicKeyContents        string
-	AdminUsername               string
-	BaseURL                     string
-	ClientID                    string
-	TenantID                    string
-	ClientSecret                string
-	VirtualNetwork              string
-	Subnet                      string
-	VirtualNetworkResourceGroup string
-	Tag                         map[string]string
-	ServiceCIDR                 string
-	DNSServiceIP                string
-	DockerBridgeCIDR            string
+	AgentDNSPrefix                     string
+	AgentVMSize                        string
+	AgentMaxPods                       int64
+	AgentStorageProfile                string
+	NetworkPolicy                      string
+	NetworkPlugin                      string
+	PodCIDR                            string
+	AADClientAppID                     string
+	AADServerAppID                     string
+	AADServerAppSecret                 string
+	AADTenantID                        string
+	AddonHTTPApplicationRoutingEnabled *bool
+	AddonMonitoringEnabled             *bool
+	LogAnalyticsWorkspaceResourceID    string
+	Count                              int64
+	KubernetesVersion                  string
+	Location                           string
+	AgentOsDiskSizeGB                  int64
+	SubscriptionID                     string
+	ResourceGroup                      string
+	AgentPoolName                      string
+	MasterDNSPrefix                    string
+	SSHPublicKeyContents               string
+	AdminUsername                      string
+	BaseURL                            string
+	ClientID                           string
+	TenantID                           string
+	ClientSecret                       string
+	VirtualNetwork                     string
+	Subnet                             string
+	VirtualNetworkResourceGroup        string
+	Tag                                map[string]string
+	ServiceCIDR                        string
+	DNSServiceIP                       string
+	DockerBridgeCIDR                   string
 
 	// Cluster info
 	ClusterInfo types.ClusterInfo
+
+	AddonHTTPApplicationRoutingDisabled *bool
+	AddonMonitoringDisabled             *bool
+	AuthBaseURL                         string
 }
 
 func NewDriver() types.Driver {
@@ -126,6 +139,13 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 			DefaultInt: 1,
 		},
 	}
+	driverFlag.Options["max-pods"] = &types.Flag{
+		Type:  types.IntType,
+		Usage: "Maximum number of pods that can run on an agent.",
+		Default: &types.Default{
+			DefaultInt: 110,
+		},
+	}
 	driverFlag.Options["agent-dns-prefix"] = &types.Flag{
 		Type:  types.StringType,
 		Usage: "DNS prefix to be used to create the FQDN for the agent pool",
@@ -137,15 +157,22 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 			DefaultString: "agentpool0",
 		},
 	}
-	driverFlag.Options["os-disk-size"] = &types.Flag{
-		Type:  types.StringType,
-		Usage: "OS Disk Size in GB to be used to specify the disk size for every machine in this master/agent pool. If you specify 0, it will apply the default osDisk size according to the vmSize specified.",
+	driverFlag.Options["agent-osdisk-size"] = &types.Flag{
+		Type:  types.IntType,
+		Usage: `OS Disk Size in GB to be used to specify the disk size for every machine in this master/agent pool. If you specify 0, it will apply the default osDisk size according to the "--agent-vm-size" specified.`,
 	}
 	driverFlag.Options["agent-vm-size"] = &types.Flag{
 		Type:  types.StringType,
 		Usage: "Size of agent VMs",
 		Default: &types.Default{
 			DefaultString: "Standard_D1_v2",
+		},
+	}
+	driverFlag.Options["agent-storage-profile"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: fmt.Sprintf("Storage profile specifies what kind of storage used. Chooses from %v.", containerservice.PossibleStorageProfileTypesValues()),
+		Default: &types.Default{
+			DefaultString: string(containerservice.ManagedDisks),
 		},
 	}
 	driverFlag.Options["kubernetes-version"] = &types.Flag{
@@ -206,20 +233,71 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 		Type:  types.StringType,
 		Usage: "The resource group that the virtual network is in",
 	}
+	driverFlag.Options["network-policy"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: fmt.Sprintf(`Network policy used for building Kubernetes network. Chooses from %v.`, containerservice.PossibleNetworkPolicyValues()),
+	}
+	driverFlag.Options["network-plugin"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: fmt.Sprintf(`Network plugin used for building Kubernetes network. Chooses from %v.`, containerservice.PossibleNetworkPluginValues()),
+		Default: &types.Default{
+			DefaultString: string(containerservice.Azure),
+		},
+	}
+	driverFlag.Options["pod-cidr"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: fmt.Sprintf(`A CIDR notation IP range from which to assign pod IPs when "--network-plugin" is specified in %q.`, containerservice.Kubenet),
+		Value: "172.244.0.0/16",
+	}
 	driverFlag.Options["service-cidr"] = &types.Flag{
 		Type:  types.StringType,
-		Usage: "The IP range to assign service cluster IPs.",
+		Usage: "A CIDR notation IP range from which to assign service cluster IPs. It must not overlap with any Subnet IP ranges.",
 		Value: "10.0.0.0/16",
 	}
 	driverFlag.Options["dns-service-ip"] = &types.Flag{
 		Type:  types.StringType,
-		Usage: "The IP address to asign to the Kubernetes DNS service.  It must be within the Service CIDR range.",
+		Usage: `An IP address assigned to the Kubernetes DNS service. It must be within the Kubernetes service address range specified in "--service-cidr".`,
 		Value: "10.0.0.10",
 	}
 	driverFlag.Options["docker-bridge-cidr"] = &types.Flag{
 		Type:  types.StringType,
-		Usage: "A IP range for the Docker bridge network.  It must not overlap the subnet address range of the service CIDR.",
+		Usage: `A CIDR notation IP range assigned to the Docker bridge network. It must not overlap with any Subnet IP ranges or the Kubernetes service address range specified in "--service-cidr".`,
 		Value: "172.17.0.1/16",
+	}
+	driverFlag.Options["aad-client-app-id"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: `The ID of an Azure Active Directory client application of type "Native". This application is for user login via kubectl.`,
+	}
+	driverFlag.Options["aad-server-app-id"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: `The ID of an Azure Active Directory server application of type "Web app/API". This application represents the managed cluster's apiserver (Server application).`,
+	}
+	driverFlag.Options["aad-server-app-secret"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: `The secret of an Azure Active Directory server application.`,
+	}
+	driverFlag.Options["aad-tenant-id"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: `The ID of an Azure Active Directory tenant.`,
+	}
+	driverFlag.Options["enable-http-application-routing"] = &types.Flag{
+		Type:  types.BoolPointerType,
+		Usage: `Enable the Kubernetes ingress with automatic public DNS name creation.`,
+	}
+	driverFlag.Options["enable-monitoring"] = &types.Flag{
+		Type:  types.BoolPointerType,
+		Usage: `Turn on Log Analytics monitoring. Uses the Log Analytics "Default" workspace if it exists, else creates one. if using an existing workspace, specifies "--log-analytics-workspace-resource-id".`,
+	}
+	driverFlag.Options["log-analytics-workspace-resource-id"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: `The resource ID of an existing Log Analytics Workspace to use for storing monitoring data. If not specified, uses the default Log Analytics Workspace if it exists, otherwise creates one.`,
+	}
+	driverFlag.Options["auth-base-url"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "Different authentication API url to use.",
+		Default: &types.Default{
+			DefaultString: azure.PublicCloud.ActiveDirectoryEndpoint,
+		},
 	}
 
 	return &driverFlag, nil
@@ -230,69 +308,147 @@ func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags
 	driverFlag := types.DriverFlags{
 		Options: make(map[string]*types.Flag),
 	}
-	driverFlag.Options["node-count"] = &types.Flag{
+	driverFlag.Options["location"] = &types.Flag{
 		Type:  types.StringType,
+		Usage: "Resource location",
+	}
+	driverFlag.Options["count"] = &types.Flag{
+		Type:  types.IntType,
 		Usage: "Number of agents (VMs) to host docker containers. Allowed values must be in the range of 1 to 100 (inclusive)",
-		Default: &types.Default{
-			DefaultInt: 1,
-		},
 	}
 	driverFlag.Options["kubernetes-version"] = &types.Flag{
 		Type:  types.StringType,
 		Usage: "Version of Kubernetes specified when creating the managed cluster",
 	}
+	driverFlag.Options["agent-pool-name"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "Name for the agent pool",
+	}
+	driverFlag.Options["tags"] = &types.Flag{
+		Type:  types.StringSliceType,
+		Usage: "Resource tags. For example, foo=bar",
+	}
+	driverFlag.Options["disable-http-application-routing"] = &types.Flag{
+		Type:  types.BoolPointerType,
+		Usage: `Disable the Kubernetes ingress with automatic public DNS name creation.`,
+	}
+	driverFlag.Options["disable-monitoring"] = &types.Flag{
+		Type:  types.BoolPointerType,
+		Usage: `Turn off Log Analytics monitoring.`,
+	}
+	driverFlag.Options["enable-monitoring"] = &types.Flag{
+		Type:  types.BoolPointerType,
+		Usage: `Turn on Log Analytics monitoring. Uses the Log Analytics "Default" workspace if it exists, else creates one. if using an existing workspace, specifies "--log-analytics-workspace-resource-id".`,
+	}
+	driverFlag.Options["log-analytics-workspace-resource-id"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: `The resource ID of an existing Log Analytics Workspace to use for storing monitoring data. If not specified, uses the default Log Analytics Workspace if it exists, otherwise creates one.`,
+	}
+	driverFlag.Options["name"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "The internal name of the cluster in Rancher",
+	}
+	driverFlag.Options["subscription-id"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "Subscription credentials which uniquely identify Microsoft Azure subscription",
+	}
+	driverFlag.Options["resource-group"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "The name of the resource group",
+	}
+	driverFlag.Options["base-url"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "Different base API url to use",
+		Default: &types.Default{
+			DefaultString: containerservice.DefaultBaseURI,
+		},
+	}
+	driverFlag.Options["client-id"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "Azure client id to use",
+	}
+	driverFlag.Options["client-secret"] = &types.Flag{
+		Type:     types.StringType,
+		Password: true,
+		Usage:    "Client secret associated with the client-id",
+	}
+	driverFlag.Options["tenant-id"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "Azure tenant id to use",
+	}
+	driverFlag.Options["auth-base-url"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "Different authentication API url to use.",
+		Default: &types.Default{
+			DefaultString: azure.PublicCloud.ActiveDirectoryEndpoint,
+		},
+	}
+
 	return &driverFlag, nil
 }
 
 // SetDriverOptions implements driver interface
-func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
-	state := state{}
+func getStateFromOptions(driverOptions *types.DriverOptions, isCreating bool) (state, error) {
+	state := state{Tag: make(map[string]string)}
 	state.Name = options.GetValueFromDriverOptions(driverOptions, types.StringType, "name").(string)
 	state.DisplayName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "display-name", "displayName").(string)
 	state.AgentDNSPrefix = options.GetValueFromDriverOptions(driverOptions, types.StringType, "agent-dns-prefix", "agentDnsPrefix").(string)
 	state.AgentVMSize = options.GetValueFromDriverOptions(driverOptions, types.StringType, "agent-vm-size", "agentVmSize").(string)
 	state.Count = options.GetValueFromDriverOptions(driverOptions, types.IntType, "count").(int64)
+	state.AgentMaxPods = options.GetValueFromDriverOptions(driverOptions, types.IntType, "max-pods", "maxPods").(int64)
 	state.KubernetesVersion = options.GetValueFromDriverOptions(driverOptions, types.StringType, "kubernetes-version", "kubernetesVersion").(string)
 	state.Location = options.GetValueFromDriverOptions(driverOptions, types.StringType, "location").(string)
-	state.OsDiskSizeGB = options.GetValueFromDriverOptions(driverOptions, types.IntType, "os-disk-size", "osDiskSizeGb").(int64)
+	state.AgentOsDiskSizeGB = options.GetValueFromDriverOptions(driverOptions, types.IntType, "agent-osdisk-size", "agentOsDiskSize").(int64)
+	state.AgentStorageProfile = options.GetValueFromDriverOptions(driverOptions, types.StringType, "agent-storage-profile").(string)
+	state.AADClientAppID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "aad-client-app-id", "addClientAppId").(string)
+	state.AADServerAppID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "aad-server-app-id", "addServerAppId").(string)
+	state.AADServerAppSecret = options.GetValueFromDriverOptions(driverOptions, types.StringType, "aad-server-app-secret", "addServerAppSecret").(string)
+	state.AADTenantID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "aad-tenant-id", "addTenantId").(string)
+	state.AddonHTTPApplicationRoutingEnabled = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "enable-http-application-routing", "enableHttpApplicationRouting").(*bool)
+	state.AddonMonitoringEnabled = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "enable-monitoring", "enableMonitoring").(*bool)
+	state.LogAnalyticsWorkspaceResourceID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "log-analytics-workspace-resource-id", "logAnalyticsWorkspaceResourceId").(string)
 	state.SubscriptionID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "subscription-id", "subscriptionId").(string)
 	state.ResourceGroup = options.GetValueFromDriverOptions(driverOptions, types.StringType, "resource-group", "resourceGroup").(string)
 	state.AgentPoolName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "agent-pool-name", "agentPoolName").(string)
 	state.MasterDNSPrefix = options.GetValueFromDriverOptions(driverOptions, types.StringType, "master-dns-prefix", "masterDnsPrefix").(string)
-	state.SSHPublicKeyPath = options.GetValueFromDriverOptions(driverOptions, types.StringType, "public-key").(string)
-	state.SSHPublicKeyContents = options.GetValueFromDriverOptions(driverOptions, types.StringType, "sshPublicKeyContents").(string)
+	state.SSHPublicKeyPath = options.GetValueFromDriverOptions(driverOptions, types.StringType, "public-key", "publicKey").(string)
+	state.SSHPublicKeyContents = options.GetValueFromDriverOptions(driverOptions, types.StringType, "ssh-public-key-contents", "sshPublicKeyContents").(string)
 	state.AdminUsername = options.GetValueFromDriverOptions(driverOptions, types.StringType, "admin-username", "adminUsername").(string)
-	state.BaseURL = options.GetValueFromDriverOptions(driverOptions, types.StringType, "base-url").(string)
+	state.BaseURL = options.GetValueFromDriverOptions(driverOptions, types.StringType, "base-url", "baseUrl").(string)
 	state.ClientID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "client-id", "clientId").(string)
 	state.TenantID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "tenant-id", "tenantId").(string)
 	state.ClientSecret = options.GetValueFromDriverOptions(driverOptions, types.StringType, "client-secret", "clientSecret").(string)
-	state.VirtualNetwork = options.GetValueFromDriverOptions(driverOptions, types.StringType, "virtualNetwork", "virtual-network").(string)
+	state.VirtualNetwork = options.GetValueFromDriverOptions(driverOptions, types.StringType, "virtual-network", "virtualNetwork").(string)
 	state.Subnet = options.GetValueFromDriverOptions(driverOptions, types.StringType, "subnet").(string)
-	state.VirtualNetworkResourceGroup = options.GetValueFromDriverOptions(driverOptions, types.StringType, "virtualNetworkResourceGroup", "virtual-network-resource-group").(string)
-	state.ServiceCIDR = options.GetValueFromDriverOptions(driverOptions, types.StringType, "serviceCidr", "service-cidr").(string)
-	state.DNSServiceIP = options.GetValueFromDriverOptions(driverOptions, types.StringType, "dnsServiceIp", "dns-service-ip").(string)
-	state.DockerBridgeCIDR = options.GetValueFromDriverOptions(driverOptions, types.StringType, "dockerBridgeCidr", "docker-bridge-cidr").(string)
-	tagValues := options.GetValueFromDriverOptions(driverOptions, types.StringSliceType).(*types.StringSlice)
+	state.VirtualNetworkResourceGroup = options.GetValueFromDriverOptions(driverOptions, types.StringType, "virtual-network-resource-group", "virtualNetworkResourceGroup").(string)
+	state.NetworkPolicy = options.GetValueFromDriverOptions(driverOptions, types.StringType, "network-policy", "networkPolicy").(string)
+	state.NetworkPlugin = options.GetValueFromDriverOptions(driverOptions, types.StringType, "network-plugin", "networkPlugin").(string)
+	state.PodCIDR = options.GetValueFromDriverOptions(driverOptions, types.StringType, "pod-cidr", "podCidr").(string)
+	state.ServiceCIDR = options.GetValueFromDriverOptions(driverOptions, types.StringType, "service-cidr", "serviceCidr").(string)
+	state.DNSServiceIP = options.GetValueFromDriverOptions(driverOptions, types.StringType, "dns-service-ip", "dnsServiceIp").(string)
+	state.DockerBridgeCIDR = options.GetValueFromDriverOptions(driverOptions, types.StringType, "docker-bridge-cidr", "dockerBridgeCidr").(string)
+	tagValues := options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "tags").(*types.StringSlice)
 	for _, part := range tagValues.Value {
 		kv := strings.Split(part, "=")
 		if len(kv) == 2 {
 			state.Tag[kv[0]] = kv[1]
 		}
 	}
-	return state, state.validate()
+
+	state.AddonHTTPApplicationRoutingDisabled = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "disable-http-application-routing", "disableHttpApplicationRouting").(*bool)
+	state.AddonMonitoringDisabled = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "disable-monitoring", "disableMonitoring").(*bool)
+	state.AuthBaseURL = options.GetValueFromDriverOptions(driverOptions, types.StringType, "auth-base-url", "authBaseUrl").(string)
+
+	return state, state.validate(isCreating)
 }
 
-func (state *state) validate() error {
+func (state *state) validate(isCreating bool) error {
 	if state.Name == "" {
 		return fmt.Errorf("cluster name is required")
 	}
 
 	if state.ResourceGroup == "" {
 		return fmt.Errorf("resource group is required")
-	}
-
-	if state.SSHPublicKeyPath == "" && state.SSHPublicKeyContents == "" {
-		return fmt.Errorf("path to ssh public key or public key contents is required")
 	}
 
 	if state.ClientID == "" {
@@ -305,6 +461,16 @@ func (state *state) validate() error {
 
 	if state.SubscriptionID == "" {
 		return fmt.Errorf("subscription id is required")
+	}
+
+	if isCreating {
+		if state.SSHPublicKeyPath == "" && state.SSHPublicKeyContents == "" {
+			return fmt.Errorf("path to ssh public key or public key contents is required")
+		}
+	} else {
+		if state.Location == "" {
+			return fmt.Errorf("location is required")
+		}
 	}
 
 	return nil
@@ -329,7 +495,12 @@ func (state *state) getDefaultDNSPrefix() string {
 }
 
 func newAzureClient(state state) (*containerservice.ManagedClustersClient, error) {
-	oauthConfig, err := adal.NewOAuthConfig(azure.PublicCloud.ActiveDirectoryEndpoint, state.TenantID)
+	authBaseURL := state.AuthBaseURL
+	if authBaseURL == "" {
+		authBaseURL = azure.PublicCloud.ActiveDirectoryEndpoint
+	}
+
+	oauthConfig, err := adal.NewOAuthConfig(authBaseURL, state.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -352,8 +523,13 @@ func newAzureClient(state state) (*containerservice.ManagedClustersClient, error
 	return &client, nil
 }
 
-func newResourcesClient(state state) (*resources.GroupsClient, error) {
-	oauthConfig, err := adal.NewOAuthConfig(azure.PublicCloud.ActiveDirectoryEndpoint, state.TenantID)
+func newResourceGroupsClient(state state) (*resources.GroupsClient, error) {
+	authBaseURL := state.AuthBaseURL
+	if authBaseURL == "" {
+		authBaseURL = azure.PublicCloud.ActiveDirectoryEndpoint
+	}
+
+	oauthConfig, err := adal.NewOAuthConfig(authBaseURL, state.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -376,6 +552,35 @@ func newResourcesClient(state state) (*resources.GroupsClient, error) {
 	return &client, nil
 }
 
+func newResourcesClient(state state) (*resources.Client, error) {
+	authBaseURL := state.AuthBaseURL
+	if authBaseURL == "" {
+		authBaseURL = azure.PublicCloud.ActiveDirectoryEndpoint
+	}
+
+	oauthConfig, err := adal.NewOAuthConfig(authBaseURL, state.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	spToken, err := adal.NewServicePrincipalToken(*oauthConfig, state.ClientID, state.ClientSecret, azure.PublicCloud.ResourceManagerEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	authorizer := autorest.NewBearerAuthorizer(spToken)
+
+	baseURL := state.BaseURL
+	if baseURL == "" {
+		baseURL = containerservice.DefaultBaseURI
+	}
+
+	client := resources.NewClientWithBaseURI(baseURL, state.SubscriptionID)
+	client.Authorizer = authorizer
+
+	return &client, nil
+}
+
 const failedStatus = "Failed"
 const succeededStatus = "Succeeded"
 const creatingStatus = "Creating"
@@ -384,20 +589,25 @@ const updatingStatus = "Updating"
 const pollInterval = 30
 
 func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *types.ClusterInfo) (*types.ClusterInfo, error) {
-	return d.createOrUpdate(ctx, options, true)
+	return d.createOrUpdate(ctx, options, true, true)
 }
 
 func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, options *types.DriverOptions) (*types.ClusterInfo, error) {
-	return d.createOrUpdate(ctx, options, false)
+	return d.createOrUpdate(ctx, options, false, false)
 }
 
-func (d *Driver) createOrUpdate(ctx context.Context, options *types.DriverOptions, sendRBAC bool) (*types.ClusterInfo, error) {
-	driverState, err := getStateFromOptions(options)
+func (d *Driver) createOrUpdate(ctx context.Context, options *types.DriverOptions, sendRBAC, isCreating bool) (*types.ClusterInfo, error) {
+	driverState, err := getStateFromOptions(options, isCreating)
 	if err != nil {
 		return nil, err
 	}
 
 	clustersClient, err := newAzureClient(driverState)
+	if err != nil {
+		return nil, err
+	}
+
+	resourceGroupsClient, err := newResourceGroupsClient(driverState)
 	if err != nil {
 		return nil, err
 	}
@@ -412,46 +622,82 @@ func (d *Driver) createOrUpdate(ctx context.Context, options *types.DriverOption
 		masterDNSPrefix = driverState.getDefaultDNSPrefix() + "-master"
 	}
 
-	agentDNSPrefix := driverState.AgentDNSPrefix
-	if agentDNSPrefix == "" {
-		agentDNSPrefix = driverState.getDefaultDNSPrefix() + "-agent"
-	}
-
-	var publicKey []byte
-
-	if driverState.SSHPublicKeyContents == "" {
-		publicKey, err = ioutil.ReadFile(driverState.SSHPublicKeyPath)
-	} else {
-		publicKey = []byte(driverState.SSHPublicKeyContents)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	publicKeyContents := string(publicKey)
 	tags := make(map[string]*string)
-
+	for key, val := range driverState.Tag {
+		if val != "" {
+			tags[key] = to.StringPtr(val)
+		}
+	}
 	displayName := driverState.DisplayName
 	if displayName == "" {
 		displayName = driverState.Name
 	}
 	tags["displayName"] = to.StringPtr(displayName)
 
-	exists, err := d.resourceGroupExists(ctx, resourcesClient, driverState.ResourceGroup)
+	exists, err := d.resourceGroupExists(ctx, resourceGroupsClient, driverState.ResourceGroup)
 	if err != nil {
 		return nil, err
 	}
 
 	if !exists {
 		logrus.Infof("resource group %v does not exist, creating", driverState.ResourceGroup)
-		err = d.createResourceGroup(ctx, resourcesClient, driverState)
+		err = d.createResourceGroup(ctx, resourceGroupsClient, driverState)
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	var aadProfile *containerservice.ManagedClusterAADProfile
+	if d.hasAzureActiveDirectoryProfile(driverState) {
+		aadProfile = &containerservice.ManagedClusterAADProfile{
+			ClientAppID: to.StringPtr(driverState.AADClientAppID),
+			ServerAppID: to.StringPtr(driverState.AADServerAppID),
+		}
+
+		if driverState.AADServerAppSecret != "" {
+			aadProfile.ServerAppSecret = to.StringPtr(driverState.AADServerAppSecret)
+		}
+
+		if driverState.AADTenantID != "" {
+			aadProfile.TenantID = to.StringPtr(driverState.AADTenantID)
+		}
+	}
+
+	var addonProfiles map[string]*containerservice.ManagedClusterAddonProfile
+	if d.hasAddonProfile(driverState) {
+		addonProfiles = make(map[string]*containerservice.ManagedClusterAddonProfile, 2)
+
+		if to.Bool(driverState.AddonMonitoringEnabled) {
+			workspaceResourceID, err := d.ensureLogAnalyticsWorkspaceForMonitoring(ctx, resourcesClient, driverState)
+			if err != nil {
+				return nil, err
+			}
+
+			addonProfiles["omsagent"] = &containerservice.ManagedClusterAddonProfile{
+				Enabled: &truePointer,
+				Config: map[string]*string{
+					"logAnalyticsWorkspaceResourceID": to.StringPtr(workspaceResourceID),
+				},
+			}
+		} else if to.Bool(driverState.AddonMonitoringDisabled) {
+			addonProfiles["omsagent"] = &containerservice.ManagedClusterAddonProfile{
+				Enabled: to.BoolPtr(false),
+			}
+		}
+
+		if to.Bool(driverState.AddonHTTPApplicationRoutingEnabled) {
+			addonProfiles["httpApplicationRouting"] = &containerservice.ManagedClusterAddonProfile{
+				Enabled: &truePointer,
+			}
+		} else if to.Bool(driverState.AddonHTTPApplicationRoutingDisabled) {
+			addonProfiles["httpApplicationRouting"] = &containerservice.ManagedClusterAddonProfile{
+				Enabled: to.BoolPtr(false),
+			}
+		}
+	}
+
 	var vmNetSubnetID *string
+	var networkProfile *containerservice.NetworkProfile
 	if d.hasCustomVirtualNetwork(driverState) {
 		virtualNetworkResourceGroup := driverState.ResourceGroup
 
@@ -467,6 +713,83 @@ func (d *Driver) createOrUpdate(ctx context.Context, options *types.DriverOption
 			driverState.VirtualNetwork,
 			driverState.Subnet,
 		))
+
+		networkProfile = &containerservice.NetworkProfile{
+			DNSServiceIP:     to.StringPtr(driverState.DNSServiceIP),
+			DockerBridgeCidr: to.StringPtr(driverState.DockerBridgeCIDR),
+			NetworkPlugin:    containerservice.NetworkPlugin(driverState.NetworkPlugin),
+			ServiceCidr:      to.StringPtr(driverState.ServiceCIDR),
+		}
+
+		if networkProfile.NetworkPlugin == containerservice.Kubenet {
+			networkProfile.PodCidr = to.StringPtr(driverState.PodCIDR)
+		}
+
+		if driverState.NetworkPolicy != "" {
+			networkProfile.NetworkPolicy = containerservice.NetworkPolicy(driverState.NetworkPolicy)
+		}
+	}
+
+	var agentPoolProfiles *[]containerservice.ManagedClusterAgentPoolProfile
+	if d.hasAgentPoolProfile(driverState) {
+		var countPointer *int32
+		if driverState.Count > 0 {
+			countPointer = to.Int32Ptr(int32(driverState.Count))
+		}
+
+		var maxPodsPointer *int32
+		if driverState.AgentMaxPods > 0 {
+			maxPodsPointer = to.Int32Ptr(int32(driverState.AgentMaxPods))
+		}
+
+		var osDiskSizeGBPointer *int32
+		if driverState.AgentOsDiskSizeGB > 0 {
+			osDiskSizeGBPointer = to.Int32Ptr(int32(driverState.AgentOsDiskSizeGB))
+		}
+
+		agentDNSPrefix := driverState.AgentDNSPrefix
+		if agentDNSPrefix == "" {
+			agentDNSPrefix = driverState.getDefaultDNSPrefix() + "-agent"
+		}
+
+		agentPoolProfiles = &[]containerservice.ManagedClusterAgentPoolProfile{
+			{
+				DNSPrefix:      to.StringPtr(agentDNSPrefix),
+				Count:          countPointer,
+				MaxPods:        maxPodsPointer,
+				Name:           to.StringPtr(driverState.AgentPoolName),
+				OsDiskSizeGB:   osDiskSizeGBPointer,
+				OsType:         containerservice.Linux,
+				StorageProfile: containerservice.StorageProfileTypes(driverState.AgentStorageProfile),
+				VMSize:         containerservice.VMSizeTypes(driverState.AgentVMSize),
+				VnetSubnetID:   vmNetSubnetID,
+			},
+		}
+	}
+
+	var linuxProfile *containerservice.LinuxProfile
+	if d.hasLinuxProfile(driverState) {
+		var publicKey []byte
+		if driverState.SSHPublicKeyContents == "" {
+			publicKey, err = ioutil.ReadFile(driverState.SSHPublicKeyPath)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			publicKey = []byte(driverState.SSHPublicKeyContents)
+		}
+		publicKeyContents := string(publicKey)
+
+		linuxProfile = &containerservice.LinuxProfile{
+			AdminUsername: to.StringPtr(driverState.AdminUsername),
+			SSH: &containerservice.SSHConfiguration{
+				PublicKeys: &[]containerservice.SSHPublicKey{
+					{
+						KeyData: to.StringPtr(publicKeyContents),
+					},
+				},
+			},
+		}
 	}
 
 	managedCluster := containerservice.ManagedCluster{
@@ -475,25 +798,11 @@ func (d *Driver) createOrUpdate(ctx context.Context, options *types.DriverOption
 		ManagedClusterProperties: &containerservice.ManagedClusterProperties{
 			KubernetesVersion: to.StringPtr(driverState.KubernetesVersion),
 			DNSPrefix:         to.StringPtr(masterDNSPrefix),
-			LinuxProfile: &containerservice.LinuxProfile{
-				AdminUsername: to.StringPtr(driverState.AdminUsername),
-				SSH: &containerservice.SSHConfiguration{
-					PublicKeys: &[]containerservice.SSHPublicKey{
-						{
-							KeyData: to.StringPtr(publicKeyContents),
-						},
-					},
-				},
-			},
-			AgentPoolProfiles: &[]containerservice.ManagedClusterAgentPoolProfile{
-				{
-					DNSPrefix:    to.StringPtr(agentDNSPrefix),
-					Name:         to.StringPtr(driverState.AgentPoolName),
-					VMSize:       containerservice.VMSizeTypes(driverState.AgentVMSize),
-					Count:        to.Int32Ptr(int32(driverState.Count)),
-					VnetSubnetID: vmNetSubnetID,
-				},
-			},
+			AadProfile:        aadProfile,
+			AddonProfiles:     addonProfiles,
+			AgentPoolProfiles: agentPoolProfiles,
+			LinuxProfile:      linuxProfile,
+			NetworkProfile:    networkProfile,
 			ServicePrincipalProfile: &containerservice.ServicePrincipalProfile{
 				ClientID: to.StringPtr(driverState.ClientID),
 				Secret:   to.StringPtr(driverState.ClientSecret),
@@ -503,15 +812,6 @@ func (d *Driver) createOrUpdate(ctx context.Context, options *types.DriverOption
 
 	if sendRBAC {
 		managedCluster.ManagedClusterProperties.EnableRBAC = &truePointer
-	}
-
-	if d.hasCustomVirtualNetwork(driverState) {
-		managedCluster.NetworkProfile = &containerservice.NetworkProfile{
-			DNSServiceIP:     to.StringPtr(driverState.DNSServiceIP),
-			DockerBridgeCidr: to.StringPtr(driverState.DockerBridgeCIDR),
-			ServiceCidr:      to.StringPtr(driverState.ServiceCIDR),
-			NetworkPlugin:    containerservice.Azure,
-		}
 	}
 
 	logClusterConfig(managedCluster)
@@ -553,7 +853,7 @@ func (d *Driver) createOrUpdate(ctx context.Context, options *types.DriverOption
 
 		if state != creatingStatus && state != updatingStatus {
 			logrus.Errorf("Azure failed to provision cluster with state: %v", state)
-			return nil, errors.New("Azure failed to provision cluster")
+			return nil, fmt.Errorf("failed to provision Azure cluster")
 		}
 
 		logrus.Infof("Cluster has not yet completed provisioning, waiting another %v seconds", pollInterval)
@@ -562,8 +862,103 @@ func (d *Driver) createOrUpdate(ctx context.Context, options *types.DriverOption
 	}
 }
 
-func (d *Driver) hasCustomVirtualNetwork(driverState state) bool {
-	return driverState.VirtualNetwork != "" && driverState.Subnet != ""
+func (d *Driver) hasCustomVirtualNetwork(state state) bool {
+	return state.VirtualNetwork != "" && state.Subnet != ""
+}
+
+func (d *Driver) hasAzureActiveDirectoryProfile(state state) bool {
+	return state.AADClientAppID != "" && state.AADServerAppID != "" && state.AADServerAppSecret != ""
+}
+
+func (d *Driver) hasAddonProfile(state state) bool {
+	for _, status := range []*bool{state.AddonMonitoringDisabled, state.AddonMonitoringEnabled, state.AddonHTTPApplicationRoutingDisabled, state.AddonHTTPApplicationRoutingEnabled} {
+		if status != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Driver) hasAgentPoolProfile(state state) bool {
+	return state.AgentPoolName != ""
+}
+
+func (d *Driver) hasLinuxProfile(state state) bool {
+	return state.AdminUsername != "" && (state.SSHPublicKeyContents != "" || state.SSHPublicKeyPath != "")
+}
+
+func (d *Driver) ensureLogAnalyticsWorkspaceForMonitoring(ctx context.Context, client *resources.Client, state state) (string, error) {
+	workspaceResourceID := state.LogAnalyticsWorkspaceResourceID
+	if workspaceResourceID == "" {
+		// log analytics workspaces cannot be created in WCUS region due to capacity limits
+		// so mapped to EUS per discussion with log analytics team
+		locationToOmsRegionCodeMap := map[string]string{
+			"eastus":             "EUS",
+			"westeurope":         "WEU",
+			"southeastasia":      "SEA",
+			"australiasoutheast": "ASE",
+			"usgovvirginia":      "USGV",
+			"westcentralus":      "EUS",
+			"japaneast":          "EJP",
+			"uksouth":            "SUK",
+			"canadacentral":      "CCA",
+			"centralindia":       "CIN",
+			"eastus2euap":        "EAP",
+		}
+
+		regionToOmsRegionMap := map[string]string{
+			"australiaeast":      "australiasoutheast",
+			"australiasoutheast": "australiasoutheast",
+			"brazilsouth":        "eastus",
+			"canadacentral":      "canadacentral",
+			"canadaeast":         "canadacentral",
+			"centralus":          "eastus",
+			"eastasia":           "southeastasia",
+			"eastus":             "eastus",
+			"eastus2":            "eastus",
+			"japaneast":          "japaneast",
+			"japanwest":          "japaneast",
+			"northcentralus":     "eastus",
+			"northeurope":        "westeurope",
+			"southcentralus":     "eastus",
+			"southeastasia":      "southeastasia",
+			"uksouth":            "uksouth",
+			"ukwest":             "uksouth",
+			"westcentralus":      "eastus",
+			"westeurope":         "westeurope",
+			"westus":             "eastus",
+			"westus2":            "eastus",
+			"centralindia":       "centralindia",
+			"southindia":         "centralindia",
+			"westindia":          "centralindia",
+			"koreacentral":       "southeastasia",
+			"koreasouth":         "southeastasia",
+			"francecentral":      "westeurope",
+			"francesouth":        "westeurope",
+		}
+
+		workspaceRegion := regionToOmsRegionMap[state.Location]
+		workspaceRegionCode := locationToOmsRegionCodeMap[workspaceRegion]
+		workspaceResourceGroup := fmt.Sprintf("DefaultResourceGroup-%s", workspaceRegionCode)
+		workspaceName := fmt.Sprintf("DefaultWorkspace-%s-%s", state.SubscriptionID, workspaceRegionCode)
+
+		workspaceResourceID = fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.OperationalInsights/workspaces/%s", state.SubscriptionID, workspaceResourceGroup, workspaceName)
+	}
+
+	if !strings.HasPrefix(workspaceResourceID, "/") {
+		workspaceResourceID = "/" + workspaceResourceID
+	}
+	workspaceResourceID = strings.TrimSuffix(workspaceResourceID, "/")
+
+	exist, err := d.resourceExists(ctx, client, workspaceResourceID)
+	if err != nil {
+		return "", err
+	}
+	if !exist {
+		return "", fmt.Errorf("can't get default Log Analytics Workspace with ID '%s'", workspaceResourceID)
+	}
+
+	return workspaceResourceID, nil
 }
 
 func (d *Driver) resourceGroupExists(ctx context.Context, client *resources.GroupsClient, groupName string) (bool, error) {
@@ -585,6 +980,15 @@ func (d *Driver) createResourceGroup(ctx context.Context, client *resources.Grou
 	}
 
 	return nil
+}
+
+func (d *Driver) resourceExists(ctx context.Context, client *resources.Client, resourceID string) (bool, error) {
+	resp, err := client.CheckExistenceByID(ctx, resourceID)
+	if err != nil {
+		return false, fmt.Errorf("error getting resource %v: %v", resourceID, err)
+	}
+
+	return resp.StatusCode == 204, nil
 }
 
 func storeState(info *types.ClusterInfo, state state) error {
