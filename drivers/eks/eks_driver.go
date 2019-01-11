@@ -36,9 +36,9 @@ import (
 )
 
 var amiForRegion = map[string]string{
-	"us-west-2": "ami-0a54c984b9f908c81",
-	"us-east-1": "ami-0440e4f6b9713faf6",
-	"eu-west-1": "ami-0c7a4976cb6fafd3a",
+	"us-west-2": "ami-07af9511082779ae7",
+	"us-east-1": "ami-027792c3cc6de7b5b",
+	"eu-west-1": "ami-036130f4127a367f7",
 }
 
 type Driver struct {
