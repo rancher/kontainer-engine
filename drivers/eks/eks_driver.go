@@ -36,6 +36,10 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+const (
+	amiNamePrefix = "amazon-eks-node-"
+)
+
 var amiForRegionAndVersion = map[string]map[string]string{
 	"1.11": map[string]string{
 		"us-west-2":      "ami-0a2abab4107669c1b",
@@ -192,8 +196,9 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 	}
 
 	driverFlag.Options["kubernetes-version"] = &types.Flag{
-		Type:  types.StringType,
-		Usage: "The kubernetes master version",
+		Type:    types.StringType,
+		Usage:   "The kubernetes master version",
+		Default: &types.Default{DefaultString: "1.10"},
 	}
 
 	return &driverFlag, nil
@@ -205,8 +210,9 @@ func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags
 	}
 
 	driverFlag.Options["kubernetes-version"] = &types.Flag{
-		Type:  types.StringType,
-		Usage: "The kubernetes version to update",
+		Type:    types.StringType,
+		Usage:   "The kubernetes version to update",
+		Default: &types.Default{DefaultString: "1.10"},
 	}
 
 	return &driverFlag, nil
@@ -519,7 +525,8 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 		amiID = state.AMI
 	} else {
 		//should be always accessable after validate()
-		amiID = amiForRegionAndVersion[state.KubernetesVersion][state.Region]
+		amiID = getAMIs(ctx, ec2svc, state)
+
 	}
 
 	var publicIP bool
@@ -729,6 +736,10 @@ func (d *Driver) waitForClusterReady(svc *eks.EKS, state state) (*eks.DescribeCl
 		})
 		if err != nil {
 			return nil, fmt.Errorf("error polling cluster state: %v", err)
+		}
+
+		if cluster.Cluster == nil {
+			return nil, fmt.Errorf("no cluster data was returned")
 		}
 
 		if cluster.Cluster.Status == nil {
@@ -1097,11 +1108,73 @@ func (d *Driver) waitForClusterUpdateReady(ctx context.Context, svc *eks.EKS, st
 		}
 
 		if update.Update == nil {
-			return fmt.Errorf("no cluster update status was returned")
+			return fmt.Errorf("no cluster update data was returned")
+		}
+
+		if update.Update.Status == nil {
+			return fmt.Errorf("no cluster update status aws returned")
 		}
 
 		status = *update.Update.Status
 	}
 
 	return nil
+}
+
+func getAMIs(ctx context.Context, ec2svc *ec2.EC2, state state) string {
+	if rtn := getLocalAMI(state); rtn != "" {
+		return rtn
+	}
+	version := state.KubernetesVersion
+	output, err := ec2svc.DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
+		Filters: []*ec2.Filter{
+			&ec2.Filter{
+				Name:   aws.String("is-public"),
+				Values: aws.StringSlice([]string{"true"}),
+			},
+			&ec2.Filter{
+				Name:   aws.String("state"),
+				Values: aws.StringSlice([]string{"available"}),
+			},
+			&ec2.Filter{
+				Name:   aws.String("image-type"),
+				Values: aws.StringSlice([]string{"machine"}),
+			},
+			&ec2.Filter{
+				Name:   aws.String("name"),
+				Values: aws.StringSlice([]string{fmt.Sprintf("%s%s*", amiNamePrefix, version)}),
+			},
+		},
+	})
+	if err != nil {
+		logrus.WithError(err).Warn("getting AMIs from aws error")
+		return ""
+	}
+	prefix := fmt.Sprintf("%s%s", amiNamePrefix, version)
+	rtnImage := ""
+	for _, image := range output.Images {
+		if *image.State != "available" ||
+			*image.ImageType != "machine" ||
+			!*image.Public ||
+			image.Name == nil ||
+			!strings.HasPrefix(*image.Name, prefix) {
+			continue
+		}
+		if *image.ImageId > rtnImage {
+			rtnImage = *image.ImageId
+		}
+	}
+	if rtnImage == "" {
+		logrus.Warnf("no AMI id was returned")
+		return ""
+	}
+	return rtnImage
+}
+
+func getLocalAMI(state state) string {
+	amiForRegion, ok := amiForRegionAndVersion[state.KubernetesVersion]
+	if !ok {
+		return ""
+	}
+	return amiForRegion[state.Region]
 }
