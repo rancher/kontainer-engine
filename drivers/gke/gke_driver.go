@@ -358,14 +358,20 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 		return nil, err
 	}
 
+	info := &types.ClusterInfo{}
+	err = storeState(info, state)
+	if err != nil {
+		return info, err
+	}
+
 	svc, err := d.getServiceClient(ctx, state)
 	if err != nil {
-		return nil, err
+		return info, err
 	}
 
 	operation, err := svc.Projects.Zones.Clusters.Create(state.ProjectID, state.Zone, d.generateClusterCreateRequest(state)).Context(ctx).Do()
 	if err != nil && !strings.Contains(err.Error(), "alreadyExists") {
-		return nil, err
+		return info, err
 	}
 
 	if err == nil {
@@ -373,11 +379,9 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 	}
 
 	if err := d.waitCluster(ctx, svc, &state); err != nil {
-		return nil, err
+		return info, err
 	}
-
-	info := &types.ClusterInfo{}
-	return info, storeState(info, state)
+	return info, nil
 }
 
 func storeState(info *types.ClusterInfo, state state) error {
@@ -697,6 +701,22 @@ func (d *Driver) waitCluster(ctx context.Context, svc *raw.Service, state *state
 		}
 		time.Sleep(time.Second * 5)
 	}
+}
+
+func (d *Driver) waitClusterRemoveExp(ctx context.Context, svc *raw.Service, state *state) (*raw.Operation, error) {
+	var operation *raw.Operation
+	var err error = nil
+
+	for i := 1; i < 12; i++ {
+		time.Sleep(time.Duration(i * i) * time.Second)
+		operation, err := svc.Projects.Zones.Clusters.Delete(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
+		if err == nil {
+			return operation, nil
+		} else if !strings.Contains(err.Error(), "Please wait and try again once it is done") {
+			break
+		}
+	}
+	return operation, err
 }
 
 func (d *Driver) waitNodePool(ctx context.Context, svc *raw.Service, state *state) error {
