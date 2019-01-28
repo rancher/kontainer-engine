@@ -298,7 +298,6 @@ func toInfo(c *Cluster) *types.ClusterInfo {
 
 // Remove removes a cluster
 func (c *Cluster) Remove(ctx context.Context) error {
-	defer c.PersistStore.Remove(c.Name)
 	if err := c.restore(); errors.IsNotFound(err) {
 		return nil
 	} else if err != nil {
