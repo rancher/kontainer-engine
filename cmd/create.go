@@ -170,6 +170,16 @@ func getDriverFlags(opts *types.DriverFlags) []cli.Flag {
 				Usage: v.Usage,
 				Value: int64(val),
 			})
+		case "intPtr":
+			val, err := strconv.Atoi(v.Value)
+			if err != nil {
+				val = 0
+			}
+			flags = append(flags, cli.Int64Flag{
+				Name:  k,
+				Usage: v.Usage,
+				Value: int64(val),
+			})
 		case "string":
 			flags = append(flags, cli.StringFlag{
 				Name:  k,
