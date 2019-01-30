@@ -136,7 +136,7 @@ func create(ctx *cli.Context) error {
 		return cli.ShowCommandHelp(ctx, "create")
 	}
 
-	cls, err := cluster.NewCluster(driverName, addr, name, configGetter, persistStore)
+	cls, err := cluster.NewCluster(driverName, name, addr, configGetter, persistStore)
 	if err != nil {
 		return err
 	}
