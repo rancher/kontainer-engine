@@ -93,6 +93,8 @@ type state struct {
 	MaximumASGSize int64
 	NodeVolumeSize *int64
 
+	UserData string
+
 	InstanceType string
 	Region       string
 
@@ -177,7 +179,7 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 
 	driverFlag.Options["virtual-network"] = &types.Flag{
 		Type:  types.StringType,
-		Usage: "The name of hte virtual network to use",
+		Usage: "The name of the virtual network to use",
 	}
 	driverFlag.Options["subnets"] = &types.Flag{
 		Type:  types.StringSliceType,
@@ -201,6 +203,11 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 		Default: &types.Default{
 			DefaultBool: true,
 		},
+	}
+	// If this is used it will overwrite the default in template.go and use what is given here.
+	driverFlag.Options["user-data"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "Pass user-data to the nodes to perform automated configuration tasks",
 	}
 
 	driverFlag.Options["kubernetes-version"] = &types.Flag{
@@ -246,6 +253,9 @@ func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
 	state.SecurityGroups = options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "security-groups", "securityGroups").(*types.StringSlice).Value
 	state.AMI = options.GetValueFromDriverOptions(driverOptions, types.StringType, "ami").(string)
 	state.AssociateWorkerNodePublicIP, _ = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "associate-worker-node-public-ip", "associateWorkerNodePublicIp").(*bool)
+
+	// UserData
+	state.UserData = options.GetValueFromDriverOptions(driverOptions, types.StringType, "user-data", "userData").(string)
 
 	return state, state.validate()
 }
@@ -537,7 +547,7 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 	if state.AMI != "" {
 		amiID = state.AMI
 	} else {
-		//should be always accessable after validate()
+		//should be always accessible after validate()
 		amiID = getAMIs(ctx, ec2svc, state)
 
 	}
@@ -577,6 +587,8 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 			{ParameterKey: aws.String("Subnets"),
 				ParameterValue: aws.String(strings.Join(toStringLiteralSlice(subnetIds), ","))},
 			{ParameterKey: aws.String("PublicIp"), ParameterValue: aws.String(strconv.FormatBool(publicIP))},
+
+			{ParameterKey: aws.String("CustomUserData"), ParameterValue: aws.String(state.UserData)},
 		})
 	if err != nil {
 		return nil, fmt.Errorf("error creating stack: %v", err)
