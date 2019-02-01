@@ -247,8 +247,8 @@ func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
 	state := state{}
 	state.ClusterName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "name").(string)
 	state.DisplayName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "display-name", "displayName").(string)
-	state.ClientID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "client-id", "accessKey").(string)
-	state.ClientSecret = options.GetValueFromDriverOptions(driverOptions, types.StringType, "client-secret", "secretKey").(string)
+	state.ClientID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "access-key", "accessKey").(string)
+	state.ClientSecret = options.GetValueFromDriverOptions(driverOptions, types.StringType, "secret-key", "secretKey").(string)
 	state.SessionToken = options.GetValueFromDriverOptions(driverOptions, types.StringType, "session-token", "sessionToken").(string)
 	state.KubernetesVersion = options.GetValueFromDriverOptions(driverOptions, types.StringType, "kubernetes-version", "kubernetesVersion").(string)
 
