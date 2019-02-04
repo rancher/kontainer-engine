@@ -184,6 +184,9 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 	driverFlag.Options["subnets"] = &types.Flag{
 		Type:  types.StringSliceType,
 		Usage: "Comma-separated list of subnets in the virtual network to use",
+		Default: &types.Default{
+			DefaultStringSlice: &types.StringSlice{Value: []string{}}, //avoid nil value for init
+		},
 	}
 	driverFlag.Options["service-role"] = &types.Flag{
 		Type:  types.StringType,
@@ -204,10 +207,17 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 			DefaultBool: true,
 		},
 	}
-	// If this is used it will overwrite the default in template.go and use what is given here.
+	// Newlines are expected to always be passed as "\n"
 	driverFlag.Options["user-data"] = &types.Flag{
 		Type:  types.StringType,
 		Usage: "Pass user-data to the nodes to perform automated configuration tasks",
+		Default: &types.Default{
+			DefaultString: "#!/bin/bash\nset -o xtrace\n" +
+				"/etc/eks/bootstrap.sh ${ClusterName} ${BootstrapArguments}" +
+				"/opt/aws/bin/cfn-signal --exit-code $? " +
+				"--stack  ${AWS::StackName} " +
+				"--resource NodeGroup --region ${AWS::Region}\n",
+		},
 	}
 
 	driverFlag.Options["kubernetes-version"] = &types.Flag{
@@ -558,6 +568,9 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 	} else {
 		publicIP = *state.AssociateWorkerNodePublicIP
 	}
+	// amend UserData values into template.
+	// must use %q to safely pass the string
+	workerNodesFinalTemplate := fmt.Sprintf(workerNodesTemplate, state.UserData)
 
 	var volumeSize int64
 	if state.NodeVolumeSize == nil {
@@ -566,7 +579,7 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 		volumeSize = *state.NodeVolumeSize
 	}
 
-	stack, err := d.createStack(svc, getWorkNodeName(state.DisplayName), displayName, workerNodesTemplate,
+	stack, err := d.createStack(svc, getWorkNodeName(state.DisplayName), displayName, workerNodesFinalTemplate,
 		[]string{cloudformation.CapabilityCapabilityIam},
 		[]*cloudformation.Parameter{
 			{ParameterKey: aws.String("ClusterName"), ParameterValue: aws.String(state.DisplayName)},
@@ -587,8 +600,6 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 			{ParameterKey: aws.String("Subnets"),
 				ParameterValue: aws.String(strings.Join(toStringLiteralSlice(subnetIds), ","))},
 			{ParameterKey: aws.String("PublicIp"), ParameterValue: aws.String(strconv.FormatBool(publicIP))},
-
-			{ParameterKey: aws.String("CustomUserData"), ParameterValue: aws.String(state.UserData)},
 		})
 	if err != nil {
 		return nil, fmt.Errorf("error creating stack: %v", err)
