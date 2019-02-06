@@ -377,7 +377,6 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 	if err == nil {
 		logrus.Debugf("Cluster %s create is called for project %s and zone %s. Status Code %v", state.Name, state.ProjectID, state.Zone, operation.HTTPStatusCode)
 	}
-
 	if err := d.waitCluster(ctx, svc, &state); err != nil {
 		return info, err
 	}
@@ -584,7 +583,7 @@ func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 	}
 
 	logrus.Debugf("Removing cluster %v from project %v, zone %v", state.Name, state.ProjectID, state.Zone)
-	operation, err := svc.Projects.Zones.Clusters.Delete(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
+	operation, err := d.waitClusterRemoveExp(ctx, svc, &state)
 	if err != nil && !strings.Contains(err.Error(), "notFound") {
 		return err
 	} else if err == nil {
@@ -705,10 +704,10 @@ func (d *Driver) waitCluster(ctx context.Context, svc *raw.Service, state *state
 
 func (d *Driver) waitClusterRemoveExp(ctx context.Context, svc *raw.Service, state *state) (*raw.Operation, error) {
 	var operation *raw.Operation
-	var err error = nil
+	var err error
 
 	for i := 1; i < 12; i++ {
-		time.Sleep(time.Duration(i * i) * time.Second)
+		time.Sleep(time.Duration(i*i) * time.Second)
 		operation, err := svc.Projects.Zones.Clusters.Delete(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
 		if err == nil {
 			return operation, nil
