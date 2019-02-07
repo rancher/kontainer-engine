@@ -275,12 +275,14 @@ func (state *state) validate() error {
 		return fmt.Errorf("display name is required")
 	}
 
-	if state.ClientID == "" {
-		return fmt.Errorf("client id is required")
+	awsSession, err := session.NewSession(&aws.Config{
+		Credentials: credentialsForState(*state),
+	})
+	if err == nil {
+		_, err = awsSession.Config.Credentials.Get()
 	}
-
-	if state.ClientSecret == "" {
-		return fmt.Errorf("client secret is required")
+	if err != nil {
+		return fmt.Errorf("credentials must be provided using access key and secret key flags, environment variables, ~/.aws/credentials, or an instance role: %v", err)
 	}
 
 	// If no k8s version is set then this is a legacy cluster and we can't choose the correct ami anyway, so skip those
@@ -425,6 +427,17 @@ func toStringLiteralSlice(strings []*string) []string {
 	return stringLiterals
 }
 
+func credentialsForState(s state) *credentials.Credentials {
+	if s.ClientID != "" && s.ClientSecret != "" {
+		return credentials.NewStaticCredentials(
+			s.ClientID,
+			s.ClientSecret,
+			s.SessionToken,
+		)
+	}
+	return nil
+}
+
 func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *types.ClusterInfo) (*types.ClusterInfo, error) {
 	logrus.Infof("Starting create")
 
@@ -437,12 +450,8 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 	storeState(info, state)
 
 	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(state.Region),
-		Credentials: credentials.NewStaticCredentials(
-			state.ClientID,
-			state.ClientSecret,
-			state.SessionToken,
-		),
+		Region:      aws.String(state.Region),
+		Credentials: credentialsForState(state),
 	})
 	if err != nil {
 		return info, fmt.Errorf("error getting new aws session: %v", err)
@@ -724,12 +733,7 @@ const awsSharedCredentialsFile = "AWS_SHARED_CREDENTIALS_FILE"
 
 var awsCredentialsLocker = &sync.Mutex{}
 
-func getEKSToken(name string, state state) (string, error) {
-	generator, err := heptio.NewGenerator()
-	if err != nil {
-		return "", fmt.Errorf("error creating generator: %v", err)
-	}
-
+func writeCredentialsToFile(state state) error {
 	defer awsCredentialsLocker.Unlock()
 	awsCredentialsLocker.Lock()
 	os.Setenv(awsSharedCredentialsFile, awsCredentialsPath)
@@ -739,9 +743,9 @@ func getEKSToken(name string, state state) (string, error) {
 		os.Remove(awsCredentialsDirectory)
 		os.Unsetenv(awsSharedCredentialsFile)
 	}()
-	err = os.MkdirAll(awsCredentialsDirectory, 0744)
+	err := os.MkdirAll(awsCredentialsDirectory, 0744)
 	if err != nil {
-		return "", fmt.Errorf("error creating credentials directory: %v", err)
+		return fmt.Errorf("error creating credentials directory: %v", err)
 	}
 
 	var credentialsContent string
@@ -765,7 +769,22 @@ aws_session_token=%v`,
 
 	err = ioutil.WriteFile(awsCredentialsPath, []byte(credentialsContent), 0644)
 	if err != nil {
-		return "", fmt.Errorf("error writing credentials file: %v", err)
+		return fmt.Errorf("error writing credentials file: %v", err)
+	}
+	return nil
+}
+
+func getEKSToken(name string, state state) (string, error) {
+	generator, err := heptio.NewGenerator()
+	if err != nil {
+		return "", fmt.Errorf("error creating generator: %v", err)
+	}
+
+	if state.ClientID != "" && state.ClientSecret != "" {
+		err = writeCredentialsToFile(state)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	return generator.Get(name)
@@ -894,12 +913,8 @@ func getClientset(info *types.ClusterInfo) (*kubernetes.Clientset, error) {
 	}
 
 	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(state.Region),
-		Credentials: credentials.NewStaticCredentials(
-			state.ClientID,
-			state.ClientSecret,
-			state.SessionToken,
-		),
+		Region:      aws.String(state.Region),
+		Credentials: credentialsForState(state),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error creating new session: %v", err)
@@ -963,12 +978,8 @@ func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 	}
 
 	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(state.Region),
-		Credentials: credentials.NewStaticCredentials(
-			state.ClientID,
-			state.ClientSecret,
-			state.SessionToken,
-		),
+		Region:      aws.String(state.Region),
+		Credentials: credentialsForState(state),
 	})
 	if err != nil {
 		return fmt.Errorf("error getting new aws session: %v", err)
@@ -1105,12 +1116,8 @@ func (d *Driver) getClusterStats(ctx context.Context, info *types.ClusterInfo) (
 		return nil, err
 	}
 	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(state.Region),
-		Credentials: credentials.NewStaticCredentials(
-			state.ClientID,
-			state.ClientSecret,
-			state.SessionToken,
-		),
+		Region:      aws.String(state.Region),
+		Credentials: credentialsForState(state),
 	})
 	if err != nil {
 		return nil, err
@@ -1145,12 +1152,8 @@ func (d *Driver) SetVersion(ctx context.Context, info *types.ClusterInfo, versio
 
 func (d *Driver) updateClusterAndWait(ctx context.Context, state state) error {
 	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(state.Region),
-		Credentials: credentials.NewStaticCredentials(
-			state.ClientID,
-			state.ClientSecret,
-			state.SessionToken,
-		),
+		Region:      aws.String(state.Region),
+		Credentials: credentialsForState(state),
 	})
 	if err != nil {
 		return err
