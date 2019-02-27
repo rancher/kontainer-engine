@@ -163,7 +163,7 @@ func toMap(obj interface{}, format string) (map[string]interface{}, error) {
 type EngineService interface {
 	Create(ctx context.Context, name string, kontainerDriver *v3.KontainerDriver, clusterSpec v3.ClusterSpec) (string, string, string, error)
 	Update(ctx context.Context, name string, kontainerDriver *v3.KontainerDriver, clusterSpec v3.ClusterSpec) (string, string, string, error)
-	Remove(ctx context.Context, name string, kontainerDriver *v3.KontainerDriver, clusterSpec v3.ClusterSpec) error
+	Remove(ctx context.Context, name string, kontainerDriver *v3.KontainerDriver, clusterSpec v3.ClusterSpec, forceRemove bool) error
 	GetDriverCreateOptions(ctx context.Context, name string, kontainerDriver *v3.KontainerDriver, clusterSpec v3.ClusterSpec) (*types.DriverFlags, error)
 	GetDriverUpdateOptions(ctx context.Context, name string, kontainerDriver *v3.KontainerDriver, clusterSpec v3.ClusterSpec) (*types.DriverFlags, error)
 	GetK8sCapabilities(ctx context.Context, name string, kontainerDriver *v3.KontainerDriver, clusterSpec v3.ClusterSpec) (*types.K8SCapabilities, error)
@@ -299,7 +299,7 @@ func (e *engineService) Update(ctx context.Context, name string, kontainerDriver
 }
 
 // Remove removes stub for cluster manager to call
-func (e *engineService) Remove(ctx context.Context, name string, kontainerDriver *v3.KontainerDriver, clusterSpec v3.ClusterSpec) error {
+func (e *engineService) Remove(ctx context.Context, name string, kontainerDriver *v3.KontainerDriver, clusterSpec v3.ClusterSpec, forceRemove bool) error {
 	runningDriver, err := e.getRunningDriver(kontainerDriver, clusterSpec)
 	if err != nil {
 		return err
@@ -319,7 +319,7 @@ func (e *engineService) Remove(ctx context.Context, name string, kontainerDriver
 
 	defer cls.Driver.Close()
 
-	return cls.Remove(ctx)
+	return cls.Remove(ctx, forceRemove)
 }
 
 func (e *engineService) GetDriverCreateOptions(ctx context.Context, name string, kontainerDriver *v3.KontainerDriver, clusterSpec v3.ClusterSpec) (*types.DriverFlags,
