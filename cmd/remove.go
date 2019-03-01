@@ -53,7 +53,7 @@ func rmCluster(ctx *cli.Context) error {
 		cluster.ConfigGetter = configGetter
 		cluster.PersistStore = store.CLIPersistStore{}
 		cluster.Driver = rpcClient
-		if err := cluster.Remove(context.Background()); err != nil {
+		if err := cluster.Remove(context.Background(), true); err != nil {
 			if ctx.Bool("force") {
 				cluster.PersistStore.Remove(name)
 			} else {
