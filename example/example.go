@@ -48,7 +48,7 @@ func main() {
 	fmt.Println(endpoint)
 	fmt.Println(token)
 	fmt.Println(cert)
-	err = service.Remove(context.Background(), "daishan-test", &v3.KontainerDriver{}, spec)
+	err = service.Remove(context.Background(), "daishan-test", &v3.KontainerDriver{}, spec, true)
 	if err != nil {
 		logrus.Fatal(err)
 	}
