@@ -47,6 +47,7 @@ const (
 	ClusterConditionAgentDeployed              condition.Cond = "AgentDeployed"
 	ClusterConditionGlobalAdminsSynced         condition.Cond = "GlobalAdminsSynced"
 	ClusterConditionInitialRolesPopulated      condition.Cond = "InitialRolesPopulated"
+	ClusterConditionServiceAccountMigrated     condition.Cond = "ServiceAccountMigrated"
 	ClusterConditionPrometheusOperatorDeployed condition.Cond = "PrometheusOperatorDeployed"
 	ClusterConditionMonitoringEnabled          condition.Cond = "MonitoringEnabled"
 	ClusterConditionAlertingEnabled            condition.Cond = "AlertingEnabled"
@@ -77,6 +78,7 @@ type ClusterSpec struct {
 	Description                          string                         `json:"description"`
 	Internal                             bool                           `json:"internal" norman:"nocreate,noupdate"`
 	DesiredAgentImage                    string                         `json:"desiredAgentImage"`
+	DesiredAuthImage                     string                         `json:"desiredAuthImage"`
 	ImportedConfig                       *ImportedConfig                `json:"importedConfig,omitempty" norman:"nocreate,noupdate"`
 	GoogleKubernetesEngineConfig         *MapStringInterface            `json:"googleKubernetesEngineConfig,omitempty"`
 	AzureKubernetesServiceConfig         *MapStringInterface            `json:"azureKubernetesServiceConfig,omitempty"`
@@ -89,6 +91,7 @@ type ClusterSpec struct {
 	EnableNetworkPolicy                  *bool                          `json:"enableNetworkPolicy" norman:"default=false"`
 	EnableClusterAlerting                bool                           `json:"enableClusterAlerting" norman:"default=false"`
 	EnableClusterMonitoring              bool                           `json:"enableClusterMonitoring" norman:"default=false"`
+	LocalClusterAuthEndpoint             LocalClusterAuthEndpoint       `json:"localClusterAuthEndpoint,omitempty"`
 }
 
 type ImportedConfig struct {
@@ -103,6 +106,7 @@ type ClusterStatus struct {
 	// https://kubernetes.io/docs/api-reference/v1.8/#componentstatus-v1-core
 	Driver                               string                   `json:"driver"`
 	AgentImage                           string                   `json:"agentImage"`
+	AuthImage                            string                   `json:"authImage"`
 	ComponentStatuses                    []ClusterComponentStatus `json:"componentStatuses,omitempty"`
 	APIEndpoint                          string                   `json:"apiEndpoint,omitempty"`
 	ServiceAccountToken                  string                   `json:"serviceAccountToken,omitempty"`
@@ -217,7 +221,7 @@ type Capabilities struct {
 }
 
 type LoadBalancerCapabilities struct {
-	Enabled              bool     `json:"enabled,omitempty"`
+	Enabled              *bool    `json:"enabled,omitempty"`
 	Provider             string   `json:"provider,omitempty"`
 	ProtocolsSupported   []string `json:"protocolsSupported,omitempty"`
 	HealthCheckSupported bool     `json:"healthCheckSupported,omitempty"`
@@ -231,7 +235,26 @@ type IngressCapabilities struct {
 type MonitoringInput struct {
 	Answers map[string]string `json:"answers,omitempty"`
 }
+
+type MonitoringOutput struct {
+	Answers map[string]string `json:"answers,omitempty"`
+}
+
+type RestoreFromEtcdBackupInput struct {
+	EtcdBackupName string `json:"etcdBackupName,omitempty" norman:"type=reference[etcdBackup]"`
+}
+
 type RotateCertificateInput struct {
 	CACertificates bool     `json:"caCertificates,omitempty"`
 	Services       []string `json:"services,omitempty" norman:"type=enum,options=etcd|kubelet|kube-apiserver|kube-proxy|kube-scheduler|kube-controller-manager"`
+}
+
+type RotateCertificateOutput struct {
+	Message string `json:"message,omitempty"`
+}
+
+type LocalClusterAuthEndpoint struct {
+	Enabled bool   `json:"enabled"`
+	FQDN    string `json:"fqdn,omitempty"`
+	CACerts string `json:"caCerts,omitempty"`
 }

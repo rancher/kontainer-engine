@@ -52,9 +52,8 @@ const (
 	CanalIface              = "canal_iface"
 	CanalFlannelBackendType = "canal_flannel_backend_type"
 
-	WeaveNetworkPlugin = "weave"
-	WeavePasswordKey   = "weave_password"
-
+	WeaveNetworkPlugin  = "weave"
+	WeaveNetowrkAppName = "weave-net"
 	// List of map keys to be used with network templates
 
 	// EtcdEndpoints is the server address for Etcd, used by calico
@@ -142,7 +141,7 @@ func (c *Cluster) doFlannelDeploy(ctx context.Context) error {
 			"Type": c.Network.Options[FlannelBackendType],
 		},
 		RBACConfig:     c.Authorization.Mode,
-		ClusterVersion: getTagMajorVersion(c.Version),
+		ClusterVersion: util.GetTagMajorVersion(c.Version),
 	}
 	pluginYaml, err := c.getNetworkPluginManifest(flannelConfig)
 	if err != nil {
@@ -197,7 +196,7 @@ func (c *Cluster) doCanalDeploy(ctx context.Context) error {
 func (c *Cluster) doWeaveDeploy(ctx context.Context) error {
 	weaveConfig := map[string]interface{}{
 		ClusterCIDR:        c.ClusterCIDR,
-		WeavePassword:      c.Network.Options[WeavePasswordKey],
+		WeavePassword:      c.Network.Options[WeavePassword],
 		Image:              c.SystemImages.WeaveNode,
 		CNIImage:           c.SystemImages.WeaveCNI,
 		WeaveLoopbackImage: c.SystemImages.Alpine,
@@ -215,9 +214,9 @@ func (c *Cluster) getNetworkPluginManifest(pluginConfig map[string]interface{}) 
 	case FlannelNetworkPlugin:
 		return templates.CompileTemplateFromMap(templates.FlannelTemplate, pluginConfig)
 	case CalicoNetworkPlugin:
-		return templates.CompileTemplateFromMap(templates.CalicoTemplate, pluginConfig)
+		return templates.CompileTemplateFromMap(templates.GetVersionedTemplates(CalicoNetworkPlugin, c.Version), pluginConfig)
 	case CanalNetworkPlugin:
-		return templates.CompileTemplateFromMap(templates.CanalTemplate, pluginConfig)
+		return templates.CompileTemplateFromMap(templates.GetVersionedTemplates(CanalNetworkPlugin, c.Version), pluginConfig)
 	case WeaveNetworkPlugin:
 		return templates.CompileTemplateFromMap(templates.WeaveTemplate, pluginConfig)
 	default:

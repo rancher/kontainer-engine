@@ -40,10 +40,11 @@ type NodeTemplateCondition struct {
 }
 
 type NodeTemplateSpec struct {
-	DisplayName      string `json:"displayName"`
-	Description      string `json:"description"`
-	Driver           string `json:"driver" norman:"nocreate,noupdate"`
-	NodeCommonParams `json:",inline"`
+	DisplayName         string `json:"displayName"`
+	Description         string `json:"description"`
+	Driver              string `json:"driver" norman:"nocreate,noupdate"`
+	CloudCredentialName string `json:"cloudCredentialName" norman:"type=reference[cloudCredential]"`
+	NodeCommonParams    `json:",inline"`
 }
 
 type Node struct {
@@ -167,8 +168,10 @@ type CustomConfig struct {
 	// Optional - Docker socket on the node that will be used in tunneling
 	DockerSocket string `yaml:"docker_socket" json:"dockerSocket,omitempty"`
 	// SSH Private Key
-	SSHKey string            `yaml:"ssh_key" json:"sshKey,omitempty" norman:"type=password"`
-	Label  map[string]string `yaml:"label" json:"label,omitempty"`
+	SSHKey string `yaml:"ssh_key" json:"sshKey,omitempty" norman:"type=password"`
+	// SSH Certificate
+	SSHCert string            `yaml:"ssh_cert" json:"sshCert,omitempty"`
+	Label   map[string]string `yaml:"label" json:"label,omitempty"`
 }
 
 type NodeSpec struct {
@@ -291,4 +294,18 @@ type NodeDrainInput struct {
 	GracePeriod int `json:"gracePeriod,omitempty" norman:"default=-1"`
 	// Time to wait (in seconds) before giving up for one try
 	Timeout int `json:"timeout" norman:"min=1,max=10800,default=60"`
+}
+
+type CloudCredential struct {
+	types.Namespaced
+
+	metav1.TypeMeta `json:",inline"`
+
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec CloudCredentialSpec `json:"spec"`
+}
+
+type CloudCredentialSpec struct {
+	Description string `json:"description,omitempty"`
 }

@@ -22,20 +22,22 @@ const (
 	SidekickServiceName   = "sidekick"
 	RBACAuthorizationMode = "rbac"
 
-	KubeAPIContainerName          = "kube-apiserver"
-	KubeletContainerName          = "kubelet"
-	KubeproxyContainerName        = "kube-proxy"
-	KubeControllerContainerName   = "kube-controller-manager"
-	SchedulerContainerName        = "kube-scheduler"
-	EtcdContainerName             = "etcd"
-	EtcdSnapshotContainerName     = "etcd-rolling-snapshots"
-	EtcdSnapshotOnceContainerName = "etcd-snapshot-once"
-	EtcdRestoreContainerName      = "etcd-restore"
-	EtcdChecksumContainerName     = "etcd-checksum-checker"
-	NginxProxyContainerName       = "nginx-proxy"
-	SidekickContainerName         = "service-sidekick"
-	LogLinkContainerName          = "rke-log-linker"
-	LogCleanerContainerName       = "rke-log-cleaner"
+	KubeAPIContainerName            = "kube-apiserver"
+	KubeletContainerName            = "kubelet"
+	KubeproxyContainerName          = "kube-proxy"
+	KubeControllerContainerName     = "kube-controller-manager"
+	SchedulerContainerName          = "kube-scheduler"
+	EtcdContainerName               = "etcd"
+	EtcdSnapshotContainerName       = "etcd-rolling-snapshots"
+	EtcdSnapshotOnceContainerName   = "etcd-snapshot-once"
+	EtcdRestoreContainerName        = "etcd-restore"
+	EtcdDownloadBackupContainerName = "etcd-download-backup"
+	EtcdServeBackupContainerName    = "etcd-Serve-backup"
+	EtcdChecksumContainerName       = "etcd-checksum-checker"
+	NginxProxyContainerName         = "nginx-proxy"
+	SidekickContainerName           = "service-sidekick"
+	LogLinkContainerName            = "rke-log-linker"
+	LogCleanerContainerName         = "rke-log-cleaner"
 
 	KubeAPIPort        = 6443
 	SchedulerPort      = 10251
@@ -45,6 +47,8 @@ const (
 
 	WorkerThreads = util.WorkerThreads
 )
+
+type RestartFunc func(context.Context, *hosts.Host) error
 
 func runSidekick(ctx context.Context, host *hosts.Host, prsMap map[string]v3.PrivateRegistry, sidecarProcess v3.Process) error {
 	isRunning, err := docker.IsContainerRunning(ctx, host.DClient, host.Address, SidekickContainerName, true)
