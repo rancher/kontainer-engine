@@ -3,13 +3,15 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/rancher/rke/docker"
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/k8s"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
-	"github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/cert"
@@ -18,6 +20,8 @@ import (
 const (
 	unschedulableEtcdTaint    = "node-role.kubernetes.io/etcd=true:NoExecute"
 	unschedulableControlTaint = "node-role.kubernetes.io/controlplane=true:NoSchedule"
+
+	EtcdPlaneNodesReplacedErr = "Etcd plane nodes are replaced. Stopping provisioning. Please restore your cluster from backup."
 )
 
 func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster, flags ExternalFlags) error {
@@ -47,6 +51,12 @@ func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster,
 	if err := reconcileControl(ctx, currentCluster, kubeCluster, kubeClient); err != nil {
 		return err
 	}
+	if flags.CustomCerts {
+		if err := restartComponentsWhenCertChanges(ctx, currentCluster, kubeCluster); err != nil {
+			return err
+		}
+	}
+
 	log.Infof(ctx, "[reconcile] Reconciled cluster state successfully")
 	return nil
 }
@@ -54,7 +64,7 @@ func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster,
 func reconcileWorker(ctx context.Context, currentCluster, kubeCluster *Cluster, kubeClient *kubernetes.Clientset) error {
 	// worker deleted first to avoid issues when worker+controller on same host
 	logrus.Debugf("[reconcile] Check worker hosts to be deleted")
-	wpToDelete := hosts.GetToDeleteHosts(currentCluster.WorkerHosts, kubeCluster.WorkerHosts, kubeCluster.InactiveHosts)
+	wpToDelete := hosts.GetToDeleteHosts(currentCluster.WorkerHosts, kubeCluster.WorkerHosts, kubeCluster.InactiveHosts, false)
 	for _, toDeleteHost := range wpToDelete {
 		toDeleteHost.IsWorker = false
 		if err := hosts.DeleteNode(ctx, toDeleteHost, kubeClient, toDeleteHost.IsControl, kubeCluster.CloudProvider.Name); err != nil {
@@ -86,7 +96,7 @@ func reconcileControl(ctx context.Context, currentCluster, kubeCluster *Cluster,
 	if err != nil {
 		return err
 	}
-	cpToDelete := hosts.GetToDeleteHosts(currentCluster.ControlPlaneHosts, kubeCluster.ControlPlaneHosts, kubeCluster.InactiveHosts)
+	cpToDelete := hosts.GetToDeleteHosts(currentCluster.ControlPlaneHosts, kubeCluster.ControlPlaneHosts, kubeCluster.InactiveHosts, false)
 	// move the current host in local kubeconfig to the end of the list
 	for i, toDeleteHost := range cpToDelete {
 		if toDeleteHost.Address == selfDeleteAddress {
@@ -115,8 +125,20 @@ func reconcileControl(ctx context.Context, currentCluster, kubeCluster *Cluster,
 }
 
 func reconcileHost(ctx context.Context, toDeleteHost *hosts.Host, worker, etcd bool, cleanerImage string, dialerFactory hosts.DialerFactory, prsMap map[string]v3.PrivateRegistry, clusterPrefixPath string, clusterVersion string) error {
-	if err := toDeleteHost.TunnelUp(ctx, dialerFactory, clusterPrefixPath, clusterVersion); err != nil {
-		return fmt.Errorf("Not able to reach the host: %v", err)
+	var retryErr error
+	retries := 3
+	sleepSeconds := 3
+	for i := 0; i < retries; i++ {
+		if retryErr = toDeleteHost.TunnelUp(ctx, dialerFactory, clusterPrefixPath, clusterVersion); retryErr != nil {
+			logrus.Debugf("Failed to dial the host %s trying again in %d seconds", toDeleteHost.Address, sleepSeconds)
+			time.Sleep(time.Second * time.Duration(sleepSeconds))
+			toDeleteHost.DClient = nil
+			continue
+		}
+		break
+	}
+	if retryErr != nil {
+		return fmt.Errorf("Not able to reach the host: %v", retryErr)
 	}
 	if worker {
 		if err := services.RemoveWorkerPlane(ctx, []*hosts.Host{toDeleteHost}, false); err != nil {
@@ -145,11 +167,15 @@ func reconcileHost(ctx context.Context, toDeleteHost *hosts.Host, worker, etcd b
 
 func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, kubeClient *kubernetes.Clientset) error {
 	log.Infof(ctx, "[reconcile] Check etcd hosts to be deleted")
+	if isEtcdPlaneReplaced(ctx, currentCluster, kubeCluster) {
+		logrus.Warnf("%v", EtcdPlaneNodesReplacedErr)
+		return fmt.Errorf("%v", EtcdPlaneNodesReplacedErr)
+	}
 	// get tls for the first current etcd host
 	clientCert := cert.EncodeCertPEM(currentCluster.Certificates[pki.KubeNodeCertName].Certificate)
 	clientkey := cert.EncodePrivateKeyPEM(currentCluster.Certificates[pki.KubeNodeCertName].Key)
 
-	etcdToDelete := hosts.GetToDeleteHosts(currentCluster.EtcdHosts, kubeCluster.EtcdHosts, kubeCluster.InactiveHosts)
+	etcdToDelete := hosts.GetToDeleteHosts(currentCluster.EtcdHosts, kubeCluster.EtcdHosts, kubeCluster.InactiveHosts, false)
 	for _, etcdHost := range etcdToDelete {
 		if err := services.RemoveEtcdMember(ctx, etcdHost, kubeCluster.EtcdHosts, currentCluster.LocalConnDialerFactory, clientCert, clientkey); err != nil {
 			log.Warnf(ctx, "[reconcile] %v", err)
@@ -242,4 +268,89 @@ func cleanControlNode(ctx context.Context, kubeCluster, currentCluster *Cluster,
 		log.Warnf(ctx, "[reconcile] Couldn't clean up controlplane node [%s]: %v", toDeleteHost.Address, err)
 	}
 	return nil
+}
+
+func restartComponentsWhenCertChanges(ctx context.Context, currentCluster, kubeCluster *Cluster) error {
+	AllCertsMap := map[string]bool{
+		pki.KubeAPICertName:            false,
+		pki.RequestHeaderCACertName:    false,
+		pki.CACertName:                 false,
+		pki.ServiceAccountTokenKeyName: false,
+		pki.APIProxyClientCertName:     false,
+		pki.KubeControllerCertName:     false,
+		pki.KubeSchedulerCertName:      false,
+		pki.KubeProxyCertName:          false,
+		pki.KubeNodeCertName:           false,
+	}
+	checkCertificateChanges(ctx, currentCluster, kubeCluster, AllCertsMap)
+	// check Restart Function
+	allHosts := hosts.GetUniqueHostList(kubeCluster.EtcdHosts, kubeCluster.ControlPlaneHosts, kubeCluster.WorkerHosts)
+	AllCertsFuncMap := map[string][]services.RestartFunc{
+		pki.CACertName:                 []services.RestartFunc{services.RestartKubeAPI, services.RestartKubeController, services.RestartKubelet},
+		pki.KubeAPICertName:            []services.RestartFunc{services.RestartKubeAPI, services.RestartKubeController},
+		pki.RequestHeaderCACertName:    []services.RestartFunc{services.RestartKubeAPI},
+		pki.ServiceAccountTokenKeyName: []services.RestartFunc{services.RestartKubeAPI, services.RestartKubeController},
+		pki.APIProxyClientCertName:     []services.RestartFunc{services.RestartKubeAPI},
+		pki.KubeControllerCertName:     []services.RestartFunc{services.RestartKubeController},
+		pki.KubeSchedulerCertName:      []services.RestartFunc{services.RestartScheduler},
+		pki.KubeProxyCertName:          []services.RestartFunc{services.RestartKubeproxy},
+		pki.KubeNodeCertName:           []services.RestartFunc{services.RestartKubelet},
+	}
+	for certName, changed := range AllCertsMap {
+		if changed {
+			for _, host := range allHosts {
+				runRestartFuncs(ctx, AllCertsFuncMap, certName, host)
+			}
+		}
+	}
+
+	for _, host := range kubeCluster.EtcdHosts {
+		etcdCertName := pki.GetEtcdCrtName(host.Address)
+		certMap := map[string]bool{
+			etcdCertName: false,
+		}
+		checkCertificateChanges(ctx, currentCluster, kubeCluster, certMap)
+		if certMap[etcdCertName] || AllCertsMap[pki.CACertName] {
+			if err := docker.DoRestartContainer(ctx, host.DClient, services.EtcdContainerName, host.HostnameOverride); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func runRestartFuncs(ctx context.Context, certFuncMap map[string][]services.RestartFunc, certName string, host *hosts.Host) error {
+	for _, restartFunc := range certFuncMap[certName] {
+		if err := restartFunc(ctx, host); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkCertificateChanges(ctx context.Context, currentCluster, kubeCluster *Cluster, certMap map[string]bool) {
+	for certName := range certMap {
+		if currentCluster.Certificates[certName].CertificatePEM != kubeCluster.Certificates[certName].CertificatePEM {
+			certMap[certName] = true
+			continue
+		}
+		if !(certName == pki.RequestHeaderCACertName || certName == pki.CACertName) {
+			if currentCluster.Certificates[certName].KeyPEM != kubeCluster.Certificates[certName].KeyPEM {
+				certMap[certName] = true
+			}
+		}
+	}
+}
+
+func isEtcdPlaneReplaced(ctx context.Context, currentCluster, kubeCluster *Cluster) bool {
+	etcdToDeleteInactive := hosts.GetToDeleteHosts(currentCluster.EtcdHosts, kubeCluster.EtcdHosts, kubeCluster.InactiveHosts, true)
+	// old etcd nodes are down, we added new ones
+	if len(etcdToDeleteInactive) == len(currentCluster.EtcdHosts) {
+		return true
+	}
+	// one or more etcd nodes are removed from cluster.yaml and replaced
+	if len(hosts.GetHostListIntersect(kubeCluster.EtcdHosts, currentCluster.EtcdHosts)) == 0 {
+		return true
+	}
+	return false
 }

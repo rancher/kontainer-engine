@@ -17,25 +17,28 @@ import (
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
 	"github.com/rancher/rke/util"
-	"github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/cert"
 )
 
 type Cluster struct {
+	AuthnStrategies                  map[string]bool
 	ConfigPath                       string
 	ConfigDir                        string
 	CloudConfigFile                  string
 	ControlPlaneHosts                []*hosts.Host
 	Certificates                     map[string]pki.CertificatePKI
+	CertificateDir                   string
 	ClusterDomain                    string
 	ClusterCIDR                      string
 	ClusterDNSServer                 string
+	DinD                             bool
 	DockerDialerFactory              hosts.DialerFactory
 	EtcdHosts                        []*hosts.Host
 	EtcdReadyHosts                   []*hosts.Host
@@ -47,34 +50,37 @@ type Cluster struct {
 	LocalConnDialerFactory           hosts.DialerFactory
 	PrivateRegistriesMap             map[string]v3.PrivateRegistry
 	StateFilePath                    string
-	UseKubectlDeploy                 bool
 	UpdateWorkersOnly                bool
+	UseKubectlDeploy                 bool
 	v3.RancherKubernetesEngineConfig `yaml:",inline"`
 	WorkerHosts                      []*hosts.Host
 }
 
 const (
-	X509AuthenticationProvider = "x509"
-	StateConfigMapName         = "cluster-state"
-	FullStateConfigMapName     = "full-cluster-state"
-	UpdateStateTimeout         = 30
-	GetStateTimeout            = 30
-	KubernetesClientTimeOut    = 30
-	SyncWorkers                = 10
-	NoneAuthorizationMode      = "none"
-	LocalNodeAddress           = "127.0.0.1"
-	LocalNodeHostname          = "localhost"
-	LocalNodeUser              = "root"
-	CloudProvider              = "CloudProvider"
-	ControlPlane               = "controlPlane"
-	WorkerPlane                = "workerPlan"
-	EtcdPlane                  = "etcd"
+	AuthnX509Provider       = "x509"
+	AuthnWebhookProvider    = "webhook"
+	StateConfigMapName      = "cluster-state"
+	FullStateConfigMapName  = "full-cluster-state"
+	UpdateStateTimeout      = 30
+	GetStateTimeout         = 30
+	KubernetesClientTimeOut = 30
+	SyncWorkers             = 10
+	NoneAuthorizationMode   = "none"
+	LocalNodeAddress        = "127.0.0.1"
+	LocalNodeHostname       = "localhost"
+	LocalNodeUser           = "root"
+	CloudProvider           = "CloudProvider"
+	ControlPlane            = "controlPlane"
+	WorkerPlane             = "workerPlan"
+	EtcdPlane               = "etcd"
 
 	KubeAppLabel = "k8s-app"
 	AppLabel     = "app"
 	NameLabel    = "name"
 
 	WorkerThreads = util.WorkerThreads
+
+	serviceAccountTokenFileParam = "service-account-key-file"
 )
 
 func (c *Cluster) DeployControlPlane(ctx context.Context) error {
@@ -88,12 +94,7 @@ func (c *Cluster) DeployControlPlane(ctx context.Context) error {
 	if len(c.Services.Etcd.ExternalURLs) > 0 {
 		log.Infof(ctx, "[etcd] External etcd connection string has been specified, skipping etcd plane")
 	} else {
-		etcdRollingSnapshot := services.EtcdSnapshot{
-			Snapshot:  c.Services.Etcd.Snapshot,
-			Creation:  c.Services.Etcd.Creation,
-			Retention: c.Services.Etcd.Retention,
-		}
-		if err := services.RunEtcdPlane(ctx, c.EtcdHosts, etcdNodePlanMap, c.LocalConnDialerFactory, c.PrivateRegistriesMap, c.UpdateWorkersOnly, c.SystemImages.Alpine, etcdRollingSnapshot); err != nil {
+		if err := services.RunEtcdPlane(ctx, c.EtcdHosts, etcdNodePlanMap, c.LocalConnDialerFactory, c.PrivateRegistriesMap, c.UpdateWorkersOnly, c.SystemImages.Alpine, c.Services.Etcd, c.Certificates); err != nil {
 			return fmt.Errorf("[etcd] Failed to bring up Etcd Plane: %v", err)
 		}
 	}
@@ -149,23 +150,33 @@ func ParseConfig(clusterFile string) (*v3.RancherKubernetesEngineConfig, error) 
 func InitClusterObject(ctx context.Context, rkeConfig *v3.RancherKubernetesEngineConfig, flags ExternalFlags) (*Cluster, error) {
 	// basic cluster object from rkeConfig
 	c := &Cluster{
+		AuthnStrategies:               make(map[string]bool),
 		RancherKubernetesEngineConfig: *rkeConfig,
 		ConfigPath:                    flags.ClusterFilePath,
 		ConfigDir:                     flags.ConfigDir,
+		DinD:                          flags.DinD,
+		CertificateDir:                flags.CertificateDir,
 		StateFilePath:                 GetStateFilePath(flags.ClusterFilePath, flags.ConfigDir),
 		PrivateRegistriesMap:          make(map[string]v3.PrivateRegistry),
 	}
 	if len(c.ConfigPath) == 0 {
 		c.ConfigPath = pki.ClusterConfig
 	}
-	// set kube_config and state file
+	// set kube_config, state file, and certificate dir
 	c.LocalKubeConfigPath = pki.GetLocalKubeConfig(c.ConfigPath, c.ConfigDir)
 	c.StateFilePath = GetStateFilePath(c.ConfigPath, c.ConfigDir)
+	if len(c.CertificateDir) == 0 {
+		c.CertificateDir = GetCertificateDirPath(c.ConfigPath, c.ConfigDir)
+	}
 
 	// Setting cluster Defaults
-	c.setClusterDefaults(ctx)
+	err := c.setClusterDefaults(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// extract cluster network configuration
 	c.setNetworkOptions()
+
 	// Register cloud provider
 	if err := c.setCloudProvider(); err != nil {
 		return nil, fmt.Errorf("Failed to register cloud provider: %v", err)
@@ -175,7 +186,7 @@ func InitClusterObject(ctx context.Context, rkeConfig *v3.RancherKubernetesEngin
 		return nil, fmt.Errorf("Failed to classify hosts from config file: %v", err)
 	}
 	// validate cluster configuration
-	if err := c.ValidateCluster(); err != nil {
+	if err := c.ValidateCluster(ctx); err != nil {
 		return nil, fmt.Errorf("Failed to validate cluster: %v", err)
 	}
 	return c, nil
@@ -329,7 +340,7 @@ func (c *Cluster) deployAddons(ctx context.Context) error {
 func (c *Cluster) SyncLabelsAndTaints(ctx context.Context, currentCluster *Cluster) error {
 	// Handle issue when deleting all controlplane nodes https://github.com/rancher/rancher/issues/15810
 	if currentCluster != nil {
-		cpToDelete := hosts.GetToDeleteHosts(currentCluster.ControlPlaneHosts, c.ControlPlaneHosts, c.InactiveHosts)
+		cpToDelete := hosts.GetToDeleteHosts(currentCluster.ControlPlaneHosts, c.ControlPlaneHosts, c.InactiveHosts, false)
 		if len(cpToDelete) == len(currentCluster.ControlPlaneHosts) {
 			log.Infof(ctx, "[sync] Cleaning left control plane nodes from reconcilation")
 			for _, toDeleteHost := range cpToDelete {
@@ -477,11 +488,12 @@ func RestartClusterPods(ctx context.Context, kubeCluster *Cluster) error {
 		fmt.Sprintf("%s=%s", KubeAppLabel, CalicoNetworkPlugin),
 		fmt.Sprintf("%s=%s", KubeAppLabel, FlannelNetworkPlugin),
 		fmt.Sprintf("%s=%s", KubeAppLabel, CanalNetworkPlugin),
-		fmt.Sprintf("%s=%s", NameLabel, WeaveNetworkPlugin),
+		fmt.Sprintf("%s=%s", NameLabel, WeaveNetowrkAppName),
 		fmt.Sprintf("%s=%s", AppLabel, NginxIngressAddonAppName),
 		fmt.Sprintf("%s=%s", KubeAppLabel, DefaultMonitoringProvider),
 		fmt.Sprintf("%s=%s", KubeAppLabel, KubeDNSAddonAppName),
 		fmt.Sprintf("%s=%s", KubeAppLabel, KubeDNSAutoscalerAppName),
+		fmt.Sprintf("%s=%s", KubeAppLabel, CoreDNSAutoscalerAppName),
 	}
 	var errgrp errgroup.Group
 	labelQueue := util.GetObjectQueue(labelsList)
@@ -517,4 +529,21 @@ func (c *Cluster) GetHostInfoMap() map[string]types.Info {
 		hostsInfoMap[host.Address] = host.DockerInfo
 	}
 	return hostsInfoMap
+}
+
+func IsLegacyKubeAPI(ctx context.Context, kubeCluster *Cluster) (bool, error) {
+	log.Infof(ctx, "[controlplane] Check if rotating a legacy cluster")
+	for _, host := range kubeCluster.ControlPlaneHosts {
+		kubeAPIInspect, err := docker.InspectContainer(ctx, host.DClient, host.Address, services.KubeAPIContainerName)
+		if err != nil {
+			return false, err
+		}
+		for _, arg := range kubeAPIInspect.Args {
+			if strings.Contains(arg, serviceAccountTokenFileParam) &&
+				strings.Contains(arg, pki.GetKeyPath(pki.KubeAPICertName)) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }

@@ -22,6 +22,7 @@ import (
 
 const (
 	stateFileExt = ".rkestate"
+	certDirExt   = "_certs"
 )
 
 type FullState struct {
@@ -150,6 +151,20 @@ func RebuildState(ctx context.Context, rkeConfig *v3.RancherKubernetesEngineConf
 		},
 	}
 
+	if flags.CustomCerts {
+		certBundle, err := pki.ReadCertsAndKeysFromDir(flags.CertificateDir)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to read certificates from dir [%s]: %v", flags.CertificateDir, err)
+		}
+		// make sure all custom certs are included
+		if err := pki.ValidateBundleContent(rkeConfig, certBundle, flags.ClusterFilePath, flags.ConfigDir); err != nil {
+			return nil, fmt.Errorf("Failed to validates certificates from dir [%s]: %v", flags.CertificateDir, err)
+		}
+		newState.DesiredState.CertificatesBundle = certBundle
+		newState.CurrentState = oldState.CurrentState
+		return newState, nil
+	}
+
 	// Rebuilding the certificates of the desired state
 	if oldState.DesiredState.CertificatesBundle == nil {
 		// Get the certificate Bundle
@@ -159,17 +174,14 @@ func RebuildState(ctx context.Context, rkeConfig *v3.RancherKubernetesEngineConf
 		}
 		newState.DesiredState.CertificatesBundle = certBundle
 	} else {
-		// Regenerating etcd certificates for any new etcd nodes
 		pkiCertBundle := oldState.DesiredState.CertificatesBundle
-		if err := pki.GenerateEtcdCertificates(ctx, pkiCertBundle, *rkeConfig, "", "", false); err != nil {
-			return nil, err
+		// check for legacy clusters prior to requestheaderca
+		if pkiCertBundle[pki.RequestHeaderCACertName].Certificate == nil {
+			if err := pki.GenerateRKERequestHeaderCACert(ctx, pkiCertBundle, flags.ClusterFilePath, flags.ConfigDir); err != nil {
+				return nil, err
+			}
 		}
-		// Regenerating kubeapi certificates for any new kubeapi nodes
-		if err := pki.GenerateKubeAPICertificate(ctx, pkiCertBundle, *rkeConfig, "", "", false); err != nil {
-			return nil, err
-		}
-		// Regenerating kubeadmin certificates/config
-		if err := pki.GenerateKubeAdminCertificate(ctx, pkiCertBundle, *rkeConfig, flags.ClusterFilePath, flags.ConfigDir, false); err != nil {
+		if err := pki.GenerateRKEServicesCerts(ctx, pkiCertBundle, *rkeConfig, flags.ClusterFilePath, flags.ConfigDir, false); err != nil {
 			return nil, err
 		}
 		newState.DesiredState.CertificatesBundle = pkiCertBundle
@@ -204,6 +216,21 @@ func GetStateFilePath(configPath, configDir string) string {
 	fullPath := fmt.Sprintf("%s%s", baseDir, fileName)
 	trimmedName := strings.TrimSuffix(fullPath, filepath.Ext(fullPath))
 	return trimmedName + stateFileExt
+}
+
+func GetCertificateDirPath(configPath, configDir string) string {
+	if configPath == "" {
+		configPath = pki.ClusterConfig
+	}
+	baseDir := filepath.Dir(configPath)
+	if len(configDir) > 0 {
+		baseDir = filepath.Dir(configDir)
+	}
+	fileName := filepath.Base(configPath)
+	baseDir += "/"
+	fullPath := fmt.Sprintf("%s%s", baseDir, fileName)
+	trimmedName := strings.TrimSuffix(fullPath, filepath.Ext(fullPath))
+	return trimmedName + certDirExt
 }
 
 func ReadStateFile(ctx context.Context, statePath string) (*FullState, error) {

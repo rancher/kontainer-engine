@@ -26,11 +26,14 @@ type AppSpec struct {
 	AppRevisionName     string            `json:"appRevisionName,omitempty" norman:"type=reference[/v3/project/schemas/apprevision]"`
 	Prune               bool              `json:"prune,omitempty"`
 	MultiClusterAppName string            `json:"multiClusterAppName,omitempty" norman:"type=reference[/v3/schemas/multiclusterapp]"`
+	ValuesYaml          string            `json:"valuesYaml,omitempty"`
 }
 
 var (
-	AppConditionInstalled condition.Cond = "Installed"
-	AppConditionMigrated  condition.Cond = "Migrated"
+	AppConditionInstalled    condition.Cond = "Installed"
+	AppConditionMigrated     condition.Cond = "Migrated"
+	AppConditionDeployed     condition.Cond = "Deployed"
+	AppConditionForceUpgrade condition.Cond = "ForceUpgrade"
 )
 
 type AppStatus struct {
@@ -71,13 +74,19 @@ type AppRevisionStatus struct {
 	ExternalID  string            `json:"externalId"`
 	Answers     map[string]string `json:"answers"`
 	Digest      string            `json:"digest"`
+	ValuesYaml  string            `json:"valuesYaml,omitempty"`
+	Files       map[string]string `json:"files,omitempty"`
 }
 
 type AppUpgradeConfig struct {
-	ExternalID string            `json:"externalId,omitempty"`
-	Answers    map[string]string `json:"answers,omitempty"`
+	ExternalID   string            `json:"externalId,omitempty"`
+	Answers      map[string]string `json:"answers,omitempty"`
+	ForceUpgrade bool              `json:"forceUpgrade,omitempty"`
+	Files        map[string]string `json:"files,omitempty"`
+	ValuesYaml   string            `json:"valuesYaml,omitempty"`
 }
 
 type RollbackRevision struct {
 	RevisionName string `json:"revisionName,omitempty" norman:"type=reference[/v3/project/schemas/apprevision]"`
+	ForceUpgrade bool   `json:"forceUpgrade,omitempty"`
 }

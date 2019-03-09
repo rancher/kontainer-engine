@@ -17,6 +17,8 @@ type RancherKubernetesEngineConfig struct {
 	SystemImages RKESystemImages `yaml:"system_images" json:"systemImages,omitempty"`
 	// SSH Private Key Path
 	SSHKeyPath string `yaml:"ssh_key_path" json:"sshKeyPath,omitempty"`
+	// SSH Certificate Path
+	SSHCertPath string `yaml:"ssh_cert_path" json:"sshCertPath,omitempty"`
 	// SSH Agent Auth enable
 	SSHAgentAuth bool `yaml:"ssh_agent_auth" json:"sshAgentAuth"`
 	// Authorization mode configuration used in the cluster
@@ -41,8 +43,12 @@ type RancherKubernetesEngineConfig struct {
 	BastionHost BastionHost `yaml:"bastion_host" json:"bastionHost,omitempty"`
 	// Monitoring Config
 	Monitoring MonitoringConfig `yaml:"monitoring" json:"monitoring,omitempty"`
+	// RestoreCluster flag
+	Restore RestoreConfig `yaml:"restore" json:"restore,omitempty"`
 	// Rotating Certificates Option
 	RotateCertificates *RotateCertificates `yaml:"rotate_certificates,omitempty" json:"rotateCertificates,omitempty"`
+	// DNS Config
+	DNS DNSConfig `yaml:"dns" json:"dns,omitempty"`
 }
 
 type BastionHost struct {
@@ -58,6 +64,10 @@ type BastionHost struct {
 	SSHKey string `yaml:"ssh_key" json:"sshKey,omitempty" norman:"type=password"`
 	// SSH Private Key Path
 	SSHKeyPath string `yaml:"ssh_key_path" json:"sshKeyPath,omitempty"`
+	// SSH Certificate
+	SSHCert string `yaml:"ssh_cert" json:"sshCert,omitempty"`
+	// SSH Certificate Path
+	SSHCertPath string `yaml:"ssh_cert_path" json:"sshCertPath,omitempty"`
 }
 
 type PrivateRegistry struct {
@@ -90,6 +100,10 @@ type RKESystemImages struct {
 	KubeDNSSidecar string `yaml:"kubedns_sidecar" json:"kubednsSidecar,omitempty"`
 	// KubeDNS autoscaler image
 	KubeDNSAutoscaler string `yaml:"kubedns_autoscaler" json:"kubednsAutoscaler,omitempty"`
+	// CoreDNS image
+	CoreDNS string `yaml:"coredns" json:"coredns,omitempty"`
+	// CoreDNS autoscaler image
+	CoreDNSAutoscaler string `yaml:"coredns_autoscaler" json:"corednsAutoscaler,omitempty"`
 	// Kubernetes image
 	Kubernetes string `yaml:"kubernetes" json:"kubernetes,omitempty"`
 	// Flannel image
@@ -147,6 +161,10 @@ type RKEConfigNode struct {
 	SSHKey string `yaml:"ssh_key" json:"sshKey,omitempty" norman:"type=password"`
 	// SSH Private Key Path
 	SSHKeyPath string `yaml:"ssh_key_path" json:"sshKeyPath,omitempty"`
+	// SSH Certificate
+	SSHCert string `yaml:"ssh_cert" json:"sshCert,omitempty"`
+	// SSH Certificate Path
+	SSHCertPath string `yaml:"ssh_cert_path" json:"sshCertPath,omitempty"`
 	// Node Labels
 	Labels map[string]string `yaml:"labels" json:"labels,omitempty"`
 }
@@ -179,12 +197,14 @@ type ETCDService struct {
 	Key string `yaml:"key" json:"key,omitempty"`
 	// External etcd prefix
 	Path string `yaml:"path" json:"path,omitempty"`
-	// Etcd Recurring snapshot Service
-	Snapshot *bool `yaml:"snapshot" json:"snapshot,omitempty" norman:"default=true"`
+	// Etcd Recurring snapshot Service, used by rke only
+	Snapshot *bool `yaml:"snapshot" json:"snapshot,omitempty" norman:"default=false"`
 	// Etcd snapshot Retention period
 	Retention string `yaml:"retention" json:"retention,omitempty" norman:"default=72h"`
 	// Etcd snapshot Creation period
 	Creation string `yaml:"creation" json:"creation,omitempty" norman:"default=12h"`
+	// Backup backend for etcd snapshots
+	BackupConfig *BackupConfig `yaml:"backup_config" json:"backupConfig,omitempty"`
 }
 
 type KubeAPIService struct {
@@ -196,6 +216,8 @@ type KubeAPIService struct {
 	ServiceNodePortRange string `yaml:"service_node_port_range" json:"serviceNodePortRange,omitempty" norman:"default=30000-32767"`
 	// Enabled/Disable PodSecurityPolicy
 	PodSecurityPolicy bool `yaml:"pod_security_policy" json:"podSecurityPolicy,omitempty"`
+	// Enable/Disable AlwaysPullImages admissions plugin
+	AlwaysPullImages bool `yaml:"always_pull_images" json:"alwaysPullImages,omitempty"`
 }
 
 type KubeControllerService struct {
@@ -247,22 +269,29 @@ type NetworkConfig struct {
 	// Plugin options to configure network properties
 	Options map[string]string `yaml:"options" json:"options,omitempty"`
 	// CalicoNetworkProvider
-	CalicoNetworkProvider *CalicoNetworkProvider `yaml:",omitempty" json:"calicoNetworkProvider,omitempty"`
+	CalicoNetworkProvider *CalicoNetworkProvider `yaml:"calico_network_provider,omitempty" json:"calicoNetworkProvider,omitempty"`
 	// CanalNetworkProvider
-	CanalNetworkProvider *CanalNetworkProvider `yaml:",omitempty" json:"canalNetworkProvider,omitempty"`
+	CanalNetworkProvider *CanalNetworkProvider `yaml:"canal_network_provider,omitempty" json:"canalNetworkProvider,omitempty"`
 	// FlannelNetworkProvider
-	FlannelNetworkProvider *FlannelNetworkProvider `yaml:",omitempty" json:"flannelNetworkProvider,omitempty"`
+	FlannelNetworkProvider *FlannelNetworkProvider `yaml:"flannel_network_provider,omitempty" json:"flannelNetworkProvider,omitempty"`
 	// WeaveNetworkProvider
-	WeaveNetworkProvider *WeaveNetworkProvider `yaml:",omitempty" json:"weaveNetworkProvider,omitempty"`
+	WeaveNetworkProvider *WeaveNetworkProvider `yaml:"weave_network_provider,omitempty" json:"weaveNetworkProvider,omitempty"`
+}
+
+type AuthWebhookConfig struct {
+	// ConfigFile is a multiline string that represent a custom webhook config file
+	ConfigFile string `yaml:"config_file" json:"configFile,omitempty"`
+	// CacheTimeout controls how long to cache authentication decisions
+	CacheTimeout string `yaml:"cache_timeout" json:"cacheTimeout,omitempty"`
 }
 
 type AuthnConfig struct {
 	// Authentication strategy that will be used in kubernetes cluster
 	Strategy string `yaml:"strategy" json:"strategy,omitempty" norman:"default=x509"`
-	// Authentication options
-	Options map[string]string `yaml:"options" json:"options,omitempty"`
 	// List of additional hostnames and IPs to include in the api server PKI cert
 	SANs []string `yaml:"sans" json:"sans,omitempty"`
+	// Webhook configuration options
+	Webhook *AuthWebhookConfig `yaml:"webhook" json:"webhook,omitempty"`
 }
 
 type AuthzConfig struct {
@@ -567,6 +596,65 @@ type AzureCloudProvider struct {
 
 // AWSCloudProvider options
 type AWSCloudProvider struct {
+	Global          GlobalAwsOpts              `json:"global" yaml:"global" ini:"Global,omitempty"`
+	ServiceOverride map[string]ServiceOverride `json:"serviceOverride,omitempty" yaml:"service_override,omitempty" ini:"ServiceOverride,omitempty"`
+}
+
+type ServiceOverride struct {
+	Service       string `json:"service" yaml:"service" ini:"Service,omitempty"`
+	Region        string `json:"region" yaml:"region" ini:"Region,omitempty"`
+	URL           string `json:"url" yaml:"url" ini:"URL,omitempty"`
+	SigningRegion string `json:"signing-region" yaml:"signing-region" ini:"SigningRegion,omitempty"`
+	SigningMethod string `json:"signing-method" yaml:"signing-method" ini:"SigningMethod,omitempty"`
+	SigningName   string `json:"signing-name" yaml:"signing-name" ini:"SigningName,omitempty"`
+}
+
+type GlobalAwsOpts struct {
+	// TODO: Is there any use for this?  We can get it from the instance metadata service
+	// Maybe if we're not running on AWS, e.g. bootstrap; for now it is not very useful
+	Zone string `json:"zone" yaml:"zone" ini:"Zone,omitempty"`
+
+	// The AWS VPC flag enables the possibility to run the master components
+	// on a different aws account, on a different cloud provider or on-premises.
+	// If the flag is set also the KubernetesClusterTag must be provided
+	VPC string `json:"vpc" yaml:"vpc" ini:"VPC,omitempty"`
+	// SubnetID enables using a specific subnet to use for ELB's
+	SubnetID string `json:"subnet-id" yaml:"subnet-id" ini:"SubnetID,omitempty"`
+	// RouteTableID enables using a specific RouteTable
+	RouteTableID string `json:"routetable-id" yaml:"routetable-id" ini:"RouteTableID,omitempty"`
+
+	// RoleARN is the IAM role to assume when interaction with AWS APIs.
+	RoleARN string `json:"role-arn" yaml:"role-arn" ini:"RoleARN,omitempty"`
+
+	// KubernetesClusterTag is the legacy cluster id we'll use to identify our cluster resources
+	KubernetesClusterTag string `json:"kubernetes-cluster-tag" yaml:"kubernetes-cluster-tag" ini:"KubernetesClusterTag,omitempty"`
+	// KubernetesClusterID is the cluster id we'll use to identify our cluster resources
+	KubernetesClusterID string `json:"kubernetes-cluster-id" yaml:"kubernetes-cluster-id" ini:"KubernetesClusterID,omitempty"`
+
+	//The aws provider creates an inbound rule per load balancer on the node security
+	//group. However, this can run into the AWS security group rule limit of 50 if
+	//many LoadBalancers are created.
+	//
+	//This flag disables the automatic ingress creation. It requires that the user
+	//has setup a rule that allows inbound traffic on kubelet ports from the
+	//local VPC subnet (so load balancers can access it). E.g. 10.82.0.0/16 30000-32000.
+	DisableSecurityGroupIngress bool `json:"disable-security-group-ingress" yaml:"disable-security-group-ingress" ini:"DisableSecurityGroupIngress,omitempty"`
+
+	//AWS has a hard limit of 500 security groups. For large clusters creating a security group for each ELB
+	//can cause the max number of security groups to be reached. If this is set instead of creating a new
+	//Security group for each ELB this security group will be used instead.
+	ElbSecurityGroup string `json:"elb-security-group" yaml:"elb-security-group" ini:"ElbSecurityGroup,omitempty"`
+
+	//During the instantiation of an new AWS cloud provider, the detected region
+	//is validated against a known set of regions.
+	//
+	//In a non-standard, AWS like environment (e.g. Eucalyptus), this check may
+	//be undesirable.  Setting this to true will disable the check and provide
+	//a warning that the check was skipped.  Please note that this is an
+	//experimental feature and work-in-progress for the moment.  If you find
+	//yourself in an non-AWS cloud and open an issue, please indicate that in the
+	//issue body.
+	DisableStrictZoneCheck bool `json:"disable-strict-zone-check" yaml:"disable-strict-zone-check" ini:"DisableStrictZoneCheck,omitempty"`
 }
 
 type MonitoringConfig struct {
@@ -576,9 +664,24 @@ type MonitoringConfig struct {
 	Options map[string]string `yaml:"options" json:"options,omitempty"`
 }
 
+type RestoreConfig struct {
+	Restore      bool   `yaml:"restore" json:"restore,omitempty"`
+	SnapshotName string `yaml:"snapshot_name" json:"snapshotName,omitempty"`
+}
 type RotateCertificates struct {
 	// Rotate CA Certificates
 	CACertificates bool `json:"caCertificates,omitempty"`
 	// Services to rotate their certs
 	Services []string `json:"services,omitempty" norman:"type=enum,options=etcd|kubelet|kube-apiserver|kube-proxy|kube-scheduler|kube-controller-manager"`
+}
+
+type DNSConfig struct {
+	// DNS provider
+	Provider string `yaml:"provider" json:"provider,omitempty" norman:"default=kube-dns"`
+	// Upstream nameservers
+	UpstreamNameservers []string `yaml:"upstreamnameservers" json:"upstreamnameservers,omitempty"`
+	// ReverseCIDRs
+	ReverseCIDRs []string `yaml:"reversecidrs" json:"reversecidrs,omitempty"`
+	// NodeSelector key pair
+	NodeSelector map[string]string `yaml:"node_selector" json:"nodeSelector,omitempty"`
 }

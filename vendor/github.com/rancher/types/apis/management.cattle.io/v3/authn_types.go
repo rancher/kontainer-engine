@@ -25,6 +25,7 @@ type Token struct {
 	Expired         bool              `json:"expired"`
 	ExpiresAt       string            `json:"expiresAt"`
 	Current         bool              `json:"current"`
+	ClusterName     string            `json:"clusterName,omitempty" norman:"noupdate,type=reference[cluster]"`
 	Enabled         *bool             `json:"enabled,omitempty" norman:"default=true"`
 }
 
@@ -308,5 +309,9 @@ type ADFSConfig struct {
 }
 
 type KeyCloakConfig struct {
+	SamlConfig `json:",inline" mapstructure:",squash"`
+}
+
+type OKTAConfig struct {
 	SamlConfig `json:",inline" mapstructure:",squash"`
 }
