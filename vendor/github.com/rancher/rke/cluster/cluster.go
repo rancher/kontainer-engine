@@ -276,7 +276,7 @@ func getLocalConfigAddress(localConfigPath string) (string, error) {
 
 func getLocalAdminConfigWithNewAddress(localConfigPath, cpAddress string, clusterName string) string {
 	config, _ := clientcmd.BuildConfigFromFlags("", localConfigPath)
-	if config == nil {
+	if config == nil || config.BearerToken != "" {
 		return ""
 	}
 	config.Host = fmt.Sprintf("https://%s:6443", cpAddress)
@@ -494,6 +494,8 @@ func RestartClusterPods(ctx context.Context, kubeCluster *Cluster) error {
 		fmt.Sprintf("%s=%s", KubeAppLabel, KubeDNSAddonAppName),
 		fmt.Sprintf("%s=%s", KubeAppLabel, KubeDNSAutoscalerAppName),
 		fmt.Sprintf("%s=%s", KubeAppLabel, CoreDNSAutoscalerAppName),
+		fmt.Sprintf("%s=%s", AppLabel, KubeAPIAuthAppName),
+		fmt.Sprintf("%s=%s", AppLabel, CattleClusterAgentAppName),
 	}
 	var errgrp errgroup.Group
 	labelQueue := util.GetObjectQueue(labelsList)

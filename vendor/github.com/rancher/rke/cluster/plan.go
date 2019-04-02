@@ -150,7 +150,6 @@ func (c *Cluster) BuildKubeAPIProcess(host *hosts.Host, prefixPath string) v3.Pr
 		"requestheader-extra-headers-prefix": "X-Remote-Extra-",
 		"requestheader-group-headers":        "X-Remote-Group",
 		"requestheader-username-headers":     "X-Remote-User",
-		"repair-malformed-updates":           "false",
 		"secure-port":                        "6443",
 		"service-account-key-file":           pki.GetKeyPath(pki.ServiceAccountTokenKeyName),
 		"service-account-lookup":             "true",
@@ -283,7 +282,7 @@ func (c *Cluster) BuildKubeControllerProcess(prefixPath string) v3.Process {
 	}
 
 	CommandArgs := map[string]string{
-		"address":                          "127.0.0.1",
+		"address":                          "0.0.0.0",
 		"allow-untagged-cloud":             "true",
 		"allocate-node-cidrs":              "true",
 		"cloud-provider":                   c.CloudProvider.Name,
@@ -620,7 +619,7 @@ func (c *Cluster) BuildSchedulerProcess(prefixPath string) v3.Process {
 	CommandArgs := map[string]string{
 		"leader-elect": "true",
 		"v":            "2",
-		"address":      "127.0.0.1",
+		"address":      "0.0.0.0",
 		"profiling":    "false",
 		"kubeconfig":   pki.GetConfigPath(pki.KubeSchedulerCertName),
 	}
@@ -775,6 +774,10 @@ func (c *Cluster) BuildEtcdProcess(host *hosts.Host, etcdHosts []*hosts.Host, pr
 	Env = append(Env, fmt.Sprintf("ETCDCTL_CACERT=%s", pki.GetCertPath(pki.CACertName)))
 	Env = append(Env, fmt.Sprintf("ETCDCTL_CERT=%s", pki.GetCertPath(nodeName)))
 	Env = append(Env, fmt.Sprintf("ETCDCTL_KEY=%s", pki.GetKeyPath(nodeName)))
+
+	if architecture == "aarch64" {
+		architecture = "arm64"
+	}
 	Env = append(Env, fmt.Sprintf("ETCD_UNSUPPORTED_ARCH=%s", architecture))
 
 	Env = append(Env, c.Services.Etcd.ExtraEnv...)
