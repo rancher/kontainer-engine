@@ -150,7 +150,8 @@ func (c *Cluster) setClusterDefaults(ctx context.Context) error {
 		return err
 	}
 
-	if len(c.DNS.Provider) == 0 {
+	if c.DNS == nil || len(c.DNS.Provider) == 0 {
+		c.DNS = &v3.DNSConfig{}
 		c.DNS.Provider = DefaultDNSProvider
 	}
 
@@ -201,7 +202,9 @@ func (c *Cluster) setClusterServicesDefaults() {
 		c.Services.Etcd.ExtraArgs[DefaultEtcdHeartbeatIntervalName] = DefaultEtcdHeartbeatIntervalValue
 	}
 
-	if c.Services.Etcd.BackupConfig != nil && c.Services.Etcd.BackupConfig.Enabled != nil && *c.Services.Etcd.BackupConfig.Enabled {
+	if c.Services.Etcd.BackupConfig != nil &&
+		(c.Services.Etcd.BackupConfig.Enabled == nil ||
+			(c.Services.Etcd.BackupConfig.Enabled != nil && *c.Services.Etcd.BackupConfig.Enabled)) {
 		if c.Services.Etcd.BackupConfig.IntervalHours == 0 {
 			c.Services.Etcd.BackupConfig.IntervalHours = DefaultEtcdBackupConfigIntervalHours
 		}
