@@ -16,6 +16,9 @@ func GenerateKubeAPICertificate(ctx context.Context, certs map[string]Certificat
 	// generate API certificate and key
 	caCrt := certs[CACertName].Certificate
 	caKey := certs[CACertName].Key
+	if caCrt == nil || caKey == nil {
+		return fmt.Errorf("CA Certificate or Key is empty")
+	}
 	kubernetesServiceIP, err := GetKubernetesServiceIP(rkeConfig.Services.KubeAPI.ServiceClusterIPRange)
 	if err != nil {
 		return fmt.Errorf("Failed to get Kubernetes Service IP: %v", err)
@@ -77,6 +80,9 @@ func GenerateKubeControllerCertificate(ctx context.Context, certs map[string]Cer
 	// generate Kube controller-manager certificate and key
 	caCrt := certs[CACertName].Certificate
 	caKey := certs[CACertName].Key
+	if caCrt == nil || caKey == nil {
+		return fmt.Errorf("CA Certificate or Key is empty")
+	}
 	if certs[KubeControllerCertName].Certificate != nil && !rotate {
 		return nil
 	}
@@ -113,6 +119,9 @@ func GenerateKubeSchedulerCertificate(ctx context.Context, certs map[string]Cert
 	// generate Kube scheduler certificate and key
 	caCrt := certs[CACertName].Certificate
 	caKey := certs[CACertName].Key
+	if caCrt == nil || caKey == nil {
+		return fmt.Errorf("CA Certificate or Key is empty")
+	}
 	if certs[KubeSchedulerCertName].Certificate != nil && !rotate {
 		return nil
 	}
@@ -149,6 +158,9 @@ func GenerateKubeProxyCertificate(ctx context.Context, certs map[string]Certific
 	// generate Kube Proxy certificate and key
 	caCrt := certs[CACertName].Certificate
 	caKey := certs[CACertName].Key
+	if caCrt == nil || caKey == nil {
+		return fmt.Errorf("CA Certificate or Key is empty")
+	}
 	if certs[KubeProxyCertName].Certificate != nil && !rotate {
 		return nil
 	}
@@ -185,6 +197,9 @@ func GenerateKubeNodeCertificate(ctx context.Context, certs map[string]Certifica
 	// generate kubelet certificate
 	caCrt := certs[CACertName].Certificate
 	caKey := certs[CACertName].Key
+	if caCrt == nil || caKey == nil {
+		return fmt.Errorf("CA Certificate or Key is empty")
+	}
 	if certs[KubeNodeCertName].Certificate != nil && !rotate {
 		return nil
 	}
@@ -222,6 +237,9 @@ func GenerateKubeAdminCertificate(ctx context.Context, certs map[string]Certific
 	log.Infof(ctx, "[certificates] Generating admin certificates and kubeconfig")
 	caCrt := certs[CACertName].Certificate
 	caKey := certs[CACertName].Key
+	if caCrt == nil || caKey == nil {
+		return fmt.Errorf("CA Certificate or Key is empty")
+	}
 	cpHosts := hosts.NodesToHosts(rkeConfig.Nodes, controlRole)
 	if len(configPath) == 0 {
 		configPath = ClusterConfig
@@ -274,6 +292,9 @@ func GenerateAPIProxyClientCertificate(ctx context.Context, certs map[string]Cer
 	//generate API server proxy client key and certs
 	caCrt := certs[RequestHeaderCACertName].Certificate
 	caKey := certs[RequestHeaderCACertName].Key
+	if caCrt == nil || caKey == nil {
+		return fmt.Errorf("Request Header CA Certificate or Key is empty")
+	}
 	if certs[APIProxyClientCertName].Certificate != nil && !rotate {
 		return nil
 	}
@@ -328,6 +349,9 @@ func GenerateExternalEtcdCertificates(ctx context.Context, certs map[string]Cert
 func GenerateEtcdCertificates(ctx context.Context, certs map[string]CertificatePKI, rkeConfig v3.RancherKubernetesEngineConfig, configPath, configDir string, rotate bool) error {
 	caCrt := certs[CACertName].Certificate
 	caKey := certs[CACertName].Key
+	if caCrt == nil || caKey == nil {
+		return fmt.Errorf("CA Certificate or Key is empty")
+	}
 	kubernetesServiceIP, err := GetKubernetesServiceIP(rkeConfig.Services.KubeAPI.ServiceClusterIPRange)
 	if err != nil {
 		return fmt.Errorf("Failed to get Kubernetes Service IP: %v", err)
@@ -337,7 +361,7 @@ func GenerateEtcdCertificates(ctx context.Context, certs map[string]CertificateP
 	etcdAltNames := GetAltNames(etcdHosts, clusterDomain, kubernetesServiceIP, []string{})
 	for _, host := range etcdHosts {
 		etcdName := GetEtcdCrtName(host.InternalAddress)
-		if _, ok := certs[etcdName]; ok && !rotate {
+		if _, ok := certs[etcdName]; ok && certs[etcdName].CertificatePEM != "" && !rotate {
 			continue
 		}
 		var serviceKey *rsa.PrivateKey
@@ -384,6 +408,9 @@ func GenerateServiceTokenKey(ctx context.Context, certs map[string]CertificatePK
 	privateAPIKey := certs[ServiceAccountTokenKeyName].Key
 	caCrt := certs[CACertName].Certificate
 	caKey := certs[CACertName].Key
+	if caCrt == nil || caKey == nil {
+		return fmt.Errorf("CA Certificate or Key is empty")
+	}
 	if certs[ServiceAccountTokenKeyName].Certificate != nil {
 		return nil
 	}
@@ -429,20 +456,25 @@ func GenerateRKERequestHeaderCACert(ctx context.Context, certs map[string]Certif
 	return nil
 }
 
-func GenerateRKEServicesCerts(ctx context.Context, certs map[string]CertificatePKI, rkeConfig v3.RancherKubernetesEngineConfig, configPath, configDir string, rotate bool) error {
-	RKECerts := []GenFunc{
-		GenerateKubeAPICertificate,
-		GenerateServiceTokenKey,
-		GenerateKubeControllerCertificate,
-		GenerateKubeSchedulerCertificate,
-		GenerateKubeProxyCertificate,
-		GenerateKubeNodeCertificate,
-		GenerateKubeAdminCertificate,
-		GenerateAPIProxyClientCertificate,
-		GenerateEtcdCertificates,
+func GenerateRKEServicesCerts(ctx context.Context, certs map[string]CertificatePKI, rkeConfig v3.RancherKubernetesEngineConfig, configPath, configDir string, rotate, legacy bool) error {
+	RKECerts := map[string]GenFunc{
+		KubeAPICertName:            GenerateKubeAPICertificate,
+		ServiceAccountTokenKeyName: GenerateServiceTokenKey,
+		KubeControllerCertName:     GenerateKubeControllerCertificate,
+		KubeSchedulerCertName:      GenerateKubeSchedulerCertificate,
+		KubeProxyCertName:          GenerateKubeProxyCertificate,
+		KubeNodeCertName:           GenerateKubeNodeCertificate,
+		KubeAdminCertName:          GenerateKubeAdminCertificate,
+		APIProxyClientCertName:     GenerateAPIProxyClientCertificate,
+		EtcdCertName:               GenerateEtcdCertificates,
 	}
-	for _, gen := range RKECerts {
-		if err := gen(ctx, certs, rkeConfig, configPath, configDir, rotate); err != nil {
+	for certName, gen := range RKECerts {
+		rotateCertKey := rotate
+		if legacy && rotate && certName == KubeAPICertName {
+			certs[KubeAPICertName] = CertificatePKI{Key: certs[KubeAPICertName].Key}
+			rotateCertKey = false
+		}
+		if err := gen(ctx, certs, rkeConfig, configPath, configDir, rotateCertKey); err != nil {
 			return err
 		}
 	}
