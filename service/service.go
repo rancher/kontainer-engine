@@ -18,10 +18,10 @@ import (
 	"github.com/rancher/kontainer-engine/drivers/aks"
 	"github.com/rancher/kontainer-engine/drivers/eks"
 	"github.com/rancher/kontainer-engine/drivers/gke"
-	"github.com/rancher/kontainer-engine/drivers/import"
+	kubeimport "github.com/rancher/kontainer-engine/drivers/import"
 	"github.com/rancher/kontainer-engine/drivers/rke"
 	"github.com/rancher/kontainer-engine/types"
-	"github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/util/rand"
@@ -430,7 +430,7 @@ func (r *RunningDriver) Start() (string, error) {
 
 		cmd := exec.CommandContext(processContext, r.Path, strconv.Itoa(port))
 
-		if os.Getenv("DEV_MODE") == "" {
+		if os.Getenv("CATTLE_DEV_MODE") == "" {
 			cred, err := getUserCred()
 			if err != nil {
 				return "", errors.WithMessage(err, "get user cred error")
@@ -440,8 +440,6 @@ func (r *RunningDriver) Start() (string, error) {
 			cmd.SysProcAttr.Credential = cred
 			cmd.SysProcAttr.Chroot = "/opt/jail/driver-jail"
 			cmd.Env = []string{"PATH=/usr/bin"}
-			logrus.Infof("CMD info: %+v", cmd)
-			logrus.Infof("SysProc: %+v", cmd.SysProcAttr)
 		}
 
 		// redirect output to console
