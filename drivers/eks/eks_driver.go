@@ -117,6 +117,8 @@ type state struct {
 	AMI                         string
 	AssociateWorkerNodePublicIP *bool
 
+	CloudformationWorkerTemplate string
+
 	ClusterInfo types.ClusterInfo
 }
 
@@ -245,6 +247,12 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 		Default: &types.Default{DefaultString: "1.10"},
 	}
 
+	driverFlag.Options["worker-cloudformation-template"] = &types.Flag{
+		Type:    types.StringType,
+		Usage:   "The cloudformation template for workers",
+		Default: &types.Default{DefaultString: workerNodesTemplate},
+	}
+
 	return &driverFlag, nil
 }
 
@@ -299,6 +307,8 @@ func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
 
 	// UserData
 	state.UserData = options.GetValueFromDriverOptions(driverOptions, types.StringType, "user-data", "userData").(string)
+
+	state.CloudformationWorkerTemplate = options.GetValueFromDriverOptions(driverOptions, types.StringType, "worker-cloudformation-template").(string)
 
 	return state, state.validate()
 }
@@ -620,7 +630,7 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 	}
 	// amend UserData values into template.
 	// must use %q to safely pass the string
-	workerNodesFinalTemplate := fmt.Sprintf(workerNodesTemplate, state.UserData)
+	workerNodesFinalTemplate := fmt.Sprintf(state.CloudformationWorkerTemplate, state.UserData)
 
 	var volumeSize int64
 	if state.NodeVolumeSize == nil {
