@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -523,7 +524,15 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 		logrus.Infof("VPC info provided, skipping create")
 
 		vpcid = state.VirtualNetwork
-		subnetIds = toStringPointerSlice(state.Subnets)
+
+		re := regexp.MustCompile("^#CONFLUENT_WORKER_SUBNET_IDS=(.*)$")
+		matches := re.FindAllString(strings.Split(state.UserData, "\n")[0], -1)
+
+		if len(matches) < 1 {
+			return info, fmt.Errorf("missing worker subnets userdata hack")
+		}
+
+		subnetIds = toStringPointerSlice(strings.Split(matches[0], ","))
 		securityGroups = toStringPointerSlice(state.SecurityGroups)
 	}
 
