@@ -1,9 +1,11 @@
 package v3
 
 import (
+	"time"
+
 	"github.com/rancher/norman/condition"
 	"github.com/rancher/norman/types"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -152,6 +154,8 @@ type NodePoolSpec struct {
 
 	DisplayName string `json:"displayName"`
 	ClusterName string `json:"clusterName,omitempty" norman:"type=reference[cluster],noupdate,required"`
+
+	DeleteNotReadyAfterSecs time.Duration `json:"deleteNotReadyAfterSecs" norman:"default=0"`
 }
 
 type NodePoolStatus struct {
@@ -225,7 +229,10 @@ type NodeDriver struct {
 }
 
 type NodeDriverStatus struct {
-	Conditions []Condition `json:"conditions"`
+	Conditions                  []Condition `json:"conditions"`
+	AppliedURL                  string      `json:"appliedURL"`
+	AppliedChecksum             string      `json:"appliedChecksum"`
+	AppliedDockerMachineVersion string      `json:"appliedDockerMachineVersion"`
 }
 
 var (

@@ -17,6 +17,7 @@ import (
 
 func SetUpAuthentication(ctx context.Context, kubeCluster, currentCluster *Cluster, fullState *FullState) error {
 	if kubeCluster.AuthnStrategies[AuthnX509Provider] {
+		compareCerts(ctx, kubeCluster, currentCluster)
 		kubeCluster.Certificates = fullState.DesiredState.CertificatesBundle
 		return nil
 	}
@@ -222,4 +223,23 @@ func GetClusterCertsFromNodes(ctx context.Context, kubeCluster *Cluster) (map[st
 	}
 	// reporting the last error only.
 	return nil, err
+}
+
+func compareCerts(ctx context.Context, kubeCluster, currentCluster *Cluster) {
+	// check if relevant certs were changed and if so set force deploy to true
+	// to deploy certs with new SANs
+	if currentCluster != nil {
+		for _, certName := range []string{
+			pki.KubeAPICertName,
+			pki.EtcdCertName,
+		} {
+			currentCert := currentCluster.Certificates[certName]
+			desiredCert := kubeCluster.Certificates[certName]
+			if desiredCert.CertificatePEM != currentCert.CertificatePEM {
+				log.Infof(ctx, "[certificates] %s certificate changed, force deploying certs", certName)
+				kubeCluster.ForceDeployCerts = true
+				return
+			}
+		}
+	}
 }

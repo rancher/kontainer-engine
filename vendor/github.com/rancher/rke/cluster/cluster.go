@@ -42,6 +42,7 @@ type Cluster struct {
 	DockerDialerFactory              hosts.DialerFactory
 	EtcdHosts                        []*hosts.Host
 	EtcdReadyHosts                   []*hosts.Host
+	ForceDeployCerts                 bool
 	InactiveHosts                    []*hosts.Host
 	K8sWrapTransport                 k8s.WrapTransport
 	KubeClient                       *kubernetes.Clientset
@@ -83,12 +84,12 @@ const (
 	serviceAccountTokenFileParam = "service-account-key-file"
 )
 
-func (c *Cluster) DeployControlPlane(ctx context.Context) error {
+func (c *Cluster) DeployControlPlane(ctx context.Context, svcOptions *v3.KubernetesServicesOptions) error {
 	// Deploy Etcd Plane
 	etcdNodePlanMap := make(map[string]v3.RKEConfigNodePlan)
 	// Build etcd node plan map
 	for _, etcdHost := range c.EtcdHosts {
-		etcdNodePlanMap[etcdHost.Address] = BuildRKEConfigNodePlan(ctx, c, etcdHost, etcdHost.DockerInfo)
+		etcdNodePlanMap[etcdHost.Address] = BuildRKEConfigNodePlan(ctx, c, etcdHost, etcdHost.DockerInfo, svcOptions)
 	}
 
 	if len(c.Services.Etcd.ExternalURLs) > 0 {
@@ -103,7 +104,7 @@ func (c *Cluster) DeployControlPlane(ctx context.Context) error {
 	cpNodePlanMap := make(map[string]v3.RKEConfigNodePlan)
 	// Build cp node plan map
 	for _, cpHost := range c.ControlPlaneHosts {
-		cpNodePlanMap[cpHost.Address] = BuildRKEConfigNodePlan(ctx, c, cpHost, cpHost.DockerInfo)
+		cpNodePlanMap[cpHost.Address] = BuildRKEConfigNodePlan(ctx, c, cpHost, cpHost.DockerInfo, svcOptions)
 	}
 	if err := services.RunControlPlane(ctx, c.ControlPlaneHosts,
 		c.LocalConnDialerFactory,
@@ -118,13 +119,13 @@ func (c *Cluster) DeployControlPlane(ctx context.Context) error {
 	return nil
 }
 
-func (c *Cluster) DeployWorkerPlane(ctx context.Context) error {
+func (c *Cluster) DeployWorkerPlane(ctx context.Context, svcOptions *v3.KubernetesServicesOptions) error {
 	// Deploy Worker plane
 	workerNodePlanMap := make(map[string]v3.RKEConfigNodePlan)
 	// Build cp node plan map
 	allHosts := hosts.GetUniqueHostList(c.EtcdHosts, c.ControlPlaneHosts, c.WorkerHosts)
 	for _, workerHost := range allHosts {
-		workerNodePlanMap[workerHost.Address] = BuildRKEConfigNodePlan(ctx, c, workerHost, workerHost.DockerInfo)
+		workerNodePlanMap[workerHost.Address] = BuildRKEConfigNodePlan(ctx, c, workerHost, workerHost.DockerInfo, svcOptions)
 	}
 	if err := services.RunWorkerPlane(ctx, allHosts,
 		c.LocalConnDialerFactory,
@@ -170,7 +171,7 @@ func InitClusterObject(ctx context.Context, rkeConfig *v3.RancherKubernetesEngin
 	}
 
 	// Setting cluster Defaults
-	err := c.setClusterDefaults(ctx)
+	err := c.setClusterDefaults(ctx, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -323,8 +324,8 @@ func ApplyAuthzResources(ctx context.Context, rkeConfig v3.RancherKubernetesEngi
 	return nil
 }
 
-func (c *Cluster) deployAddons(ctx context.Context) error {
-	if err := c.deployK8sAddOns(ctx); err != nil {
+func (c *Cluster) deployAddons(ctx context.Context, data map[string]interface{}) error {
+	if err := c.deployK8sAddOns(ctx, data); err != nil {
 		return err
 	}
 	if err := c.deployUserAddOns(ctx); err != nil {
@@ -452,6 +453,7 @@ func ConfigureCluster(
 	crtBundle map[string]pki.CertificatePKI,
 	flags ExternalFlags,
 	dailersOptions hosts.DialersOptions,
+	data map[string]interface{},
 	useKubectl bool) error {
 	// dialer factories are not needed here since we are not uses docker only k8s jobs
 	kubeCluster, err := InitClusterObject(ctx, &rkeConfig, flags)
@@ -464,13 +466,13 @@ func ConfigureCluster(
 	kubeCluster.UseKubectlDeploy = useKubectl
 	if len(kubeCluster.ControlPlaneHosts) > 0 {
 		kubeCluster.Certificates = crtBundle
-		if err := kubeCluster.deployNetworkPlugin(ctx); err != nil {
+		if err := kubeCluster.deployNetworkPlugin(ctx, data); err != nil {
 			if err, ok := err.(*addonError); ok && err.isCritical {
 				return err
 			}
 			log.Warnf(ctx, "Failed to deploy addon execute job [%s]: %v", NetworkPluginResourceName, err)
 		}
-		if err := kubeCluster.deployAddons(ctx); err != nil {
+		if err := kubeCluster.deployAddons(ctx, data); err != nil {
 			return err
 		}
 	}

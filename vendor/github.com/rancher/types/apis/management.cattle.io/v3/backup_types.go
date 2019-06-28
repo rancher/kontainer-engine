@@ -3,7 +3,7 @@ package v3
 import (
 	"github.com/rancher/norman/condition"
 	"github.com/rancher/norman/types"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -35,6 +35,8 @@ type S3BackupConfig struct {
 	Region string `yaml:"region" json:"region,omitempty"`
 	// Endpoint is used if this is not an AWS API
 	Endpoint string `yaml:"endpoint" json:"endpoint"`
+	// CustomCA is used to connect to custom s3 endpoints
+	CustomCA string `yaml:"custom_ca" json:"customCa,omitempty"`
 }
 type EtcdBackup struct {
 	types.Namespaced
