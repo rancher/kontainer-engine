@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"github.com/rancher/rke/metadata"
 	"strings"
 
 	"github.com/rancher/rke/cloudprovider"
@@ -11,7 +12,9 @@ import (
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/services"
 	"github.com/rancher/rke/templates"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
+	"github.com/rancher/rke/util"
+	"github.com/rancher/types/apis/management.cattle.io/v3"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -22,8 +25,6 @@ const (
 	DefaultClusterDomain         = "cluster.local"
 	DefaultClusterName           = "local"
 	DefaultClusterSSHKeyPath     = "~/.ssh/id_rsa"
-
-	DefaultK8sVersion = v3.DefaultK8s
 
 	DefaultSSHPort        = "22"
 	DefaultDockerSockPath = "/var/run/docker.sock"
@@ -44,12 +45,18 @@ const (
 	DefaultMonitoringProvider            = "metrics-server"
 	DefaultEtcdBackupConfigIntervalHours = 12
 	DefaultEtcdBackupConfigRetention     = 6
-	DefaultDNSProvider                   = "kube-dns"
+
+	DefaultDNSProvider = "kube-dns"
+	K8sVersionCoreDNS  = "1.14.0"
 
 	DefaultEtcdHeartbeatIntervalName  = "heartbeat-interval"
 	DefaultEtcdHeartbeatIntervalValue = "500"
 	DefaultEtcdElectionTimeoutName    = "election-timeout"
 	DefaultEtcdElectionTimeoutValue   = "5000"
+
+	DefaultFlannelBackendVxLan     = "vxlan"
+	DefaultFlannelBackendVxLanPort = "8472"
+	DefaultFlannelBackendVxLanVNI  = "1"
 )
 
 type ExternalFlags struct {
@@ -76,7 +83,7 @@ func setDefaultIfEmpty(varName *string, defaultValue string) {
 	}
 }
 
-func (c *Cluster) setClusterDefaults(ctx context.Context) error {
+func (c *Cluster) setClusterDefaults(ctx context.Context, flags ExternalFlags) error {
 	if len(c.SSHKeyPath) == 0 {
 		c.SSHKeyPath = DefaultClusterSSHKeyPath
 	}
@@ -129,7 +136,7 @@ func (c *Cluster) setClusterDefaults(ctx context.Context) error {
 		c.ClusterName = DefaultClusterName
 	}
 	if len(c.Version) == 0 {
-		c.Version = DefaultK8sVersion
+		c.Version = metadata.DefaultK8sVersion
 	}
 	if c.AddonJobTimeout == 0 {
 		c.AddonJobTimeout = k8s.DefaultTimeout
@@ -150,11 +157,15 @@ func (c *Cluster) setClusterDefaults(ctx context.Context) error {
 		return err
 	}
 
-	if c.DNS == nil || len(c.DNS.Provider) == 0 {
-		c.DNS = &v3.DNSConfig{}
-		c.DNS.Provider = DefaultDNSProvider
+	if c.RancherKubernetesEngineConfig.RotateCertificates != nil ||
+		flags.CustomCerts {
+		c.ForceDeployCerts = true
 	}
 
+	err = c.setClusterDNSDefaults()
+	if err != nil {
+		return err
+	}
 	c.setClusterServicesDefaults()
 	c.setClusterNetworkDefaults()
 	c.setClusterAuthnDefaults()
@@ -217,7 +228,7 @@ func (c *Cluster) setClusterServicesDefaults() {
 func (c *Cluster) setClusterImageDefaults() error {
 	var privRegURL string
 
-	imageDefaults, ok := v3.AllK8sVersions[c.Version]
+	imageDefaults, ok := metadata.K8sVersionToRKESystemImages[c.Version]
 	if !ok {
 		return nil
 	}
@@ -264,6 +275,32 @@ func (c *Cluster) setClusterImageDefaults() error {
 	return nil
 }
 
+func (c *Cluster) setClusterDNSDefaults() error {
+	if c.DNS != nil && len(c.DNS.Provider) != 0 {
+		return nil
+	}
+	clusterSemVer, err := util.StrToSemVer(c.Version)
+	if err != nil {
+		return err
+	}
+	logrus.Debugf("No DNS provider configured, setting default based on cluster version [%s]", clusterSemVer)
+	K8sVersionCoreDNSSemVer, err := util.StrToSemVer(K8sVersionCoreDNS)
+	if err != nil {
+		return err
+	}
+	// Default DNS provider for cluster version 1.14.0 and higher is coredns
+	ClusterDNSProvider := CoreDNSProvider
+	// If cluster version is less than 1.14.0 (K8sVersionCoreDNSSemVer), use kube-dns
+	if clusterSemVer.LessThan(*K8sVersionCoreDNSSemVer) {
+		logrus.Debugf("Cluster version [%s] is less than version [%s], using DNS provider [%s]", clusterSemVer, K8sVersionCoreDNSSemVer, DefaultDNSProvider)
+		ClusterDNSProvider = DefaultDNSProvider
+	}
+	c.DNS = &v3.DNSConfig{}
+	c.DNS.Provider = ClusterDNSProvider
+	logrus.Debugf("DNS provider set to [%s]", ClusterDNSProvider)
+	return nil
+}
+
 func (c *Cluster) setClusterNetworkDefaults() {
 	setDefaultIfEmpty(&c.Network.Plugin, DefaultNetworkPlugin)
 
@@ -280,11 +317,15 @@ func (c *Cluster) setClusterNetworkDefaults() {
 		}
 	case FlannelNetworkPlugin:
 		networkPluginConfigDefaultsMap = map[string]string{
-			FlannelBackendType: "vxlan",
+			FlannelBackendType:                 DefaultFlannelBackendVxLan,
+			FlannelBackendPort:                 DefaultFlannelBackendVxLanPort,
+			FlannelBackendVxLanNetworkIdentify: DefaultFlannelBackendVxLanVNI,
 		}
 	case CanalNetworkPlugin:
 		networkPluginConfigDefaultsMap = map[string]string{
-			CanalFlannelBackendType: "vxlan",
+			CanalFlannelBackendType:                 DefaultFlannelBackendVxLan,
+			CanalFlannelBackendPort:                 DefaultFlannelBackendVxLanPort,
+			CanalFlannelBackendVxLanNetworkIdentify: DefaultFlannelBackendVxLanVNI,
 		}
 	}
 	if c.Network.CalicoNetworkProvider != nil {

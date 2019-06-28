@@ -7,7 +7,7 @@ import (
 	"github.com/rancher/norman/condition"
 	"github.com/rancher/norman/types"
 	"github.com/sirupsen/logrus"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/version"
 )
@@ -20,6 +20,18 @@ func init() {
 type ClusterConditionType string
 
 const (
+	ClusterActionGenerateKubeconfig    = "generateKubeconfig"
+	ClusterActionImportYaml            = "importYaml"
+	ClusterActionExportYaml            = "exportYaml"
+	ClusterActionViewMonitoring        = "viewMonitoring"
+	ClusterActionEditMonitoring        = "editMonitoring"
+	ClusterActionEnableMonitoring      = "enableMonitoring"
+	ClusterActionDisableMonitoring     = "disableMonitoring"
+	ClusterActionBackupEtcd            = "backupEtcd"
+	ClusterActionRestoreFromEtcdBackup = "restoreFromEtcdBackup"
+	ClusterActionRotateCertificates    = "rotateCertificates"
+	ClusterActionRunCISScan            = "runSecurityScan"
+
 	// ClusterConditionReady Cluster ready to serve API (healthy when true, unhealthy when false)
 	ClusterConditionReady          condition.Cond = "Ready"
 	ClusterConditionPending        condition.Cond = "Pending"
@@ -73,18 +85,10 @@ type Cluster struct {
 	Status ClusterStatus `json:"status"`
 }
 
-type ClusterSpec struct {
-	DisplayName                          string                         `json:"displayName" norman:"required"`
-	Description                          string                         `json:"description"`
-	Internal                             bool                           `json:"internal" norman:"nocreate,noupdate"`
+type ClusterSpecBase struct {
 	DesiredAgentImage                    string                         `json:"desiredAgentImage"`
 	DesiredAuthImage                     string                         `json:"desiredAuthImage"`
-	ImportedConfig                       *ImportedConfig                `json:"importedConfig,omitempty" norman:"nocreate,noupdate"`
-	GoogleKubernetesEngineConfig         *MapStringInterface            `json:"googleKubernetesEngineConfig,omitempty"`
-	AzureKubernetesServiceConfig         *MapStringInterface            `json:"azureKubernetesServiceConfig,omitempty"`
 	RancherKubernetesEngineConfig        *RancherKubernetesEngineConfig `json:"rancherKubernetesEngineConfig,omitempty"`
-	AmazonElasticContainerServiceConfig  *MapStringInterface            `json:"amazonElasticContainerServiceConfig,omitempty"`
-	GenericEngineConfig                  *MapStringInterface            `json:"genericEngineConfig,omitempty"`
 	DefaultPodSecurityPolicyTemplateName string                         `json:"defaultPodSecurityPolicyTemplateName,omitempty" norman:"type=reference[podSecurityPolicyTemplate]"`
 	DefaultClusterRoleForProjectMembers  string                         `json:"defaultClusterRoleForProjectMembers,omitempty" norman:"type=reference[roleTemplate]"`
 	DockerRootDir                        string                         `json:"dockerRootDir,omitempty" norman:"default=/var/lib/docker"`
@@ -92,6 +96,21 @@ type ClusterSpec struct {
 	EnableClusterAlerting                bool                           `json:"enableClusterAlerting" norman:"default=false"`
 	EnableClusterMonitoring              bool                           `json:"enableClusterMonitoring" norman:"default=false"`
 	LocalClusterAuthEndpoint             LocalClusterAuthEndpoint       `json:"localClusterAuthEndpoint,omitempty"`
+}
+
+type ClusterSpec struct {
+	ClusterSpecBase
+	DisplayName                         string              `json:"displayName" norman:"required"`
+	Description                         string              `json:"description"`
+	Internal                            bool                `json:"internal" norman:"nocreate,noupdate"`
+	ImportedConfig                      *ImportedConfig     `json:"importedConfig,omitempty" norman:"nocreate,noupdate"`
+	GoogleKubernetesEngineConfig        *MapStringInterface `json:"googleKubernetesEngineConfig,omitempty"`
+	AzureKubernetesServiceConfig        *MapStringInterface `json:"azureKubernetesServiceConfig,omitempty"`
+	AmazonElasticContainerServiceConfig *MapStringInterface `json:"amazonElasticContainerServiceConfig,omitempty"`
+	GenericEngineConfig                 *MapStringInterface `json:"genericEngineConfig,omitempty"`
+	ClusterTemplateName                 string              `json:"clusterTemplateName,omitempty" norman:"type=reference[clusterTemplate]"`
+	ClusterTemplateRevisionName         string              `json:"clusterTemplateRevisionName,omitempty" norman:"type=reference[clusterTemplateRevision]"`
+	ClusterTemplateAnswers              Answer              `json:"answers,omitempty"`
 }
 
 type ImportedConfig struct {
@@ -104,24 +123,26 @@ type ClusterStatus struct {
 	Conditions []ClusterCondition `json:"conditions,omitempty"`
 	// Component statuses will represent cluster's components (etcd/controller/scheduler) health
 	// https://kubernetes.io/docs/api-reference/v1.8/#componentstatus-v1-core
-	Driver                               string                   `json:"driver"`
-	AgentImage                           string                   `json:"agentImage"`
-	AuthImage                            string                   `json:"authImage"`
-	ComponentStatuses                    []ClusterComponentStatus `json:"componentStatuses,omitempty"`
-	APIEndpoint                          string                   `json:"apiEndpoint,omitempty"`
-	ServiceAccountToken                  string                   `json:"serviceAccountToken,omitempty"`
-	CACert                               string                   `json:"caCert,omitempty"`
-	Capacity                             v1.ResourceList          `json:"capacity,omitempty"`
-	Allocatable                          v1.ResourceList          `json:"allocatable,omitempty"`
-	AppliedSpec                          ClusterSpec              `json:"appliedSpec,omitempty"`
-	FailedSpec                           *ClusterSpec             `json:"failedSpec,omitempty"`
-	Requested                            v1.ResourceList          `json:"requested,omitempty"`
-	Limits                               v1.ResourceList          `json:"limits,omitempty"`
-	Version                              *version.Info            `json:"version,omitempty"`
-	AppliedPodSecurityPolicyTemplateName string                   `json:"appliedPodSecurityPolicyTemplateId"`
-	AppliedEnableNetworkPolicy           bool                     `json:"appliedEnableNetworkPolicy" norman:"nocreate,noupdate,default=false"`
-	Capabilities                         Capabilities             `json:"capabilities,omitempty"`
-	MonitoringStatus                     *MonitoringStatus        `json:"monitoringStatus,omitempty" norman:"nocreate,noupdate"`
+	Driver                               string                    `json:"driver"`
+	AgentImage                           string                    `json:"agentImage"`
+	AuthImage                            string                    `json:"authImage"`
+	ComponentStatuses                    []ClusterComponentStatus  `json:"componentStatuses,omitempty"`
+	APIEndpoint                          string                    `json:"apiEndpoint,omitempty"`
+	ServiceAccountToken                  string                    `json:"serviceAccountToken,omitempty"`
+	CACert                               string                    `json:"caCert,omitempty"`
+	Capacity                             v1.ResourceList           `json:"capacity,omitempty"`
+	Allocatable                          v1.ResourceList           `json:"allocatable,omitempty"`
+	AppliedSpec                          ClusterSpec               `json:"appliedSpec,omitempty"`
+	FailedSpec                           *ClusterSpec              `json:"failedSpec,omitempty"`
+	Requested                            v1.ResourceList           `json:"requested,omitempty"`
+	Limits                               v1.ResourceList           `json:"limits,omitempty"`
+	Version                              *version.Info             `json:"version,omitempty"`
+	AppliedPodSecurityPolicyTemplateName string                    `json:"appliedPodSecurityPolicyTemplateId"`
+	AppliedEnableNetworkPolicy           bool                      `json:"appliedEnableNetworkPolicy" norman:"nocreate,noupdate,default=false"`
+	Capabilities                         Capabilities              `json:"capabilities,omitempty"`
+	MonitoringStatus                     *MonitoringStatus         `json:"monitoringStatus,omitempty" norman:"nocreate,noupdate"`
+	IstioEnabled                         bool                      `json:"istioEnabled,omitempty" norman:"nocreate,noupdate,default=false"`
+	CertificatesExpiration               map[string]CertExpiration `json:"certificatesExpiration,omitempty"`
 }
 
 type ClusterComponentStatus struct {
@@ -257,4 +278,8 @@ type LocalClusterAuthEndpoint struct {
 	Enabled bool   `json:"enabled"`
 	FQDN    string `json:"fqdn,omitempty"`
 	CACerts string `json:"caCerts,omitempty"`
+}
+
+type CertExpiration struct {
+	ExpirationDate string `json:"expirationDate,omitempty"`
 }

@@ -24,7 +24,7 @@ const (
 	EtcdPlaneNodesReplacedErr = "Etcd plane nodes are replaced. Stopping provisioning. Please restore your cluster from backup."
 )
 
-func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster, flags ExternalFlags) error {
+func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster, flags ExternalFlags, svcOptions *v3.KubernetesServicesOptions) error {
 	log.Infof(ctx, "[reconcile] Reconciling cluster state")
 	kubeCluster.UpdateWorkersOnly = flags.UpdateOnly
 	if currentCluster == nil {
@@ -40,7 +40,7 @@ func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster,
 	// sync node labels to define the toDelete labels
 	syncLabels(ctx, currentCluster, kubeCluster)
 
-	if err := reconcileEtcd(ctx, currentCluster, kubeCluster, kubeClient); err != nil {
+	if err := reconcileEtcd(ctx, currentCluster, kubeCluster, kubeClient, svcOptions); err != nil {
 		return fmt.Errorf("Failed to reconcile etcd plane: %v", err)
 	}
 
@@ -51,7 +51,7 @@ func ReconcileCluster(ctx context.Context, kubeCluster, currentCluster *Cluster,
 	if err := reconcileControl(ctx, currentCluster, kubeCluster, kubeClient); err != nil {
 		return err
 	}
-	if flags.CustomCerts {
+	if kubeCluster.ForceDeployCerts {
 		if err := restartComponentsWhenCertChanges(ctx, currentCluster, kubeCluster); err != nil {
 			return err
 		}
@@ -67,7 +67,7 @@ func reconcileWorker(ctx context.Context, currentCluster, kubeCluster *Cluster, 
 	wpToDelete := hosts.GetToDeleteHosts(currentCluster.WorkerHosts, kubeCluster.WorkerHosts, kubeCluster.InactiveHosts, false)
 	for _, toDeleteHost := range wpToDelete {
 		toDeleteHost.IsWorker = false
-		if err := hosts.DeleteNode(ctx, toDeleteHost, kubeClient, toDeleteHost.IsControl, kubeCluster.CloudProvider.Name); err != nil {
+		if err := hosts.DeleteNode(ctx, toDeleteHost, kubeClient, toDeleteHost.IsControl || toDeleteHost.IsEtcd, kubeCluster.CloudProvider.Name); err != nil {
 			return fmt.Errorf("Failed to delete worker node [%s] from cluster: %v", toDeleteHost.Address, err)
 		}
 		// attempting to clean services/files on the host
@@ -165,7 +165,7 @@ func reconcileHost(ctx context.Context, toDeleteHost *hosts.Host, worker, etcd b
 	return nil
 }
 
-func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, kubeClient *kubernetes.Clientset) error {
+func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, kubeClient *kubernetes.Clientset, svcOptions *v3.KubernetesServicesOptions) error {
 	log.Infof(ctx, "[reconcile] Check etcd hosts to be deleted")
 	if isEtcdPlaneReplaced(ctx, currentCluster, kubeCluster) {
 		logrus.Warnf("%v", EtcdPlaneNodesReplacedErr)
@@ -181,7 +181,7 @@ func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, ku
 			log.Warnf(ctx, "[reconcile] %v", err)
 			continue
 		}
-		if err := hosts.DeleteNode(ctx, etcdHost, kubeClient, etcdHost.IsControl, kubeCluster.CloudProvider.Name); err != nil {
+		if err := hosts.DeleteNode(ctx, etcdHost, kubeClient, etcdHost.IsControl || etcdHost.IsWorker, kubeCluster.CloudProvider.Name); err != nil {
 			log.Warnf(ctx, "Failed to delete etcd node [%s] from cluster: %v", etcdHost.Address, err)
 			continue
 		}
@@ -213,7 +213,7 @@ func reconcileEtcd(ctx context.Context, currentCluster, kubeCluster *Cluster, ku
 
 		etcdNodePlanMap := make(map[string]v3.RKEConfigNodePlan)
 		for _, etcdReadyHost := range kubeCluster.EtcdReadyHosts {
-			etcdNodePlanMap[etcdReadyHost.Address] = BuildRKEConfigNodePlan(ctx, kubeCluster, etcdReadyHost, etcdReadyHost.DockerInfo)
+			etcdNodePlanMap[etcdReadyHost.Address] = BuildRKEConfigNodePlan(ctx, kubeCluster, etcdReadyHost, etcdReadyHost.DockerInfo, svcOptions)
 		}
 		// this will start the newly added etcd node and make sure it started correctly before restarting other node
 		// https://github.com/etcd-io/etcd/blob/master/Documentation/op-guide/runtime-configuration.md#add-a-new-member
@@ -259,7 +259,7 @@ func cleanControlNode(ctx context.Context, kubeCluster, currentCluster *Cluster,
 
 	// if I am deleting a node that's already in the config, it's probably being replaced and I shouldn't remove it  from ks8
 	if !hosts.IsNodeInList(toDeleteHost, kubeCluster.ControlPlaneHosts) {
-		if err := hosts.DeleteNode(ctx, toDeleteHost, kubeClient, toDeleteHost.IsWorker, kubeCluster.CloudProvider.Name); err != nil {
+		if err := hosts.DeleteNode(ctx, toDeleteHost, kubeClient, toDeleteHost.IsWorker || toDeleteHost.IsEtcd, kubeCluster.CloudProvider.Name); err != nil {
 			return fmt.Errorf("Failed to delete controlplane node [%s] from cluster: %v", toDeleteHost.Address, err)
 		}
 	}

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/base64"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -24,11 +25,12 @@ import (
 )
 
 const (
-	EtcdSnapshotPath     = "/opt/rke/etcd-snapshots/"
-	EtcdRestorePath      = "/opt/rke/etcd-snapshots-restore/"
-	EtcdDataDir          = "/var/lib/rancher/etcd/"
-	EtcdInitWaitTime     = 10
-	EtcdSnapshotWaitTime = 5
+	EtcdSnapshotPath                = "/opt/rke/etcd-snapshots/"
+	EtcdRestorePath                 = "/opt/rke/etcd-snapshots-restore/"
+	EtcdDataDir                     = "/var/lib/rancher/etcd/"
+	EtcdInitWaitTime                = 10
+	EtcdSnapshotWaitTime            = 5
+	EtcdSnapshotCompressedExtension = "zip"
 )
 
 func RunEtcdPlane(
@@ -52,10 +54,10 @@ func RunEtcdPlane(
 			return err
 		}
 		if *es.Snapshot == true {
-			if err := RunEtcdSnapshotSave(ctx, host, prsMap, alpineImage, EtcdSnapshotContainerName, false, es); err != nil {
+			if err := RunEtcdSnapshotSave(ctx, host, prsMap, util.DefaultRKETools, EtcdSnapshotContainerName, false, es); err != nil {
 				return err
 			}
-			if err := pki.SaveBackupBundleOnHost(ctx, host, alpineImage, EtcdSnapshotPath, prsMap); err != nil {
+			if err := pki.SaveBackupBundleOnHost(ctx, host, util.DefaultRKETools, EtcdSnapshotPath, prsMap); err != nil {
 				return err
 			}
 		} else {
@@ -269,12 +271,8 @@ func IsEtcdMember(ctx context.Context, etcdHost *hosts.Host, etcdHosts []*hosts.
 }
 
 func RunEtcdSnapshotSave(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry, etcdSnapshotImage string, name string, once bool, es v3.ETCDService) error {
-	log.Infof(ctx, "[etcd] Saving snapshot [%s] on host [%s]", name, etcdHost.Address)
 	backupCmd := "etcd-backup"
 	restartPolicy := "always"
-	if !util.IsRancherBackupSupported(etcdSnapshotImage) {
-		backupCmd = "rolling-backup"
-	}
 	imageCfg := &container.Config{
 		Cmd: []string{
 			"/opt/rke-tools/rke-etcd-backup",
@@ -289,9 +287,11 @@ func RunEtcdSnapshotSave(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 		Image: etcdSnapshotImage,
 	}
 	if once {
+		log.Infof(ctx, "[etcd] Running snapshot save once on host [%s]", etcdHost.Address)
 		imageCfg.Cmd = append(imageCfg.Cmd, "--once")
 		restartPolicy = "no"
 	} else if es.BackupConfig == nil {
+		log.Infof(ctx, "[etcd] Running snapshot container [%s] on host [%s]", EtcdSnapshotOnceContainerName, etcdHost.Address)
 		imageCfg.Cmd = append(imageCfg.Cmd, "--retention="+es.Retention)
 		imageCfg.Cmd = append(imageCfg.Cmd, "--creation="+es.Creation)
 	}
@@ -301,7 +301,7 @@ func RunEtcdSnapshotSave(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 	}
 	hostCfg := &container.HostConfig{
 		Binds: []string{
-			fmt.Sprintf("%s:/backup", EtcdSnapshotPath),
+			fmt.Sprintf("%s:/backup:z", EtcdSnapshotPath),
 			fmt.Sprintf("%s:/etc/kubernetes:z", path.Join(etcdHost.PrefixPath, "/etc/kubernetes"))},
 		NetworkMode:   container.NetworkMode("host"),
 		RestartPolicy: container.RestartPolicy{Name: restartPolicy},
@@ -368,13 +368,16 @@ func DownloadEtcdSnapshotFromS3(ctx context.Context, etcdHost *hosts.Host, prsMa
 		},
 		Image: etcdSnapshotImage,
 	}
-
+	if s3Backend.CustomCA != "" {
+		caStr := base64.StdEncoding.EncodeToString([]byte(s3Backend.CustomCA))
+		imageCfg.Cmd = append(imageCfg.Cmd, "--s3-endpoint-ca="+caStr)
+	}
 	hostCfg := &container.HostConfig{
 		Binds: []string{
-			fmt.Sprintf("%s:/backup", EtcdSnapshotPath),
+			fmt.Sprintf("%s:/backup:z", EtcdSnapshotPath),
 			fmt.Sprintf("%s:/etc/kubernetes:z", path.Join(etcdHost.PrefixPath, "/etc/kubernetes"))},
 		NetworkMode:   container.NetworkMode("host"),
-		RestartPolicy: container.RestartPolicy{Name: "always"},
+		RestartPolicy: container.RestartPolicy{Name: "no"},
 	}
 	if err := docker.DoRemoveContainer(ctx, etcdHost.DClient, EtcdDownloadBackupContainerName, etcdHost.Address); err != nil {
 		return err
@@ -457,7 +460,7 @@ func RestoreEtcdSnapshot(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 
 func RunEtcdSnapshotRemove(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry, etcdSnapshotImage string, name string, once bool, es v3.ETCDService) error {
 	log.Infof(ctx, "[etcd] Removing snapshot [%s] from host [%s]", name, etcdHost.Address)
-	fullPath := fmt.Sprintf("/backup/%s", name)
+	fullPath := fmt.Sprintf("/backup/%s{,.%s}", name, EtcdSnapshotCompressedExtension)
 	// Make sure we have a safe path to remove
 	safePath, err := filepath.Match("/backup/*", fullPath)
 	if err != nil {
@@ -469,15 +472,13 @@ func RunEtcdSnapshotRemove(ctx context.Context, etcdHost *hosts.Host, prsMap map
 
 	imageCfg := &container.Config{
 		Cmd: []string{
-			"rm",
-			"-f",
-			fullPath,
+			"sh", "-c", fmt.Sprintf("rm -f %s", fullPath),
 		},
 		Image: etcdSnapshotImage,
 	}
 	hostCfg := &container.HostConfig{
 		Binds: []string{
-			fmt.Sprintf("%s:/backup", EtcdSnapshotPath),
+			fmt.Sprintf("%s:/backup:z", EtcdSnapshotPath),
 		},
 		RestartPolicy: container.RestartPolicy{Name: "no"},
 	}
@@ -505,13 +506,14 @@ func RunEtcdSnapshotRemove(ctx context.Context, etcdHost *hosts.Host, prsMap map
 func GetEtcdSnapshotChecksum(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry, alpineImage, snapshotName string) (string, error) {
 	var checksum string
 	var err error
+	var stderr string
 
+	// compressedSnapshotPath := fmt.Sprintf("%s%s.%s", EtcdSnapshotPath, snapshotName, EtcdSnapshotCompressedExtension)
 	snapshotPath := fmt.Sprintf("%s%s", EtcdSnapshotPath, snapshotName)
 	imageCfg := &container.Config{
 		Cmd: []string{
 			"sh", "-c", strings.Join([]string{
-				"md5sum", snapshotPath,
-				"|", "cut", "-f1", "-d' '", "|", "tr", "-d", "'\n'"}, " "),
+				"if [ -f ", snapshotPath, " ]; then md5sum ", snapshotPath, " | cut -f1 -d' ' | tr -d '\n'; else echo 'snapshot file does not exist' >&2; fi"}, ""),
 		},
 		Image: alpineImage,
 	}
@@ -526,9 +528,13 @@ func GetEtcdSnapshotChecksum(ctx context.Context, etcdHost *hosts.Host, prsMap m
 	if _, err := docker.WaitForContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdChecksumContainerName); err != nil {
 		return checksum, err
 	}
-	_, checksum, err = docker.GetContainerLogsStdoutStderr(ctx, etcdHost.DClient, EtcdChecksumContainerName, "1", false)
+	stderr, checksum, err = docker.GetContainerLogsStdoutStderr(ctx, etcdHost.DClient, EtcdChecksumContainerName, "1", false)
 	if err != nil {
 		return checksum, err
+	}
+	if stderr != "" {
+		return checksum, fmt.Errorf("Error output not nil from snapshot checksum container [%s]: %s", EtcdChecksumContainerName, stderr)
+
 	}
 	if err := docker.RemoveContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdChecksumContainerName); err != nil {
 		return checksum, err
@@ -551,6 +557,10 @@ func configS3BackupImgCmd(ctx context.Context, imageCfg *container.Config, bc *v
 			"--s3-bucketName=" + bc.S3BackupConfig.BucketName,
 			"--s3-region=" + bc.S3BackupConfig.Region,
 		}...)
+		if bc.S3BackupConfig.CustomCA != "" {
+			caStr := base64.StdEncoding.EncodeToString([]byte(bc.S3BackupConfig.CustomCA))
+			cmd = append(cmd, "--s3-endpoint-ca="+caStr)
+		}
 	}
 	imageCfg.Cmd = append(imageCfg.Cmd, cmd...)
 	return imageCfg
@@ -574,7 +584,7 @@ func StartBackupServer(ctx context.Context, etcdHost *hosts.Host, prsMap map[str
 
 	hostCfg := &container.HostConfig{
 		Binds: []string{
-			fmt.Sprintf("%s:/backup", EtcdSnapshotPath),
+			fmt.Sprintf("%s:/backup:z", EtcdSnapshotPath),
 			fmt.Sprintf("%s:/etc/kubernetes:z", path.Join(etcdHost.PrefixPath, "/etc/kubernetes"))},
 		NetworkMode:   container.NetworkMode("host"),
 		RestartPolicy: container.RestartPolicy{Name: "no"},
@@ -622,7 +632,7 @@ func DownloadEtcdSnapshotFromBackupServer(ctx context.Context, etcdHost *hosts.H
 
 	hostCfg := &container.HostConfig{
 		Binds: []string{
-			fmt.Sprintf("%s:/backup", EtcdSnapshotPath),
+			fmt.Sprintf("%s:/backup:z", EtcdSnapshotPath),
 			fmt.Sprintf("%s:/etc/kubernetes:z", path.Join(etcdHost.PrefixPath, "/etc/kubernetes"))},
 		NetworkMode:   container.NetworkMode("host"),
 		RestartPolicy: container.RestartPolicy{Name: "on-failure"},
