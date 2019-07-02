@@ -966,8 +966,14 @@ func (d *Driver) ensureLogAnalyticsWorkspaceForMonitoring(ctx context.Context, c
 		"francesouth":        "westeurope",
 	}
 
-	workspaceRegion := regionToOmsRegionMap[state.Location]
-	workspaceRegionCode := locationToOmsRegionCodeMap[workspaceRegion]
+	workspaceRegion, ok := regionToOmsRegionMap[state.Location]
+	if !ok {
+		return "", fmt.Errorf("region %s not supported for Log Analytics workspace", state.Location)
+	}
+	workspaceRegionCode, ok := locationToOmsRegionCodeMap[workspaceRegion]
+	if !ok {
+		return "", fmt.Errorf("region %s not supported for Log Analytics workspace", workspaceRegion)
+	}
 
 	workspaceResourceGroup := state.LogAnalyticsWorkspaceResourceGroup
 	if workspaceResourceGroup == "" {
