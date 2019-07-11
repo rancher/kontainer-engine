@@ -491,7 +491,9 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 	}
 
 	info := &types.ClusterInfo{}
-	storeState(info, state)
+	if err = storeState(info, state); err != nil {
+		return nil, fmt.Errorf("error storing state: %v", err)
+	}
 
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(state.Region),
