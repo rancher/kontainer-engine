@@ -511,6 +511,7 @@ Resources:
             VolumeSize: !Ref NodeVolumeSize
             VolumeType: gp2
             DeleteOnTermination: true
+            Encrypted: true
       UserData: !Base64
         'Fn::Sub': %q
 
