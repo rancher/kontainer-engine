@@ -44,6 +44,8 @@ type state struct {
 	ProjectID string
 	// The zone to launch the cluster
 	Zone string
+	// The region to launch the cluster
+	Region string
 	// The IP address range of the container pods
 	ClusterIpv4Cidr string
 	// An optional description of this cluster
@@ -97,6 +99,15 @@ type state struct {
 	ClusterInfo types.ClusterInfo
 }
 
+// location returns either the zone or the region from the state
+func (s state) location() string {
+	if s.Region != "" {
+		return s.Region
+	}
+
+	return s.Zone
+}
+
 func NewDriver() types.Driver {
 	driver := &Driver{
 		driverCapabilities: types.Capabilities{
@@ -132,9 +143,10 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 	driverFlag.Options["zone"] = &types.Flag{
 		Type:  types.StringType,
 		Usage: "The zone to launch the cluster",
-		Default: &types.Default{
-			DefaultString: "us-central1-a",
-		},
+	}
+	driverFlag.Options["region"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "The region to launch the cluster",
 	}
 	driverFlag.Options["cluster-ipv4-cidr"] = &types.Flag{
 		Type:  types.StringType,
@@ -421,6 +433,7 @@ func getStateFromOpts(driverOptions *types.DriverOptions) (state, error) {
 	d.DisplayName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "display-name", "displayName").(string)
 	d.ProjectID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "project-id", "projectId").(string)
 	d.Zone = options.GetValueFromDriverOptions(driverOptions, types.StringType, "zone").(string)
+	d.Region = options.GetValueFromDriverOptions(driverOptions, types.StringType, "region").(string)
 	d.NodePoolID = options.GetValueFromDriverOptions(driverOptions, types.StringType, "nodePool").(string)
 	d.ClusterIpv4Cidr = options.GetValueFromDriverOptions(driverOptions, types.StringType, "cluster-ipv4-cidr", "clusterIpv4Cidr").(string)
 	d.Description = options.GetValueFromDriverOptions(driverOptions, types.StringType, "description").(string)
@@ -533,8 +546,10 @@ func getStateFromOpts(driverOptions *types.DriverOptions) (state, error) {
 func (s *state) validate() error {
 	if s.ProjectID == "" {
 		return fmt.Errorf("project ID is required")
-	} else if s.Zone == "" {
-		return fmt.Errorf("zone is required")
+	} else if s.Zone == "" && s.Region == "" {
+		return fmt.Errorf("zone or region is required")
+	} else if s.Zone != "" && s.Region != "" {
+		return fmt.Errorf("only one of zone or region must be specified")
 	} else if s.Name == "" {
 		return fmt.Errorf("cluster name is required")
 	}
@@ -565,13 +580,13 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 		return info, err
 	}
 
-	operation, err := svc.Projects.Locations.Clusters.Create(locationRRN(state.ProjectID, state.Zone), d.generateClusterCreateRequest(state)).Context(ctx).Do()
+	operation, err := svc.Projects.Locations.Clusters.Create(locationRRN(state.ProjectID, state.location()), d.generateClusterCreateRequest(state)).Context(ctx).Do()
 	if err != nil && !strings.Contains(err.Error(), "alreadyExists") {
 		return info, err
 	}
 
 	if err == nil {
-		logrus.Debugf("Cluster %s create is called for project %s and zone %s. Status Code %v", state.Name, state.ProjectID, state.Zone, operation.HTTPStatusCode)
+		logrus.Debugf("Cluster %s create is called for project %s and region/zone %s. Status Code %v", state.Name, state.ProjectID, state.location(), operation.HTTPStatusCode)
 	}
 	if err := d.waitCluster(ctx, svc, &state); err != nil {
 		return info, err
@@ -590,6 +605,7 @@ func storeState(info *types.ClusterInfo, state state) error {
 	info.Metadata["state"] = string(bytes)
 	info.Metadata["project-id"] = state.ProjectID
 	info.Metadata["zone"] = state.Zone
+	info.Metadata["region"] = state.Region
 	return nil
 }
 
@@ -618,7 +634,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 	}
 
 	if state.NodePoolID == "" {
-		cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.Zone, state.Name)).Context(ctx).Do()
+		cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.location(), state.Name)).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
@@ -634,7 +650,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 	if newState.MasterVersion != "" {
 		log.Infof(ctx, "Updating master to %v", newState.MasterVersion)
 		operation, err := svc.Projects.Locations.Clusters.Update(
-			clusterRRN(state.ProjectID, state.Zone, state.Name), &raw.UpdateClusterRequest{
+			clusterRRN(state.ProjectID, state.location(), state.Name), &raw.UpdateClusterRequest{
 				Update: &raw.ClusterUpdate{
 					DesiredMasterVersion: newState.MasterVersion,
 				},
@@ -642,7 +658,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 		if err != nil {
 			return nil, err
 		}
-		logrus.Debugf("Cluster %s update is called for project %s and zone %s. Status Code %v", state.Name, state.ProjectID, state.Zone, operation.HTTPStatusCode)
+		logrus.Debugf("Cluster %s update is called for project %s and region/zone %s. Status Code %v", state.Name, state.ProjectID, state.location(), operation.HTTPStatusCode)
 		if err := d.waitCluster(ctx, svc, &state); err != nil {
 			return nil, err
 		}
@@ -652,13 +668,13 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 	if newState.NodeVersion != "" {
 		log.Infof(ctx, "Updating node version to %v", newState.NodeVersion)
 		operation, err := svc.Projects.Locations.Clusters.NodePools.Update(
-			nodePoolRRN(state.ProjectID, state.Zone, state.Name, state.NodePoolID), &raw.UpdateNodePoolRequest{
+			nodePoolRRN(state.ProjectID, state.location(), state.Name, state.NodePoolID), &raw.UpdateNodePoolRequest{
 				NodeVersion: state.NodeVersion,
 			}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
-		logrus.Debugf("Nodepool %s update is called for project %s, zone %s and cluster %s. Status Code %v", state.NodePoolID, state.ProjectID, state.Zone, state.Name, operation.HTTPStatusCode)
+		logrus.Debugf("Nodepool %s update is called for project %s, region/zone %s and cluster %s. Status Code %v", state.NodePoolID, state.ProjectID, state.location(), state.Name, operation.HTTPStatusCode)
 		if err := d.waitNodePool(ctx, svc, &state); err != nil {
 			return nil, err
 		}
@@ -668,13 +684,13 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 	if newState.NodePool != nil && newState.NodePool.InitialNodeCount != 0 {
 		log.Infof(ctx, "Updating node number to %v", newState.NodePool.InitialNodeCount)
 		operation, err := svc.Projects.Locations.Clusters.NodePools.SetSize(
-			nodePoolRRN(state.ProjectID, state.Zone, state.Name, state.NodePoolID), &raw.SetNodePoolSizeRequest{
+			nodePoolRRN(state.ProjectID, state.location(), state.Name, state.NodePoolID), &raw.SetNodePoolSizeRequest{
 				NodeCount: newState.NodePool.InitialNodeCount,
 			}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
-		logrus.Debugf("Nodepool %s setSize is called for project %s, zone %s and cluster %s. Status Code %v", state.NodePoolID, state.ProjectID, state.Zone, state.Name, operation.HTTPStatusCode)
+		logrus.Debugf("Nodepool %s setSize is called for project %s, region/zone %s and cluster %s. Status Code %v", state.NodePoolID, state.ProjectID, state.location(), state.Name, operation.HTTPStatusCode)
 		if err := d.waitCluster(ctx, svc, &state); err != nil {
 			return nil, err
 		}
@@ -683,13 +699,13 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 	if newState.NodePool != nil && newState.NodePool.Autoscaling != nil && newState.NodePool.Autoscaling.Enabled {
 		log.Infof(ctx, "Updating the autoscaling settings for node pool %s", state.NodePoolID)
 		operation, err := svc.Projects.Locations.Clusters.NodePools.SetAutoscaling(
-			nodePoolRRN(state.ProjectID, state.Zone, state.Name, state.NodePoolID), &raw.SetNodePoolAutoscalingRequest{
+			nodePoolRRN(state.ProjectID, state.location(), state.Name, state.NodePoolID), &raw.SetNodePoolAutoscalingRequest{
 				Autoscaling: newState.NodePool.Autoscaling,
 			}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
-		logrus.Debugf("Nodepool %s autoscaling is called for project %s, zone %s and cluster %s. Status Code %v", state.NodePoolID, state.ProjectID, state.Zone, state.Name, operation.HTTPStatusCode)
+		logrus.Debugf("Nodepool %s autoscaling is called for project %s, region/zone %s and cluster %s. Status Code %v", state.NodePoolID, state.ProjectID, state.location(), state.Name, operation.HTTPStatusCode)
 		if err := d.waitCluster(ctx, svc, &state); err != nil {
 			return nil, err
 		}
@@ -779,7 +795,7 @@ func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types
 		return nil, err
 	}
 
-	cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.Zone, state.Name)).Context(ctx).Do()
+	cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.location(), state.Name)).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
@@ -813,7 +829,7 @@ func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 		return err
 	}
 
-	logrus.Debugf("Removing cluster %v from project %v, zone %v", state.Name, state.ProjectID, state.Zone)
+	logrus.Debugf("Removing cluster %v from project %v, region/zone %v", state.Name, state.ProjectID, state.location())
 	operation, err := d.waitClusterRemoveExp(ctx, svc, &state)
 	if err != nil && !strings.Contains(err.Error(), "notFound") {
 		return err
@@ -911,7 +927,7 @@ func generateServiceAccountTokenForGke(cluster *raw.Cluster) (string, error) {
 func (d *Driver) waitCluster(ctx context.Context, svc *raw.Service, state *state) error {
 	lastMsg := ""
 	for {
-		cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.Zone, state.Name)).Context(ctx).Do()
+		cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.location(), state.Name)).Context(ctx).Do()
 		if err != nil {
 			return err
 		}
@@ -933,7 +949,7 @@ func (d *Driver) waitClusterRemoveExp(ctx context.Context, svc *raw.Service, sta
 
 	for i := 1; i < 12; i++ {
 		time.Sleep(time.Duration(i*i) * time.Second)
-		operation, err = svc.Projects.Locations.Clusters.Delete(clusterRRN(state.ProjectID, state.Zone, state.Name)).Context(ctx).Do()
+		operation, err = svc.Projects.Locations.Clusters.Delete(clusterRRN(state.ProjectID, state.location(), state.Name)).Context(ctx).Do()
 		if err == nil {
 			return operation, nil
 		} else if !strings.Contains(err.Error(), "Please wait and try again once it is done") {
@@ -947,7 +963,7 @@ func (d *Driver) waitNodePool(ctx context.Context, svc *raw.Service, state *stat
 	lastMsg := ""
 	for {
 		nodepool, err := svc.Projects.Locations.Clusters.NodePools.Get(
-			nodePoolRRN(state.ProjectID, state.Zone, state.Name, state.NodePoolID)).Context(ctx).Do()
+			nodePoolRRN(state.ProjectID, state.location(), state.Name, state.NodePoolID)).Context(ctx).Do()
 		if err != nil {
 			return err
 		}
@@ -976,7 +992,7 @@ func (d *Driver) getClusterStats(ctx context.Context, info *types.ClusterInfo) (
 		return nil, err
 	}
 
-	cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
+	cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.location(), state.Name).Context(ctx).Do()
 
 	if err != nil {
 		return nil, fmt.Errorf("error getting cluster info: %v", err)
@@ -1031,7 +1047,7 @@ func (d *Driver) SetClusterSize(ctx context.Context, info *types.ClusterInfo, co
 	logrus.Info("updating cluster size")
 
 	_, err = client.Projects.Locations.Clusters.NodePools.SetSize(
-		nodePoolRRN(state.ProjectID, state.Zone, cluster.Name, cluster.NodePools[0].Name), &raw.SetNodePoolSizeRequest{
+		nodePoolRRN(state.ProjectID, state.location(), cluster.Name, cluster.NodePools[0].Name), &raw.SetNodePoolSizeRequest{
 			NodeCount: count.Count,
 		}).Context(ctx).Do()
 
@@ -1099,7 +1115,7 @@ func (d *Driver) updateAndWait(ctx context.Context, info *types.ClusterInfo, upd
 		return err
 	}
 
-	_, err = client.Projects.Locations.Clusters.Update(clusterRRN(state.ProjectID, state.Zone, cluster.Name), updateRequest).Context(ctx).Do()
+	_, err = client.Projects.Locations.Clusters.Update(clusterRRN(state.ProjectID, state.location(), cluster.Name), updateRequest).Context(ctx).Do()
 
 	if err != nil {
 		return fmt.Errorf("error while updating cluster: %v", err)
@@ -1160,7 +1176,7 @@ func (d *Driver) RemoveLegacyServiceAccount(ctx context.Context, info *types.Clu
 		return err
 	}
 
-	cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.Zone, state.Name)).Context(ctx).Do()
+	cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.location(), state.Name)).Context(ctx).Do()
 	if err != nil {
 		return err
 	}
