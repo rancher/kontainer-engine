@@ -565,7 +565,7 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, _ *types
 		return info, err
 	}
 
-	operation, err := svc.Projects.Zones.Clusters.Create(state.ProjectID, state.Zone, d.generateClusterCreateRequest(state)).Context(ctx).Do()
+	operation, err := svc.Projects.Locations.Clusters.Create(locationRRN(state.ProjectID, state.Zone), d.generateClusterCreateRequest(state)).Context(ctx).Do()
 	if err != nil && !strings.Contains(err.Error(), "alreadyExists") {
 		return info, err
 	}
@@ -618,7 +618,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 	}
 
 	if state.NodePoolID == "" {
-		cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
+		cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.Zone, state.Name)).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
@@ -633,11 +633,12 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 
 	if newState.MasterVersion != "" {
 		log.Infof(ctx, "Updating master to %v", newState.MasterVersion)
-		operation, err := svc.Projects.Zones.Clusters.Update(state.ProjectID, state.Zone, state.Name, &raw.UpdateClusterRequest{
-			Update: &raw.ClusterUpdate{
-				DesiredMasterVersion: newState.MasterVersion,
-			},
-		}).Context(ctx).Do()
+		operation, err := svc.Projects.Locations.Clusters.Update(
+			clusterRRN(state.ProjectID, state.Zone, state.Name), &raw.UpdateClusterRequest{
+				Update: &raw.ClusterUpdate{
+					DesiredMasterVersion: newState.MasterVersion,
+				},
+			}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
@@ -650,9 +651,10 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 
 	if newState.NodeVersion != "" {
 		log.Infof(ctx, "Updating node version to %v", newState.NodeVersion)
-		operation, err := svc.Projects.Zones.Clusters.NodePools.Update(state.ProjectID, state.Zone, state.Name, state.NodePoolID, &raw.UpdateNodePoolRequest{
-			NodeVersion: state.NodeVersion,
-		}).Context(ctx).Do()
+		operation, err := svc.Projects.Locations.Clusters.NodePools.Update(
+			nodePoolRRN(state.ProjectID, state.Zone, state.Name, state.NodePoolID), &raw.UpdateNodePoolRequest{
+				NodeVersion: state.NodeVersion,
+			}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
@@ -665,9 +667,10 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 
 	if newState.NodePool != nil && newState.NodePool.InitialNodeCount != 0 {
 		log.Infof(ctx, "Updating node number to %v", newState.NodePool.InitialNodeCount)
-		operation, err := svc.Projects.Zones.Clusters.NodePools.SetSize(state.ProjectID, state.Zone, state.Name, state.NodePoolID, &raw.SetNodePoolSizeRequest{
-			NodeCount: newState.NodePool.InitialNodeCount,
-		}).Context(ctx).Do()
+		operation, err := svc.Projects.Locations.Clusters.NodePools.SetSize(
+			nodePoolRRN(state.ProjectID, state.Zone, state.Name, state.NodePoolID), &raw.SetNodePoolSizeRequest{
+				NodeCount: newState.NodePool.InitialNodeCount,
+			}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
@@ -679,9 +682,10 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, opts *type
 
 	if newState.NodePool != nil && newState.NodePool.Autoscaling != nil && newState.NodePool.Autoscaling.Enabled {
 		log.Infof(ctx, "Updating the autoscaling settings for node pool %s", state.NodePoolID)
-		operation, err := svc.Projects.Zones.Clusters.NodePools.Autoscaling(state.ProjectID, state.Zone, state.Name, state.NodePoolID, &raw.SetNodePoolAutoscalingRequest{
-			Autoscaling: newState.NodePool.Autoscaling,
-		}).Context(ctx).Do()
+		operation, err := svc.Projects.Locations.Clusters.NodePools.SetAutoscaling(
+			nodePoolRRN(state.ProjectID, state.Zone, state.Name, state.NodePoolID), &raw.SetNodePoolAutoscalingRequest{
+				Autoscaling: newState.NodePool.Autoscaling,
+			}).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
@@ -701,7 +705,6 @@ func (d *Driver) generateClusterCreateRequest(state state) *raw.CreateClusterReq
 		},
 	}
 	request.Cluster.Name = state.Name
-	request.Cluster.Zone = state.Zone
 	request.Cluster.InitialClusterVersion = state.MasterVersion
 	request.Cluster.Description = state.Description
 	request.Cluster.EnableKubernetesAlpha = state.EnableAlphaFeature
@@ -776,7 +779,7 @@ func (d *Driver) PostCheck(ctx context.Context, info *types.ClusterInfo) (*types
 		return nil, err
 	}
 
-	cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
+	cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.Zone, state.Name)).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
@@ -908,7 +911,7 @@ func generateServiceAccountTokenForGke(cluster *raw.Cluster) (string, error) {
 func (d *Driver) waitCluster(ctx context.Context, svc *raw.Service, state *state) error {
 	lastMsg := ""
 	for {
-		cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
+		cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.Zone, state.Name)).Context(ctx).Do()
 		if err != nil {
 			return err
 		}
@@ -930,7 +933,7 @@ func (d *Driver) waitClusterRemoveExp(ctx context.Context, svc *raw.Service, sta
 
 	for i := 1; i < 12; i++ {
 		time.Sleep(time.Duration(i*i) * time.Second)
-		operation, err = svc.Projects.Zones.Clusters.Delete(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
+		operation, err = svc.Projects.Locations.Clusters.Delete(clusterRRN(state.ProjectID, state.Zone, state.Name)).Context(ctx).Do()
 		if err == nil {
 			return operation, nil
 		} else if !strings.Contains(err.Error(), "Please wait and try again once it is done") {
@@ -943,7 +946,8 @@ func (d *Driver) waitClusterRemoveExp(ctx context.Context, svc *raw.Service, sta
 func (d *Driver) waitNodePool(ctx context.Context, svc *raw.Service, state *state) error {
 	lastMsg := ""
 	for {
-		nodepool, err := svc.Projects.Zones.Clusters.NodePools.Get(state.ProjectID, state.Zone, state.Name, state.NodePoolID).Context(ctx).Do()
+		nodepool, err := svc.Projects.Locations.Clusters.NodePools.Get(
+			nodePoolRRN(state.ProjectID, state.Zone, state.Name, state.NodePoolID)).Context(ctx).Do()
 		if err != nil {
 			return err
 		}
@@ -1026,9 +1030,10 @@ func (d *Driver) SetClusterSize(ctx context.Context, info *types.ClusterInfo, co
 
 	logrus.Info("updating cluster size")
 
-	_, err = client.Projects.Zones.Clusters.NodePools.SetSize(state.ProjectID, state.Zone, cluster.Name, cluster.NodePools[0].Name, &raw.SetNodePoolSizeRequest{
-		NodeCount: count.Count,
-	}).Context(ctx).Do()
+	_, err = client.Projects.Locations.Clusters.NodePools.SetSize(
+		nodePoolRRN(state.ProjectID, state.Zone, cluster.Name, cluster.NodePools[0].Name), &raw.SetNodePoolSizeRequest{
+			NodeCount: count.Count,
+		}).Context(ctx).Do()
 
 	if err != nil {
 		return err
@@ -1094,7 +1099,7 @@ func (d *Driver) updateAndWait(ctx context.Context, info *types.ClusterInfo, upd
 		return err
 	}
 
-	_, err = client.Projects.Zones.Clusters.Update(state.ProjectID, state.Zone, cluster.Name, updateRequest).Context(ctx).Do()
+	_, err = client.Projects.Locations.Clusters.Update(clusterRRN(state.ProjectID, state.Zone, cluster.Name), updateRequest).Context(ctx).Do()
 
 	if err != nil {
 		return fmt.Errorf("error while updating cluster: %v", err)
@@ -1155,7 +1160,7 @@ func (d *Driver) RemoveLegacyServiceAccount(ctx context.Context, info *types.Clu
 		return err
 	}
 
-	cluster, err := svc.Projects.Zones.Clusters.Get(state.ProjectID, state.Zone, state.Name).Context(ctx).Do()
+	cluster, err := svc.Projects.Locations.Clusters.Get(clusterRRN(state.ProjectID, state.Zone, state.Name)).Context(ctx).Do()
 	if err != nil {
 		return err
 	}
@@ -1171,4 +1176,26 @@ func (d *Driver) RemoveLegacyServiceAccount(ctx context.Context, info *types.Clu
 	}
 
 	return nil
+}
+
+// locationRRN returns a Relative Resource Name representing a location. This
+// RRN can either represent a Region or a Zone. It can be used as the parent
+// attribute during cluster creation to create a zonal or regional cluster, or
+// be used to generate more specific RRNs like an RRN representing a cluster.
+//
+// https://cloud.google.com/apis/design/resource_names#relative_resource_name
+func locationRRN(projectID, location string) string {
+	return fmt.Sprintf("projects/%s/locations/%s", projectID, location)
+}
+
+// clusterRRN returns an Relative Resource Name of a cluster in the specified
+// region or zone
+func clusterRRN(projectID, location, clusterName string) string {
+	return fmt.Sprintf("%s/clusters/%s", locationRRN(projectID, location), clusterName)
+}
+
+// nodePoolRRN returns a Relative Resource Name of a node pool in a cluster in the
+// region or zone for the specified project
+func nodePoolRRN(projectID, location, clusterName, nodePool string) string {
+	return fmt.Sprintf("%s/nodePools/%s", clusterRRN(projectID, location, clusterName), nodePool)
 }
