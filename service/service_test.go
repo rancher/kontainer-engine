@@ -5,7 +5,8 @@ import (
 	"testing"
 
 	"github.com/rancher/kontainer-engine/types"
-	"github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
+	"github.com/stretchr/testify/assert"
 	"gopkg.in/check.v1"
 )
 
@@ -17,9 +18,28 @@ func Test(t *testing.T) {
 type StubTestSuite struct {
 }
 
+type testCase struct {
+	input       string
+	expectedVal string
+	expectedErr error
+}
+
 var _ = check.Suite(&StubTestSuite{})
 
 func (s *StubTestSuite) SetUpSuite(c *check.C) {
+}
+
+func newTestCase(input string, expectedVal string, isErr bool) testCase {
+	var expectedErr error
+
+	if isErr {
+		expectedErr = fmt.Errorf("failed to parse port from address [%s]", input)
+	}
+	return testCase{
+		input:       input,
+		expectedVal: expectedVal,
+		expectedErr: expectedErr,
+	}
 }
 
 func (s *StubTestSuite) TestFlatten(c *check.C) {
@@ -69,4 +89,36 @@ func (s *StubTestSuite) TestFlatten(c *check.C) {
 	c.Assert(driverOptions.IntOptions, check.DeepEquals, intResult)
 	c.Assert(driverOptions.StringOptions, check.DeepEquals, stringResult)
 	c.Assert(driverOptions.StringSliceOptions["labels"].Value, check.DeepEquals, stringSliceResult["labels"].Value)
+}
+
+func TestPortOnly(t *testing.T) {
+	assert := assert.New(t)
+
+	testCases := []testCase{
+		// strings should be of the form "string:port"
+		newTestCase("asdf", "", true),
+		newTestCase("a:asdf", "", true),
+		newTestCase("3000", "", true),
+		newTestCase("300:asdf", "", true),
+		newTestCase("300!asdf", "", true),
+		newTestCase("a:as:300", "", true),
+		newTestCase(":300:", "", true),
+		newTestCase(":::", "", true),
+		newTestCase("asdf.asdf:99999999", "", true),
+		newTestCase("asdf.asdf:-99999999", "", true),
+		newTestCase("300.com:3000", "3000", false),
+		newTestCase("a:200", "200", false),
+		newTestCase("a.com:3000", "3000", false),
+	}
+
+	for _, test := range testCases {
+		port, err := portOnly(test.input)
+
+		assert.Equal(test.expectedVal, port)
+		if test.expectedErr != nil {
+			assert.Contains(err.Error(), test.expectedErr.Error())
+		} else {
+			assert.Nil(err)
+		}
+	}
 }
