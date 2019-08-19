@@ -95,6 +95,7 @@ type ClusterSpecBase struct {
 	EnableNetworkPolicy                  *bool                          `json:"enableNetworkPolicy" norman:"default=false"`
 	EnableClusterAlerting                bool                           `json:"enableClusterAlerting" norman:"default=false"`
 	EnableClusterMonitoring              bool                           `json:"enableClusterMonitoring" norman:"default=false"`
+	WindowsPreferedCluster               bool                           `json:"windowsPreferedCluster" norman:"noupdate"`
 	LocalClusterAuthEndpoint             LocalClusterAuthEndpoint       `json:"localClusterAuthEndpoint,omitempty"`
 }
 
@@ -108,9 +109,10 @@ type ClusterSpec struct {
 	AzureKubernetesServiceConfig        *MapStringInterface `json:"azureKubernetesServiceConfig,omitempty"`
 	AmazonElasticContainerServiceConfig *MapStringInterface `json:"amazonElasticContainerServiceConfig,omitempty"`
 	GenericEngineConfig                 *MapStringInterface `json:"genericEngineConfig,omitempty"`
-	ClusterTemplateName                 string              `json:"clusterTemplateName,omitempty" norman:"type=reference[clusterTemplate]"`
+	ClusterTemplateName                 string              `json:"clusterTemplateName,omitempty" norman:"type=reference[clusterTemplate],nocreate,noupdate"`
 	ClusterTemplateRevisionName         string              `json:"clusterTemplateRevisionName,omitempty" norman:"type=reference[clusterTemplateRevision]"`
 	ClusterTemplateAnswers              Answer              `json:"answers,omitempty"`
+	ClusterTemplateQuestions            []Question          `json:"questions,omitempty" norman:"nocreate,noupdate"`
 }
 
 type ImportedConfig struct {
@@ -254,10 +256,12 @@ type IngressCapabilities struct {
 }
 
 type MonitoringInput struct {
+	Version string            `json:"version,omitempty"`
 	Answers map[string]string `json:"answers,omitempty"`
 }
 
 type MonitoringOutput struct {
+	Version string            `json:"version,omitempty"`
 	Answers map[string]string `json:"answers,omitempty"`
 }
 

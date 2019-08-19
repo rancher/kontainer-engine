@@ -31,6 +31,7 @@ const (
 	EtcdInitWaitTime                = 10
 	EtcdSnapshotWaitTime            = 5
 	EtcdSnapshotCompressedExtension = "zip"
+	EtcdPermFixContainerName        = "etcd-fix-perm"
 )
 
 func RunEtcdPlane(
@@ -48,16 +49,26 @@ func RunEtcdPlane(
 		if updateWorkersOnly {
 			continue
 		}
+
 		etcdProcess := etcdNodePlanMap[host.Address].Processes[EtcdContainerName]
+
+		// need to run this first to set proper ownership and permissions on etcd data dir
+		if err := setEtcdPermissions(ctx, host, prsMap, alpineImage, etcdProcess); err != nil {
+			return err
+		}
 		imageCfg, hostCfg, _ := GetProcessConfig(etcdProcess)
 		if err := docker.DoRunContainer(ctx, host.DClient, imageCfg, hostCfg, EtcdContainerName, host.Address, ETCDRole, prsMap); err != nil {
 			return err
 		}
 		if *es.Snapshot == true {
-			if err := RunEtcdSnapshotSave(ctx, host, prsMap, util.DefaultRKETools, EtcdSnapshotContainerName, false, es); err != nil {
+			rkeToolsImage, err := util.GetDefaultRKETools(alpineImage)
+			if err != nil {
 				return err
 			}
-			if err := pki.SaveBackupBundleOnHost(ctx, host, util.DefaultRKETools, EtcdSnapshotPath, prsMap); err != nil {
+			if err := RunEtcdSnapshotSave(ctx, host, prsMap, rkeToolsImage, EtcdSnapshotContainerName, false, es); err != nil {
+				return err
+			}
+			if err := pki.SaveBackupBundleOnHost(ctx, host, rkeToolsImage, EtcdSnapshotPath, prsMap); err != nil {
 				return err
 			}
 		} else {
@@ -120,6 +131,9 @@ func RemoveEtcdPlane(ctx context.Context, etcdHosts []*hosts.Host, force bool) e
 			for host := range hostsQueue {
 				runHost := host.(*hosts.Host)
 				if err := docker.DoRemoveContainer(ctx, runHost.DClient, EtcdContainerName, runHost.Address); err != nil {
+					errList = append(errList, err)
+				}
+				if err := docker.DoRemoveContainer(ctx, runHost.DClient, EtcdSnapshotContainerName, runHost.Address); err != nil {
 					errList = append(errList, err)
 				}
 				if !runHost.IsWorker || !runHost.IsControl || force {
@@ -214,6 +228,11 @@ func RemoveEtcdMember(ctx context.Context, etcdHost *hosts.Host, etcdHosts []*ho
 
 func ReloadEtcdCluster(ctx context.Context, readyEtcdHosts []*hosts.Host, newHost *hosts.Host, localConnDialerFactory hosts.DialerFactory, cert, key []byte, prsMap map[string]v3.PrivateRegistry, etcdNodePlanMap map[string]v3.RKEConfigNodePlan, alpineImage string) error {
 	imageCfg, hostCfg, _ := GetProcessConfig(etcdNodePlanMap[newHost.Address].Processes[EtcdContainerName])
+
+	if err := setEtcdPermissions(ctx, newHost, prsMap, alpineImage, etcdNodePlanMap[newHost.Address].Processes[EtcdContainerName]); err != nil {
+		return err
+	}
+
 	if err := docker.DoRunContainer(ctx, newHost.DClient, imageCfg, hostCfg, EtcdContainerName, newHost.Address, ETCDRole, prsMap); err != nil {
 		return err
 	}
@@ -285,6 +304,7 @@ func RunEtcdSnapshotSave(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 			"--endpoints=" + etcdHost.InternalAddress + ":2379",
 		},
 		Image: etcdSnapshotImage,
+		Env:   es.ExtraEnv,
 	}
 	if once {
 		log.Infof(ctx, "[etcd] Running snapshot save once on host [%s]", etcdHost.Address)
@@ -367,10 +387,14 @@ func DownloadEtcdSnapshotFromS3(ctx context.Context, etcdHost *hosts.Host, prsMa
 			"--s3-region=" + s3Backend.Region,
 		},
 		Image: etcdSnapshotImage,
+		Env:   es.ExtraEnv,
 	}
 	if s3Backend.CustomCA != "" {
 		caStr := base64.StdEncoding.EncodeToString([]byte(s3Backend.CustomCA))
 		imageCfg.Cmd = append(imageCfg.Cmd, "--s3-endpoint-ca="+caStr)
+	}
+	if s3Backend.Folder != "" {
+		imageCfg.Cmd = append(imageCfg.Cmd, "--s3-folder="+s3Backend.Folder)
 	}
 	hostCfg := &container.HostConfig{
 		Binds: []string{
@@ -399,7 +423,7 @@ func DownloadEtcdSnapshotFromS3(ctx context.Context, etcdHost *hosts.Host, prsMa
 	return docker.RemoveContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdDownloadBackupContainerName)
 }
 
-func RestoreEtcdSnapshot(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry, etcdRestoreImage, snapshotName, initCluster string) error {
+func RestoreEtcdSnapshot(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry, etcdRestoreImage, snapshotName, initCluster string, es v3.ETCDService) error {
 	log.Infof(ctx, "[etcd] Restoring [%s] snapshot on etcd host [%s]", snapshotName, etcdHost.Address)
 	nodeName := pki.GetEtcdCrtName(etcdHost.InternalAddress)
 	snapshotPath := fmt.Sprintf("%s%s", EtcdSnapshotPath, snapshotName)
@@ -424,7 +448,7 @@ func RestoreEtcdSnapshot(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 				"&& rm -rf", EtcdRestorePath,
 			}, " "),
 		},
-		Env:   []string{"ETCDCTL_API=3"},
+		Env:   append([]string{"ETCDCTL_API=3"}, es.ExtraEnv...),
 		Image: etcdRestoreImage,
 	}
 	hostCfg := &container.HostConfig{
@@ -475,6 +499,7 @@ func RunEtcdSnapshotRemove(ctx context.Context, etcdHost *hosts.Host, prsMap map
 			"sh", "-c", fmt.Sprintf("rm -f %s", fullPath),
 		},
 		Image: etcdSnapshotImage,
+		Env:   es.ExtraEnv,
 	}
 	hostCfg := &container.HostConfig{
 		Binds: []string{
@@ -513,7 +538,7 @@ func GetEtcdSnapshotChecksum(ctx context.Context, etcdHost *hosts.Host, prsMap m
 	imageCfg := &container.Config{
 		Cmd: []string{
 			"sh", "-c", strings.Join([]string{
-				"if [ -f ", snapshotPath, " ]; then md5sum ", snapshotPath, " | cut -f1 -d' ' | tr -d '\n'; else echo 'snapshot file does not exist' >&2; fi"}, ""),
+				" if [ -f '", snapshotPath, "' ]; then md5sum '", snapshotPath, "' | cut -f1 -d' ' | tr -d '\n'; else echo 'snapshot file does not exist' >&2; fi"}, ""),
 		},
 		Image: alpineImage,
 	}
@@ -560,6 +585,9 @@ func configS3BackupImgCmd(ctx context.Context, imageCfg *container.Config, bc *v
 		if bc.S3BackupConfig.CustomCA != "" {
 			caStr := base64.StdEncoding.EncodeToString([]byte(bc.S3BackupConfig.CustomCA))
 			cmd = append(cmd, "--s3-endpoint-ca="+caStr)
+		}
+		if bc.S3BackupConfig.Folder != "" {
+			cmd = append(cmd, "--s3-folder="+bc.S3BackupConfig.Folder)
 		}
 	}
 	imageCfg.Cmd = append(imageCfg.Cmd, cmd...)
@@ -655,4 +683,29 @@ func DownloadEtcdSnapshotFromBackupServer(ctx context.Context, etcdHost *hosts.H
 		return fmt.Errorf("Failed to download etcd snapshot from backup server [%s], exit code [%d]: %v", backupServer.Address, status, stderr)
 	}
 	return docker.RemoveContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdDownloadBackupContainerName)
+}
+
+func setEtcdPermissions(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry, alpineImage string, process v3.Process) error {
+	var dataBind string
+
+	cmd := fmt.Sprintf("chmod 700 %s", EtcdDataDir)
+	if len(process.User) != 0 {
+		cmd = fmt.Sprintf("chmod 700 %s ; chown -R %s %s", EtcdDataDir, process.User, EtcdDataDir)
+	}
+	imageCfg := &container.Config{
+		Cmd: []string{
+			"sh", "-c",
+			cmd,
+		},
+		Image: alpineImage,
+	}
+	for _, bind := range process.Binds {
+		if strings.Contains(bind, "/var/lib/etcd") {
+			dataBind = bind
+		}
+	}
+	hostCfg := &container.HostConfig{
+		Binds: []string{dataBind},
+	}
+	return docker.DoRunOnetimeContainer(ctx, etcdHost.DClient, imageCfg, hostCfg, EtcdPermFixContainerName, etcdHost.Address, ETCDRole, prsMap)
 }

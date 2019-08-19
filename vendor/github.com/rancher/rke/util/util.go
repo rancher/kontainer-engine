@@ -2,9 +2,12 @@ package util
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
+
+	"github.com/rancher/rke/metadata"
 
 	"github.com/coreos/go-semver/semver"
 	ref "github.com/docker/distribution/reference"
@@ -13,8 +16,6 @@ import (
 
 const (
 	WorkerThreads = 50
-
-	DefaultRKETools = "rancher/rke-tools:v0.1.34"
 )
 
 func StrToSemVer(version string) (*semver.Version, error) {
@@ -86,6 +87,24 @@ func IsFileExists(filePath string) (bool, error) {
 	}
 }
 
+func GetDefaultRKETools(image string) (string, error) {
+	// don't override tag of custom system images
+	if !strings.Contains(image, "rancher/rke-tools") {
+		return image, nil
+	}
+	tag, err := GetImageTagFromImage(image)
+	if err != nil || tag == "" {
+		return "", fmt.Errorf("defaultRKETools: no tag %s", image)
+	}
+	defaultImage := metadata.K8sVersionToRKESystemImages[metadata.DefaultK8sVersion].Alpine
+	toReplaceTag, err := GetImageTagFromImage(defaultImage)
+	if err != nil || toReplaceTag == "" {
+		return "", fmt.Errorf("defaultRKETools: no replace tag %s", defaultImage)
+	}
+	image = strings.Replace(image, tag, toReplaceTag, 1)
+	return image, nil
+}
+
 func GetImageTagFromImage(image string) (string, error) {
 	parsedImage, err := ref.ParseNormalizedNamed(image)
 	if err != nil {
@@ -94,4 +113,29 @@ func GetImageTagFromImage(image string) (string, error) {
 	imageTag := parsedImage.(ref.Tagged).Tag()
 	logrus.Debugf("Extracted version [%s] from image [%s]", imageTag, image)
 	return imageTag, nil
+}
+
+func StripPasswordFromURL(URL string) (string, error) {
+	u, err := url.Parse(URL)
+	if err != nil {
+		return "", err
+	}
+	_, passSet := u.User.Password()
+	if passSet {
+		return strings.Replace(u.String(), u.User.String()+"@", u.User.Username()+":***@", 1), nil
+	}
+	return u.String(), nil
+}
+
+// GetEnvVar will lookup a given environment variable by key and return the key and value (to show what case got matched) with uppercase key being preferred
+func GetEnvVar(key string) (string, string, bool) {
+	// Uppercase (has precedence over lowercase)
+	if value, ok := os.LookupEnv(strings.ToUpper(key)); ok {
+		return strings.ToUpper(key), value, true
+	}
+	// Lowercase
+	if value, ok := os.LookupEnv(strings.ToLower(key)); ok {
+		return strings.ToLower(key), value, true
+	}
+	return "", "", false
 }

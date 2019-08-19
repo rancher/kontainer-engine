@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rancher/rke/metadata"
+
 	"github.com/docker/docker/api/types"
 	"github.com/rancher/rke/authz"
 	"github.com/rancher/rke/docker"
@@ -82,6 +84,8 @@ const (
 	WorkerThreads = util.WorkerThreads
 
 	serviceAccountTokenFileParam = "service-account-key-file"
+
+	SystemNamespace = "kube-system"
 )
 
 func (c *Cluster) DeployControlPlane(ctx context.Context, svcOptions *v3.KubernetesServicesOptions) error {
@@ -159,6 +163,9 @@ func InitClusterObject(ctx context.Context, rkeConfig *v3.RancherKubernetesEngin
 		CertificateDir:                flags.CertificateDir,
 		StateFilePath:                 GetStateFilePath(flags.ClusterFilePath, flags.ConfigDir),
 		PrivateRegistriesMap:          make(map[string]v3.PrivateRegistry),
+	}
+	if metadata.K8sVersionToRKESystemImages == nil {
+		metadata.InitMetadata(ctx)
 	}
 	if len(c.ConfigPath) == 0 {
 		c.ConfigPath = pki.ClusterConfig
@@ -312,12 +319,15 @@ func ApplyAuthzResources(ctx context.Context, rkeConfig v3.RancherKubernetesEngi
 		if err := authz.ApplySystemNodeClusterRoleBinding(ctx, kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport); err != nil {
 			return fmt.Errorf("Failed to apply the ClusterRoleBinding needed for node authorization: %v", err)
 		}
+		if err := authz.ApplyKubeAPIClusterRole(ctx, kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport); err != nil {
+			return fmt.Errorf("Failed to apply the ClusterRole and Binding needed for node kubeapi proxy: %v", err)
+		}
 	}
 	if kubeCluster.Authorization.Mode == services.RBACAuthorizationMode && kubeCluster.Services.KubeAPI.PodSecurityPolicy {
 		if err := authz.ApplyDefaultPodSecurityPolicy(ctx, kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport); err != nil {
 			return fmt.Errorf("Failed to apply default PodSecurityPolicy: %v", err)
 		}
-		if err := authz.ApplyDefaultPodSecurityPolicyRole(ctx, kubeCluster.LocalKubeConfigPath, kubeCluster.K8sWrapTransport); err != nil {
+		if err := authz.ApplyDefaultPodSecurityPolicyRole(ctx, kubeCluster.LocalKubeConfigPath, SystemNamespace, kubeCluster.K8sWrapTransport); err != nil {
 			return fmt.Errorf("Failed to apply default PodSecurityPolicy ClusterRole and ClusterRoleBinding: %v", err)
 		}
 	}
@@ -487,10 +497,9 @@ func RestartClusterPods(ctx context.Context, kubeCluster *Cluster) error {
 		return fmt.Errorf("Failed to initialize new kubernetes client: %v", err)
 	}
 	labelsList := []string{
-		fmt.Sprintf("%s=%s", KubeAppLabel, CalicoNetworkPlugin),
 		fmt.Sprintf("%s=%s", KubeAppLabel, FlannelNetworkPlugin),
 		fmt.Sprintf("%s=%s", KubeAppLabel, CanalNetworkPlugin),
-		fmt.Sprintf("%s=%s", NameLabel, WeaveNetowrkAppName),
+		fmt.Sprintf("%s=%s", NameLabel, WeaveNetworkAppName),
 		fmt.Sprintf("%s=%s", AppLabel, NginxIngressAddonAppName),
 		fmt.Sprintf("%s=%s", KubeAppLabel, DefaultMonitoringProvider),
 		fmt.Sprintf("%s=%s", KubeAppLabel, KubeDNSAddonAppName),
@@ -498,6 +507,9 @@ func RestartClusterPods(ctx context.Context, kubeCluster *Cluster) error {
 		fmt.Sprintf("%s=%s", KubeAppLabel, CoreDNSAutoscalerAppName),
 		fmt.Sprintf("%s=%s", AppLabel, KubeAPIAuthAppName),
 		fmt.Sprintf("%s=%s", AppLabel, CattleClusterAgentAppName),
+	}
+	for _, calicoLabel := range CalicoNetworkLabels {
+		labelsList = append(labelsList, fmt.Sprintf("%s=%s", KubeAppLabel, calicoLabel))
 	}
 	var errgrp errgroup.Group
 	labelQueue := util.GetObjectQueue(labelsList)
