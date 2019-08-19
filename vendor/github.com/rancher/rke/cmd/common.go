@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"github.com/rancher/rke/metadata"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -14,7 +13,7 @@ import (
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/util"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
+	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -75,9 +74,7 @@ func ClusterInit(ctx context.Context, rkeConfig *v3.RancherKubernetesEngineConfi
 	if len(flags.CertificateDir) == 0 {
 		flags.CertificateDir = cluster.GetCertificateDirPath(flags.ClusterFilePath, flags.ConfigDir)
 	}
-	if metadata.K8sVersionToRKESystemImages == nil {
-		metadata.InitMetadata(ctx)
-	}
+
 	rkeFullState, _ := cluster.ReadStateFile(ctx, stateFilePath)
 
 	kubeCluster, err := cluster.InitClusterObject(ctx, rkeConfig, flags)
@@ -120,6 +117,7 @@ func setS3OptionsFromCLI(c *cli.Context) *v3.S3BackupConfig {
 	accessKey := c.String("access-key")
 	secretKey := c.String("secret-key")
 	endpointCA := c.String("s3-endpoint-ca")
+	folder := c.String("folder")
 	var s3BackupBackend = &v3.S3BackupConfig{}
 	if len(endpoint) != 0 {
 		s3BackupBackend.Endpoint = endpoint
@@ -143,6 +141,9 @@ func setS3OptionsFromCLI(c *cli.Context) *v3.S3BackupConfig {
 		} else {
 			s3BackupBackend.CustomCA = caStr
 		}
+	}
+	if len(folder) != 0 {
+		s3BackupBackend.Folder = folder
 	}
 	return s3BackupBackend
 }

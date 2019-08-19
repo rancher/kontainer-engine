@@ -2,7 +2,8 @@ package rke
 
 import (
 	"fmt"
-	"github.com/rancher/types/apis/management.cattle.io/v3"
+
+	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 )
 
 const (
@@ -12,6 +13,7 @@ const (
 
 func loadK8sVersionServiceOptions() map[string]v3.KubernetesServicesOptions {
 	return map[string]v3.KubernetesServicesOptions{
+
 		"v1.15": {
 			KubeAPI:        getKubeAPIOptions115(),
 			Kubelet:        getKubeletOptions115(),
@@ -80,6 +82,7 @@ func getKubeAPIOptions() map[string]string {
 		"secure-port":                        "6443",
 		"service-account-lookup":             "true",
 		"storage-backend":                    "etcd3",
+		"runtime-config":                     "authorization.k8s.io/v1beta1=true",
 	}
 	return data
 }
@@ -93,12 +96,14 @@ func getKubeAPIOptions19() map[string]string {
 func getKubeAPIOptions114() map[string]string {
 	kubeAPIOptions := getKubeAPIOptions()
 	kubeAPIOptions["enable-admission-plugins"] = fmt.Sprintf("%s,%s", enableAdmissionPlugins, "Priority")
+	kubeAPIOptions["runtime-config"] = "authorization.k8s.io/v1beta1=true"
 	return kubeAPIOptions
 }
 
 func getKubeAPIOptions115() map[string]string {
 	kubeAPIOptions := getKubeAPIOptions114()
 	kubeAPIOptions["enable-admission-plugins"] = fmt.Sprintf("%s,%s", kubeAPIOptions["enable-admission-plugins"], "TaintNodesByCondition,PersistentVolumeClaimResize")
+	kubeAPIOptions["runtime-config"] = "authorization.k8s.io/v1beta1=true"
 	return kubeAPIOptions
 }
 
@@ -121,11 +126,13 @@ func getKubeletOptions() map[string]string {
 		"streaming-connection-idle-timeout": "30m",
 		"volume-plugin-dir":                 "/var/lib/kubelet/volumeplugins",
 		"v":                                 "2",
+		"authorization-mode":                "Webhook",
 	}
 }
 
 func getKubeletOptions115() map[string]string {
 	kubeletOptions := getKubeletOptions()
+	kubeletOptions["authorization-mode"] = "Webhook"
 	delete(kubeletOptions, "allow-privileged")
 	return kubeletOptions
 }

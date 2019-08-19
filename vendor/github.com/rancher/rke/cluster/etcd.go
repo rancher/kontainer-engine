@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"regexp"
 
 	"github.com/rancher/rke/docker"
@@ -130,7 +131,7 @@ func (c *Cluster) RestoreEtcdSnapshot(ctx context.Context, snapshotPath string) 
 	// Start restore process on all etcd hosts
 	initCluster := services.GetEtcdInitialCluster(c.EtcdHosts)
 	for _, host := range c.EtcdHosts {
-		if err := services.RestoreEtcdSnapshot(ctx, host, c.PrivateRegistriesMap, c.SystemImages.Etcd, snapshotPath, initCluster); err != nil {
+		if err := services.RestoreEtcdSnapshot(ctx, host, c.PrivateRegistriesMap, c.SystemImages.Etcd, snapshotPath, initCluster, c.Services.Etcd); err != nil {
 			return fmt.Errorf("[etcd] Failed to restore etcd snapshot: %v", err)
 		}
 	}
@@ -170,7 +171,12 @@ func (c *Cluster) etcdSnapshotChecksum(ctx context.Context, snapshotPath string)
 }
 
 func (c *Cluster) getBackupImage() string {
-	return util.DefaultRKETools
+	rkeToolsImage, err := util.GetDefaultRKETools(c.SystemImages.Alpine)
+	if err != nil {
+		logrus.Errorf("[etcd] error getting backup image %v", err)
+		return ""
+	}
+	return rkeToolsImage
 }
 
 func IsLocalSnapshot(name string) bool {

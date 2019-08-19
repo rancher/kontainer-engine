@@ -19,7 +19,7 @@ import (
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
 	"github.com/rancher/rke/util"
-	"github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 )
 
@@ -350,6 +350,11 @@ func (c *Cluster) BuildKubeletProcess(host *hosts.Host, prefixPath string, svcOp
 		"pod-infra-container-image": c.Services.Kubelet.InfraContainerImage,
 		"root-dir":                  path.Join(prefixPath, "/var/lib/kubelet"),
 	}
+
+	if c.DinD {
+		CommandArgs["healthz-bind-address"] = "0.0.0.0"
+	}
+
 	if host.IsControl && !host.IsWorker {
 		CommandArgs["register-with-taints"] = unschedulableControlTaint
 	}
@@ -435,7 +440,7 @@ func (c *Cluster) BuildKubeletProcess(host *hosts.Host, prefixPath string, svcOp
 	Binds = append(Binds, c.Services.Kubelet.ExtraBinds...)
 
 	healthCheck := v3.HealthCheck{
-		URL: services.GetHealthCheckURL(true, services.KubeletPort),
+		URL: services.GetHealthCheckURL(false, services.KubeletPort),
 	}
 	registryAuthConfig, _, _ := docker.GetImageRegistryConfig(c.Services.Kubelet.Image, c.PrivateRegistriesMap)
 
@@ -765,12 +770,16 @@ func (c *Cluster) BuildEtcdProcess(host *hosts.Host, etcdHosts []*hosts.Host, pr
 	Env = append(Env, fmt.Sprintf("ETCD_UNSUPPORTED_ARCH=%s", architecture))
 
 	Env = append(Env, c.Services.Etcd.ExtraEnv...)
-
+	var user string
+	if c.Services.Etcd.UID != 0 && c.Services.Etcd.GID != 0 {
+		user = fmt.Sprintf("%d:%d", c.Services.Etcd.UID, c.Services.Etcd.UID)
+	}
 	return v3.Process{
 		Name:                    services.EtcdContainerName,
 		Args:                    args,
 		Binds:                   getUniqStringList(Binds),
 		Env:                     Env,
+		User:                    user,
 		NetworkMode:             "host",
 		RestartPolicy:           "always",
 		Image:                   c.Services.Etcd.Image,
@@ -796,6 +805,10 @@ func BuildPortChecksFromPortList(host *hosts.Host, portList []string, proto stri
 }
 
 func (c *Cluster) GetKubernetesServicesOptions() v3.KubernetesServicesOptions {
+	if serviceOptions, ok := metadata.K8sVersionToServiceOptions[c.Version]; ok {
+		return serviceOptions
+	}
+
 	clusterMajorVersion := util.GetTagMajorVersion(c.Version)
 	k8sImageTag, err := util.GetImageTagFromImage(c.SystemImages.Kubernetes)
 	if err != nil {
