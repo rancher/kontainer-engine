@@ -117,6 +117,7 @@ type state struct {
 	MaximumASGSize int64
 	DesiredASGSize int64
 	NodeVolumeSize *int64
+	EbsEncryption  bool
 
 	UserData string
 
@@ -264,6 +265,13 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 		Usage:   "The kubernetes master version",
 		Default: &types.Default{DefaultString: "1.13"},
 	}
+	driverFlag.Options["ebs-encryption"] = &types.Flag{
+		Type:  types.BoolType,
+		Usage: "Enables ebs encryption of worker nodes",
+		Default: &types.Default{
+			DefaultBool: false,
+		},
+	}
 
 	return &driverFlag, nil
 }
@@ -317,6 +325,7 @@ func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
 	state.AMI = options.GetValueFromDriverOptions(driverOptions, types.StringType, "ami").(string)
 	state.AssociateWorkerNodePublicIP, _ = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "associate-worker-node-public-ip", "associateWorkerNodePublicIp").(*bool)
 	state.KeyPairName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "keyPairName").(string)
+	state.EbsEncryption, _ = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "ebs-encryption", "EbsEncryption").(bool)
 
 	// UserData
 	state.UserData = options.GetValueFromDriverOptions(driverOptions, types.StringType, "user-data", "userData").(string)
@@ -685,6 +694,7 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 			{ParameterKey: aws.String("Subnets"),
 				ParameterValue: aws.String(strings.Join(toStringLiteralSlice(subnetIds), ","))},
 			{ParameterKey: aws.String("PublicIp"), ParameterValue: aws.String(strconv.FormatBool(publicIP))},
+			{ParameterKey: aws.String("EbsEncryption"), ParameterValue: aws.String(strconv.FormatBool(state.EbsEncryption))},
 		})
 	if err != nil {
 		return info, fmt.Errorf("error creating stack with worker nodes template: %v", err)
@@ -1316,19 +1326,19 @@ func getAMIs(ctx context.Context, ec2svc *ec2.EC2, state state) string {
 	version := state.KubernetesVersion
 	output, err := ec2svc.DescribeImagesWithContext(ctx, &ec2.DescribeImagesInput{
 		Filters: []*ec2.Filter{
-			&ec2.Filter{
+			{
 				Name:   aws.String("is-public"),
 				Values: aws.StringSlice([]string{"true"}),
 			},
-			&ec2.Filter{
+			{
 				Name:   aws.String("state"),
 				Values: aws.StringSlice([]string{"available"}),
 			},
-			&ec2.Filter{
+			{
 				Name:   aws.String("image-type"),
 				Values: aws.StringSlice([]string{"machine"}),
 			},
-			&ec2.Filter{
+			{
 				Name:   aws.String("name"),
 				Values: aws.StringSlice([]string{fmt.Sprintf("%s%s*", amiNamePrefix, version)}),
 			},
