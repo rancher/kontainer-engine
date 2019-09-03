@@ -117,7 +117,7 @@ type state struct {
 	MaximumASGSize int64
 	DesiredASGSize int64
 	NodeVolumeSize *int64
-	EbsEncryption  bool
+	EBSEncryption  bool
 
 	UserData string
 
@@ -267,7 +267,7 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 	}
 	driverFlag.Options["ebs-encryption"] = &types.Flag{
 		Type:  types.BoolType,
-		Usage: "Enables ebs encryption of worker nodes",
+		Usage: "Enables EBS encryption of worker nodes",
 		Default: &types.Default{
 			DefaultBool: false,
 		},
@@ -325,7 +325,7 @@ func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
 	state.AMI = options.GetValueFromDriverOptions(driverOptions, types.StringType, "ami").(string)
 	state.AssociateWorkerNodePublicIP, _ = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "associate-worker-node-public-ip", "associateWorkerNodePublicIp").(*bool)
 	state.KeyPairName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "keyPairName").(string)
-	state.EbsEncryption, _ = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "ebs-encryption", "EbsEncryption").(bool)
+	state.EBSEncryption = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "ebs-encryption", "EBSEncryption").(bool)
 
 	// UserData
 	state.UserData = options.GetValueFromDriverOptions(driverOptions, types.StringType, "user-data", "userData").(string)
@@ -509,7 +509,9 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 	}
 
 	info := &types.ClusterInfo{}
-	storeState(info, state)
+	if err := storeState(info, state); err != nil {
+		return nil, fmt.Errorf("error storing eks state")
+	}
 
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(state.Region),
@@ -694,7 +696,7 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 			{ParameterKey: aws.String("Subnets"),
 				ParameterValue: aws.String(strings.Join(toStringLiteralSlice(subnetIds), ","))},
 			{ParameterKey: aws.String("PublicIp"), ParameterValue: aws.String(strconv.FormatBool(publicIP))},
-			{ParameterKey: aws.String("EbsEncryption"), ParameterValue: aws.String(strconv.FormatBool(state.EbsEncryption))},
+			{ParameterKey: aws.String("EBSEncryption"), ParameterValue: aws.String(strconv.FormatBool(state.EBSEncryption))},
 		})
 	if err != nil {
 		return info, fmt.Errorf("error creating stack with worker nodes template: %v", err)

@@ -1,6 +1,7 @@
 package eks
 
-// This are the cloudformation templates used for eks clusters, when making edits here ensure that view whitespace is enabled
+// These are the CloudFormation templates used for EKS clusters, when making edits here ensure the whitespace is correct.
+
 const (
 	vpcTemplate = `---
 AWSTemplateFormatVersion: '2010-09-09'
