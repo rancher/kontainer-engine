@@ -8,12 +8,14 @@ require (
 	github.com/Azure/azure-sdk-for-go v19.1.0+incompatible
 	github.com/Azure/go-autorest v10.11.1+incompatible
 	github.com/aws/aws-sdk-go v1.16.19
+	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/golang/protobuf v1.3.2
+	github.com/grpc-ecosystem/grpc-gateway v1.9.6 // indirect
 	github.com/heptio/authenticator v0.0.0-20180409043135-d282f87a1972
 	github.com/pkg/errors v0.8.1
-	github.com/rancher/norman v0.0.0-20190819172543-9c5479f6e5ca
-	github.com/rancher/rke v0.3.0-rc6.0.20190819180243-f8bac2c059d0
-	github.com/rancher/types v0.0.0-20190819173748-96e6d6f30265
+	github.com/rancher/norman v0.0.0-20190821234528-20a936b685b0
+	github.com/rancher/rke v0.3.0-rc10.0.20190910214044-f622c8b94257
+	github.com/rancher/types v0.0.0-20190827214052-704648244586
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/testify v1.3.0
 	github.com/urfave/cli v1.20.0

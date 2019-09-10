@@ -241,6 +241,7 @@ type Capabilities struct {
 	IngressCapabilities      []IngressCapabilities    `json:"ingressCapabilities,omitempty"`
 	NodePoolScalingSupported bool                     `json:"nodePoolScalingSupported,omitempty"`
 	NodePortRange            string                   `json:"nodePortRange,omitempty"`
+	TaintSupport             *bool                    `json:"taintSupport,omitempty"`
 }
 
 type LoadBalancerCapabilities struct {
@@ -252,7 +253,7 @@ type LoadBalancerCapabilities struct {
 
 type IngressCapabilities struct {
 	IngressProvider      string `json:"ingressProvider,omitempty"`
-	CustomDefaultBackend bool   `json:"customDefaultBackend,omitempty"`
+	CustomDefaultBackend *bool  `json:"customDefaultBackend,omitempty"`
 }
 
 type MonitoringInput struct {
