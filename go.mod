@@ -2,6 +2,8 @@ module github.com/rancher/kontainer-engine
 
 go 1.12
 
+replace git.apache.org/thrift.git => github.com/apache/thrift v0.12.0
+
 require (
 	github.com/Azure/azure-sdk-for-go v19.1.0+incompatible
 	github.com/Azure/go-autorest v10.11.1+incompatible
