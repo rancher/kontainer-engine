@@ -13,7 +13,13 @@ const (
 
 func loadK8sVersionServiceOptions() map[string]v3.KubernetesServicesOptions {
 	return map[string]v3.KubernetesServicesOptions{
-
+		"v1.16": {
+			KubeAPI:        getKubeAPIOptions116(),
+			Kubelet:        getKubeletOptions116(),
+			KubeController: getKubeControllerOptions(),
+			Kubeproxy:      getKubeProxyOptions(),
+			Scheduler:      getSchedulerOptions(),
+		},
 		"v1.15": {
 			KubeAPI:        getKubeAPIOptions115(),
 			Kubelet:        getKubeletOptions115(),
@@ -107,6 +113,15 @@ func getKubeAPIOptions115() map[string]string {
 	return kubeAPIOptions
 }
 
+func getKubeAPIOptions116() map[string]string {
+	kubeAPIOptions := getKubeAPIOptions114()
+	kubeAPIOptions["enable-admission-plugins"] = fmt.Sprintf("%s,%s", kubeAPIOptions["enable-admission-plugins"], "TaintNodesByCondition,PersistentVolumeClaimResize")
+	kubeAPIOptions["runtime-config"] = "authorization.k8s.io/v1beta1=true"
+	return kubeAPIOptions
+}
+
+// getKubeletOptions provides the root options for windows
+// note: please double-check on windows side if changing the following options
 func getKubeletOptions() map[string]string {
 	return map[string]string{
 		"tls-cipher-suites":                 tlsCipherSuites,
@@ -137,6 +152,13 @@ func getKubeletOptions115() map[string]string {
 	return kubeletOptions
 }
 
+func getKubeletOptions116() map[string]string {
+	kubeletOptions := getKubeletOptions()
+	kubeletOptions["authorization-mode"] = "Webhook"
+	delete(kubeletOptions, "allow-privileged")
+	return kubeletOptions
+}
+
 func getKubeControllerOptions() map[string]string {
 	return map[string]string{
 		"address":                     "0.0.0.0",
@@ -153,6 +175,8 @@ func getKubeControllerOptions() map[string]string {
 	}
 }
 
+// getKubeProxyOptions provides the root options for windows
+// note: please double-check on windows side if changing the following options
 func getKubeProxyOptions() map[string]string {
 	return map[string]string{
 		"v":                    "2",
