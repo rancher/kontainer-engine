@@ -145,15 +145,20 @@ type state struct {
 
 	UserData string
 
-	InstanceType string
-	Region       string
+	InstanceType   string
+	Region         string
+	PlacementGroup string
 
 	VirtualNetwork              string
+	Annotations                 []string
 	Subnets                     []string
+	WorkerSubnets               []string
 	SecurityGroups              []string
+	NodeSecurityGroups          []string
 	ServiceRole                 string
 	AMI                         string
 	AssociateWorkerNodePublicIP *bool
+	ManageOwnSecurityGroups     bool
 
 	ClusterInfo types.ClusterInfo
 }
@@ -205,6 +210,13 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 			DefaultString: "t2.medium",
 		},
 	}
+	driverFlag.Options["placement-group"] = &types.Flag{
+		Type:  types.StringType,
+		Usage: "The name of an existing cluster placement group into which you want to launch your instances",
+		Default: &types.Default{
+			DefaultString: "",
+		},
+	}
 	driverFlag.Options["minimum-nodes"] = &types.Flag{
 		Type:  types.IntType,
 		Usage: "The minimum number of worker nodes",
@@ -240,7 +252,14 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 	}
 	driverFlag.Options["subnets"] = &types.Flag{
 		Type:  types.StringSliceType,
-		Usage: "Comma-separated list of subnets in the virtual network to use",
+		Usage: "Comma-separated list of subnets in the virtual network to use for masters",
+		Default: &types.Default{
+			DefaultStringSlice: &types.StringSlice{Value: []string{}}, //avoid nil value for init
+		},
+	}
+	driverFlag.Options["worker-subnets"] = &types.Flag{
+		Type:  types.StringSliceType,
+		Usage: "Comma-separated list of subnets in the virtual network to use for worker nodes",
 		Default: &types.Default{
 			DefaultStringSlice: &types.StringSlice{Value: []string{}}, //avoid nil value for init
 		},
@@ -252,6 +271,10 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 	driverFlag.Options["security-groups"] = &types.Flag{
 		Type:  types.StringSliceType,
 		Usage: "Comma-separated list of security groups to use for the cluster",
+	}
+	driverFlag.Options["node-security-groups"] = &types.Flag{
+		Type:  types.StringSliceType,
+		Usage: "Comma-separated list of node security groups to use for the cluster",
 	}
 	driverFlag.Options["ami"] = &types.Flag{
 		Type:  types.StringType,
@@ -276,6 +299,13 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 				"--resource NodeGroup --region ${AWS::Region}\n",
 		},
 	}
+	driverFlag.Options["annotations"] = &types.Flag{
+		Type:  types.StringMapType,
+		Usage: "Comma-separated list of K=V annotation pairs",
+		Default: &types.Default{
+			DefaultStringSlice: &types.StringSlice{Value: []string{}}, //avoid nil value for init
+		},
+	}
 	driverFlag.Options["keyPairName"] = &types.Flag{
 		Type:  types.StringType,
 		Usage: "Allow user to specify key name to use",
@@ -292,6 +322,13 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 	driverFlag.Options["ebs-encryption"] = &types.Flag{
 		Type:  types.BoolType,
 		Usage: "Enables EBS encryption of worker nodes",
+		Default: &types.Default{
+			DefaultBool: false,
+		},
+	}
+	driverFlag.Options["manage-own-security-groups"] = &types.Flag{
+		Type:  types.BoolType,
+		Usage: "Disables the creation or editing of worker security groups",
 		Default: &types.Default{
 			DefaultBool: false,
 		},
@@ -338,18 +375,23 @@ func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
 
 	state.Region = options.GetValueFromDriverOptions(driverOptions, types.StringType, "region").(string)
 	state.InstanceType = options.GetValueFromDriverOptions(driverOptions, types.StringType, "instance-type", "instanceType").(string)
+	state.PlacementGroup = options.GetValueFromDriverOptions(driverOptions, types.StringType, "placement-group", "placementGroup").(string)
 	state.MinimumASGSize = options.GetValueFromDriverOptions(driverOptions, types.IntType, "minimum-nodes", "minimumNodes").(int64)
 	state.MaximumASGSize = options.GetValueFromDriverOptions(driverOptions, types.IntType, "maximum-nodes", "maximumNodes").(int64)
 	state.DesiredASGSize = options.GetValueFromDriverOptions(driverOptions, types.IntType, "desired-nodes", "desiredNodes").(int64)
 	state.NodeVolumeSize, _ = options.GetValueFromDriverOptions(driverOptions, types.IntPointerType, "node-volume-size", "nodeVolumeSize").(*int64)
 	state.VirtualNetwork = options.GetValueFromDriverOptions(driverOptions, types.StringType, "virtual-network", "virtualNetwork").(string)
 	state.Subnets = options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "subnets").(*types.StringSlice).Value
+	state.WorkerSubnets = options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "worker-subnets").(*types.StringSlice).Value
+	state.Annotations = options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "annotations").(*types.StringSlice).Value
 	state.ServiceRole = options.GetValueFromDriverOptions(driverOptions, types.StringType, "service-role", "serviceRole").(string)
 	state.SecurityGroups = options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "security-groups", "securityGroups").(*types.StringSlice).Value
 	state.AMI = options.GetValueFromDriverOptions(driverOptions, types.StringType, "ami").(string)
 	state.AssociateWorkerNodePublicIP, _ = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "associate-worker-node-public-ip", "associateWorkerNodePublicIp").(*bool)
 	state.KeyPairName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "keyPairName").(string)
 	state.EBSEncryption = options.GetValueFromDriverOptions(driverOptions, types.BoolType, "ebs-encryption", "EBSEncryption").(bool)
+	state.NodeSecurityGroups = options.GetValueFromDriverOptions(driverOptions, types.StringSliceType, "node-security-groups", "nodeSecurityGroups").(*types.StringSlice).Value
+	state.ManageOwnSecurityGroups = options.GetValueFromDriverOptions(driverOptions, types.BoolType, "manage-own-security-groups", "manageOwnSecurityGroups").(bool)
 
 	// UserData
 	state.UserData = options.GetValueFromDriverOptions(driverOptions, types.StringType, "user-data", "userData").(string)
@@ -441,16 +483,24 @@ func alreadyExistsInCloudFormationError(err error) bool {
 	return false
 }
 
-func (d *Driver) createStack(svc *cloudformation.CloudFormation, name string, displayName string,
+func (d *Driver) createStack(svc *cloudformation.CloudFormation, name string, displayName string, annotations []string,
 	templateBody string, capabilities []string, parameters []*cloudformation.Parameter) (*cloudformation.DescribeStacksOutput, error) {
+
+	tags := []*cloudformation.Tag{
+		{Key: aws.String("displayName"), Value: aws.String(displayName)},
+	}
+	// Add all annotations as stack tags. These tags propagate to all entities within the CloudFormation stack
+	for _, pair := range annotations {
+		key, value := util.AnnotationPair(pair)
+		tags = append(tags, &cloudformation.Tag{Key: aws.String(key), Value: aws.String(value)})
+	}
+
 	_, err := svc.CreateStack(&cloudformation.CreateStackInput{
 		StackName:    aws.String(name),
 		TemplateBody: aws.String(templateBody),
 		Capabilities: aws.StringSlice(capabilities),
 		Parameters:   parameters,
-		Tags: []*cloudformation.Tag{
-			{Key: aws.String("displayName"), Value: aws.String(displayName)},
-		},
+		Tags:         tags,
 	})
 	if err != nil && !alreadyExistsInCloudFormationError(err) {
 		return nil, fmt.Errorf("error creating master: %v", err)
@@ -552,15 +602,15 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 	svc := cloudformation.New(sess)
 
 	displayName := state.DisplayName
+	annotations := state.Annotations
 
 	var vpcid string
-	var subnetIds []*string
+	var masterSubnetIds []*string
 	var securityGroups []*string
 	if state.VirtualNetwork == "" {
 		logrus.Infof("Bringing up vpc")
 
-		stack, err := d.createStack(svc, getVPCStackName(state.DisplayName), displayName, vpcTemplate, []string{},
-			[]*cloudformation.Parameter{})
+		stack, err := d.createStack(svc, getVPCStackName(state.DisplayName), displayName, annotations, vpcTemplate, []string{}, []*cloudformation.Parameter{})
 		if err != nil {
 			return info, fmt.Errorf("error creating stack with VPC template: %v", err)
 		}
@@ -573,7 +623,7 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 		}
 
 		securityGroups = toStringPointerSlice(strings.Split(securityGroupsString, ","))
-		subnetIds = toStringPointerSlice(strings.Split(subnetIdsString, ","))
+		masterSubnetIds = toStringPointerSlice(strings.Split(subnetIdsString, ","))
 
 		resources, err := svc.DescribeStackResources(&cloudformation.DescribeStackResourcesInput{
 			StackName: aws.String(state.DisplayName + "-eks-vpc"),
@@ -591,15 +641,17 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 		logrus.Infof("VPC info provided, skipping create")
 
 		vpcid = state.VirtualNetwork
-		subnetIds = toStringPointerSlice(state.Subnets)
+		masterSubnetIds = toStringPointerSlice(state.Subnets)
 		securityGroups = toStringPointerSlice(state.SecurityGroups)
 	}
+
+	nodeSecurityGroupID := toStringPointerSlice(state.NodeSecurityGroups)
 
 	var roleARN string
 	if state.ServiceRole == "" {
 		logrus.Infof("Creating service role")
 
-		stack, err := d.createStack(svc, getServiceRoleName(state.DisplayName), displayName, serviceRoleTemplate,
+		stack, err := d.createStack(svc, getServiceRoleName(state.DisplayName), displayName, annotations, serviceRoleTemplate,
 			[]string{cloudformation.CapabilityCapabilityIam}, nil)
 		if err != nil {
 			return info, fmt.Errorf("error creating stack with service role template: %v", err)
@@ -624,15 +676,22 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 
 	logrus.Infof("Creating EKS cluster")
 
+	tags := map[string]*string{}
+	for _, pair := range annotations {
+		key, value := util.AnnotationPair(pair)
+		tags[key] = &value
+	}
+
 	eksService := eks.New(sess)
 	_, err = eksService.CreateCluster(&eks.CreateClusterInput{
 		Name:    aws.String(state.DisplayName),
 		RoleArn: aws.String(roleARN),
 		ResourcesVpcConfig: &eks.VpcConfigRequest{
 			SecurityGroupIds: securityGroups,
-			SubnetIds:        subnetIds,
+			SubnetIds:        masterSubnetIds,
 		},
 		Version: aws.String(state.KubernetesVersion),
+		Tags:    tags,
 	})
 	if err != nil && !isClusterConflict(err) {
 		return info, fmt.Errorf("error creating cluster: %v", err)
@@ -651,22 +710,16 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 	}
 	// SSH Key pair creation
 	ec2svc := ec2.New(sess)
-	// make keyPairName visible outside of conditional scope
-	keyPairName := state.KeyPairName
 
+	keyPairName := state.KeyPairName
 	if keyPairName == "" {
 		keyPairName = getEC2KeyPairName(state.DisplayName)
 		_, err = ec2svc.CreateKeyPair(&ec2.CreateKeyPairInput{
 			KeyName: aws.String(keyPairName),
 		})
-	} else {
-		_, err = ec2svc.CreateKeyPair(&ec2.CreateKeyPairInput{
-			KeyName: aws.String(keyPairName),
-		})
-	}
-
-	if err != nil && !isDuplicateKeyError(err) {
-		return info, fmt.Errorf("error creating key pair %v", err)
+		if err != nil && !isDuplicateKeyError(err) {
+			return info, fmt.Errorf("error creating key pair %v", err)
+		}
 	}
 
 	logrus.Infof("Creating worker nodes")
@@ -686,9 +739,23 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 	} else {
 		publicIP = *state.AssociateWorkerNodePublicIP
 	}
-	// amend UserData values into template.
-	// must use %q to safely pass the string
-	workerNodesFinalTemplate := fmt.Sprintf(workerNodesTemplate, state.UserData)
+
+	workerSubnetIds := masterSubnetIds
+	if len(state.WorkerSubnets) > 0 {
+		workerSubnetIds = toStringPointerSlice(state.WorkerSubnets)
+	}
+
+	userdata := state.UserData
+
+	// Build up NodeGroups from nodeGroupSubsectionTemplate
+	var nodeGroups []string
+	for i := 1; i <= len(workerSubnetIds); i++ {
+		// rune(64+i) builds up the A..B..C..D..E.. etc suffix sequence that's used on the NodeGroup name
+		nodeGroups = append(nodeGroups, fmt.Sprintf(nodeGroupSubsectionTemplate, string(rune(64+i)), i-1))
+	}
+
+	// amend values into template
+	workerNodesFinalTemplate := fmt.Sprintf(workerNodesTemplate, strings.Join(nodeGroups[:], ""), userdata)
 
 	var volumeSize int64
 	if state.NodeVolumeSize == nil {
@@ -697,10 +764,11 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 		volumeSize = *state.NodeVolumeSize
 	}
 
-	stack, err := d.createStack(svc, getWorkNodeName(state.DisplayName), displayName, workerNodesFinalTemplate,
+	stack, err := d.createStack(svc, getWorkNodeName(state.DisplayName), displayName, annotations, workerNodesFinalTemplate,
 		[]string{cloudformation.CapabilityCapabilityIam},
 		[]*cloudformation.Parameter{
 			{ParameterKey: aws.String("ClusterName"), ParameterValue: aws.String(state.DisplayName)},
+			// WARNING: The incoming parameter is a list of security groups, but the CloudFormation stack expects just a single security group
 			{ParameterKey: aws.String("ClusterControlPlaneSecurityGroup"),
 				ParameterValue: aws.String(strings.Join(toStringLiteralSlice(securityGroups), ","))},
 			{ParameterKey: aws.String("NodeGroupName"),
@@ -714,13 +782,19 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 			{ParameterKey: aws.String("NodeVolumeSize"), ParameterValue: aws.String(strconv.Itoa(
 				int(volumeSize)))},
 			{ParameterKey: aws.String("NodeInstanceType"), ParameterValue: aws.String(state.InstanceType)},
+			{ParameterKey: aws.String("PlacementGroup"), ParameterValue: aws.String(state.PlacementGroup)},
 			{ParameterKey: aws.String("NodeImageId"), ParameterValue: aws.String(amiID)},
 			{ParameterKey: aws.String("KeyName"), ParameterValue: aws.String(keyPairName)},
 			{ParameterKey: aws.String("VpcId"), ParameterValue: aws.String(vpcid)},
 			{ParameterKey: aws.String("Subnets"),
-				ParameterValue: aws.String(strings.Join(toStringLiteralSlice(subnetIds), ","))},
+				ParameterValue: aws.String(strings.Join(toStringLiteralSlice(workerSubnetIds), ","))},
 			{ParameterKey: aws.String("PublicIp"), ParameterValue: aws.String(strconv.FormatBool(publicIP))},
+			{ParameterKey: aws.String("WorkerAZCount"), ParameterValue: aws.String(strconv.Itoa(len(workerSubnetIds)))},
 			{ParameterKey: aws.String("EBSEncryption"), ParameterValue: aws.String(strconv.FormatBool(state.EBSEncryption))},
+			{ParameterKey: aws.String("ManageOwnSecurityGroups"), ParameterValue: aws.String(strconv.FormatBool(state.ManageOwnSecurityGroups))},
+			// WARNING: Like ClusterControlPlaneSecurityGroup, the incoming parameter is a list of security groups, but the CloudFormation stack expects just a single security group
+			{ParameterKey: aws.String("NodeSecurityGroupID"),
+				ParameterValue: aws.String(strings.Join(toStringLiteralSlice(nodeSecurityGroupID), ","))},
 		})
 	if err != nil {
 		return info, fmt.Errorf("error creating stack with worker nodes template: %v", err)
@@ -977,6 +1051,15 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, options *t
 		newState.KubernetesVersion != state.KubernetesVersion {
 		state.KubernetesVersion = newState.KubernetesVersion
 	}
+	if newState.ClientSecret != "" && newState.ClientSecret != state.ClientSecret {
+		state.ClientSecret = newState.ClientSecret
+	}
+	if newState.SessionToken != "" && newState.SessionToken != state.SessionToken {
+		state.SessionToken = newState.SessionToken
+	}
+	if newState.ClientID != "" && newState.ClientID != state.ClientID {
+		state.ClientID = newState.ClientID
+	}
 
 	if !reflect.DeepEqual(state, *oldstate) {
 		if err := d.updateClusterAndWait(ctx, state); err != nil {
@@ -1134,14 +1217,18 @@ func (d *Driver) Remove(ctx context.Context, info *types.ClusterInfo) error {
 		KeyNames: []*string{aws.String(getEC2KeyPairName(name))},
 	})
 	if doesNotExist(err) {
-		name = state.ClusterName
+		logrus.Warnf("error finding keypair %s, assuming a custom key was used and not deleting: %v", name, err)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("error finding keypair %s: %v", name, err)
 	}
 
 	_, err = ec2svc.DeleteKeyPair(&ec2.DeleteKeyPairInput{
 		KeyName: aws.String(getEC2KeyPairName(name)),
 	})
 	if err != nil {
-		return fmt.Errorf("error deleting key pair: %v", err)
+		return fmt.Errorf("error deleting key pair %s: %v", name, err)
 	}
 
 	return err
@@ -1281,23 +1368,32 @@ func (d *Driver) updateClusterAndWait(ctx context.Context, state state) error {
 	}
 
 	svc := eks.New(sess)
-	input := &eks.UpdateClusterVersionInput{
-		Name: aws.String(state.DisplayName),
+
+	clusterName := aws.String(state.DisplayName)
+	clusterOut, err := svc.DescribeCluster(&eks.DescribeClusterInput{Name: clusterName})
+	if err != nil {
+		if notFound(err) {
+			clusterName = aws.String(state.ClusterName)
+			clusterOut, err = svc.DescribeCluster(&eks.DescribeClusterInput{Name: clusterName})
+		}
+		if err != nil {
+			return err
+		}
 	}
-	if state.KubernetesVersion != "" {
-		input.Version = aws.String(state.KubernetesVersion)
+
+	if state.KubernetesVersion != "" && *clusterOut.Cluster.Version == state.KubernetesVersion {
+		// Nothing to do here
+		return nil
+	}
+
+	input := &eks.UpdateClusterVersionInput{
+		Name:    clusterOut.Cluster.Name,
+		Version: aws.String(state.KubernetesVersion),
 	}
 
 	output, err := svc.UpdateClusterVersionWithContext(ctx, input)
 	if err != nil {
-		if notFound(err) {
-			input.Name = aws.String(state.ClusterName)
-			output, err = svc.UpdateClusterVersionWithContext(ctx, input)
-		}
-
-		if err != nil {
-			return err
-		}
+		return err
 	}
 
 	return d.waitForClusterUpdateReady(ctx, svc, state, *output.Update.Id)
