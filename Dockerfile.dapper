@@ -1,6 +1,6 @@
 FROM golang:1.12
 RUN apt-get update && \
-    apt-get install -y xz-utils zip rsync musl-dev
+    apt-get install -y xz-utils zip rsync
 RUN go get github.com/rancher/trash
 RUN go get golang.org/x/lint/golint
 RUN curl -sL https://get.docker.com/builds/Linux/x86_64/docker-1.10.3 > /usr/bin/docker && \
