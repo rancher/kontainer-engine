@@ -122,8 +122,8 @@ func flatten(data map[string]interface{}, driverOptions *types.DriverOptions) {
 		case []string:
 			driverOptions.StringSliceOptions[k] = &types.StringSlice{Value: v.([]string)}
 		case map[string]interface{}:
-			// hack for labels & annotations
-			if k == "labels" || k == "annotations" {
+			// hack to transfer map types as delimited string slices i.e. ["key1=value1","keyN=valueN"]
+			if useMapAsSliceHack(k) {
 				r := []string{}
 				for key1, value1 := range v.(map[string]interface{}) {
 					r = append(r, fmt.Sprintf("%v=%v", key1, value1))
@@ -669,4 +669,14 @@ func whitelistEnvvars(envvars []string) []string {
 	}
 
 	return envvars
+}
+
+func useMapAsSliceHack(key string) bool {
+	keyHacks := []string{"labels", "annotations", "tags", "resource_labels"}
+	for _, n := range keyHacks {
+		if key == n {
+			return true
+		}
+	}
+	return false
 }
