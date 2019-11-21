@@ -372,6 +372,9 @@ func (d *Driver) GetDriverCreateOptions(ctx context.Context) (*types.DriverFlags
 	driverFlag.Options["tags"] = &types.Flag{
 		Type:  types.StringMapType,
 		Usage: "Tags for Kubernetes cluster. For example, foo=bar.",
+		Default: &types.Default{
+			DefaultStringSlice: &types.StringSlice{Value: []string{}}, //avoid nil value for init
+		},
 	}
 	driverFlag.Options["annotations"] = &types.Flag{
 		Type:  types.StringMapType,
@@ -495,6 +498,9 @@ func (d *Driver) GetDriverUpdateOptions(ctx context.Context) (*types.DriverFlags
 	driverFlag.Options["tags"] = &types.Flag{
 		Type:  types.StringMapType,
 		Usage: "Tags for Kubernetes cluster. For example, foo=bar.",
+		Default: &types.Default{
+			DefaultStringSlice: &types.StringSlice{Value: []string{}}, //avoid nil value for init
+		},
 	}
 	driverFlag.Options["annotations"] = &types.Flag{
 		Type:  types.StringMapType,
