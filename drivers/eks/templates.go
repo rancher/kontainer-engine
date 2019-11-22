@@ -294,7 +294,7 @@ Parameters:
 Conditions:
   HasPlacementGroup: !Not [!Equals [!Ref PlacementGroup, ""]]
   HasNodeSecurityGroupID: !Not [!Equals [!Ref NodeSecurityGroupID, ""]]
-  ManageSecurityGroups: !Not [!Equals [!Ref ManageOwnSecurityGroups, "false"]]
+  ManageSecurityGroups: !Equals [!Ref ManageOwnSecurityGroups, "false"]
 
 Metadata:
 
