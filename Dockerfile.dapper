@@ -1,4 +1,5 @@
 FROM golang:1.13
+ENV GO111MODULE off
 RUN apt-get update && \
     apt-get install -y xz-utils zip rsync
 RUN go get github.com/rancher/trash
