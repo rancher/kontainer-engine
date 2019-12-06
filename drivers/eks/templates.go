@@ -485,7 +485,7 @@ Parameters:
     Type: String
     Default: "true"
 
-  EbsEncryption:
+  EBSEncryption:
     Description: Encrypt EBS volumes of worker nodes
     Type: String
     Default: "false"
@@ -676,7 +676,7 @@ Resources:
             VolumeSize: !Ref NodeVolumeSize
             VolumeType: gp2
             DeleteOnTermination: true
-            Encrypted: !Ref EbsEncryption
+            Encrypted: !Ref EBSEncryption
       UserData: !Base64
         'Fn::Sub': %q
 

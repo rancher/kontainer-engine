@@ -699,6 +699,7 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 
 	stack, err := d.createStack(svc, getWorkNodeName(state.DisplayName), displayName, workerNodesFinalTemplate,
 		[]string{cloudformation.CapabilityCapabilityIam},
+		// these parameter values must exactly match those in the template file
 		[]*cloudformation.Parameter{
 			{ParameterKey: aws.String("ClusterName"), ParameterValue: aws.String(state.DisplayName)},
 			{ParameterKey: aws.String("ClusterControlPlaneSecurityGroup"),
