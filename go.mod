@@ -1,9 +1,10 @@
 module github.com/rancher/kontainer-engine
 
-go 1.12
+go 1.13
 
 replace (
 	git.apache.org/thrift.git => github.com/apache/thrift v0.12.0
+	github.com/Azure/go-autorest => github.com/Azure/go-autorest v12.2.0+incompatible
 	k8s.io/client-go => k8s.io/client-go v0.0.0-20190918160344-1fbdaa4c8d90
 )
 
@@ -25,6 +26,7 @@ require (
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/testify v1.3.0
 	github.com/urfave/cli v1.20.0
+	golang.org/x/crypto v0.0.0-20190611184440-5c40567a22f8
 	golang.org/x/net v0.0.0-20190812203447-cdfb69ac37fc
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	google.golang.org/api v0.4.0
