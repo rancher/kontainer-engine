@@ -1,7 +1,7 @@
 # cloud.google.com/go v0.38.0
 cloud.google.com/go/compute/metadata
-# github.com/Azure/azure-sdk-for-go v32.5.0+incompatible
-github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2018-03-31/containerservice
+# github.com/Azure/azure-sdk-for-go v36.2.0+incompatible
+github.com/Azure/azure-sdk-for-go/services/containerservice/mgmt/2019-10-01/containerservice
 github.com/Azure/azure-sdk-for-go/services/preview/operationalinsights/mgmt/2015-11-01-preview/operationalinsights
 github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2017-05-10/resources
 github.com/Azure/azure-sdk-for-go/version
