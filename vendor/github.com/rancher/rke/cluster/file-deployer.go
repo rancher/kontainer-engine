@@ -34,15 +34,29 @@ func doDeployFile(ctx context.Context, host *hosts.Host, fileName, fileContents,
 	if err := docker.DoRemoveContainer(ctx, host.DClient, ContainerName, host.Address); err != nil {
 		return err
 	}
-	containerEnv := []string{ConfigEnv + "=" + fileContents}
-	imageCfg := &container.Config{
-		Image: alpineImage,
-		Cmd: []string{
+	var cmd, containerEnv []string
+
+	// fileContents determines if a file is placed or removed
+	// exception to this is the cloud-config file, as it is valid being empty (for example, when only specifying the aws cloudprovider and no additional config)
+	if fileContents != "" || fileName == cloudConfigFileName {
+		containerEnv = []string{ConfigEnv + "=" + fileContents}
+		cmd = []string{
 			"sh",
 			"-c",
 			fmt.Sprintf("t=$(mktemp); echo -e \"$%s\" > $t && mv $t %s && chmod 600 %s", ConfigEnv, fileName, fileName),
-		},
-		Env: containerEnv,
+		}
+	} else {
+		cmd = []string{
+			"sh",
+			"-c",
+			fmt.Sprintf("rm -f %s", fileName),
+		}
+	}
+
+	imageCfg := &container.Config{
+		Image: alpineImage,
+		Cmd:   cmd,
+		Env:   containerEnv,
 	}
 	hostCfg := &container.HostConfig{
 		Binds: []string{
