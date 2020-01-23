@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,13 +23,12 @@ import (
 )
 
 const (
-	EtcdSnapshotPath                = "/opt/rke/etcd-snapshots/"
-	EtcdRestorePath                 = "/opt/rke/etcd-snapshots-restore/"
-	EtcdDataDir                     = "/var/lib/rancher/etcd/"
-	EtcdInitWaitTime                = 10
-	EtcdSnapshotWaitTime            = 5
-	EtcdSnapshotCompressedExtension = "zip"
-	EtcdPermFixContainerName        = "etcd-fix-perm"
+	EtcdSnapshotPath         = "/opt/rke/etcd-snapshots/"
+	EtcdRestorePath          = "/opt/rke/etcd-snapshots-restore/"
+	EtcdDataDir              = "/var/lib/rancher/etcd/"
+	EtcdInitWaitTime         = 10
+	EtcdSnapshotWaitTime     = 5
+	EtcdPermFixContainerName = "etcd-fix-perm"
 )
 
 func RunEtcdPlane(
@@ -81,16 +79,21 @@ func RunEtcdPlane(
 	}
 	log.Infof(ctx, "[%s] Successfully started etcd plane.. Checking etcd cluster health", ETCDRole)
 	clientCert := cert.EncodeCertPEM(certMap[pki.KubeNodeCertName].Certificate)
-	clientkey := cert.EncodePrivateKeyPEM(certMap[pki.KubeNodeCertName].Key)
-	var healthy bool
+	clientKey := cert.EncodePrivateKeyPEM(certMap[pki.KubeNodeCertName].Key)
+	var healthError error
+	var hosts []string
 	for _, host := range etcdHosts {
 		_, _, healthCheckURL := GetProcessConfig(etcdNodePlanMap[host.Address].Processes[EtcdContainerName], host)
-		if healthy = isEtcdHealthy(ctx, localConnDialerFactory, host, clientCert, clientkey, healthCheckURL); healthy {
+		healthError = isEtcdHealthy(localConnDialerFactory, host, clientCert, clientKey, healthCheckURL)
+		if healthError == nil {
 			break
 		}
+		logrus.Warn(healthError)
+		hosts = append(hosts, host.Address)
 	}
-	if !healthy {
-		return fmt.Errorf("[etcd] Etcd Cluster is not healthy")
+	if healthError != nil {
+		return fmt.Errorf("etcd cluster is unhealthy: hosts [%s] failed to report healthy."+
+			" Check etcd container logs on each host for more information", strings.Join(hosts, ","))
 	}
 	return nil
 }
@@ -239,15 +242,20 @@ func ReloadEtcdCluster(ctx context.Context, readyEtcdHosts []*hosts.Host, newHos
 		return err
 	}
 	time.Sleep(EtcdInitWaitTime * time.Second)
-	var healthy bool
+	var healthError error
+	var hosts []string
 	for _, host := range readyEtcdHosts {
 		_, _, healthCheckURL := GetProcessConfig(etcdNodePlanMap[host.Address].Processes[EtcdContainerName], host)
-		if healthy = isEtcdHealthy(ctx, localConnDialerFactory, host, cert, key, healthCheckURL); healthy {
+		healthError = isEtcdHealthy(localConnDialerFactory, host, cert, key, healthCheckURL)
+		if healthError == nil {
 			break
 		}
+		logrus.Warn(healthError)
+		hosts = append(hosts, host.Address)
 	}
-	if !healthy {
-		return fmt.Errorf("[etcd] Etcd Cluster is not healthy")
+	if healthError != nil {
+		return fmt.Errorf("etcd cluster is unhealthy: hosts [%s] failed to report healthy."+
+			" Check etcd container logs on each host for more information", strings.Join(hosts, ","))
 	}
 	return nil
 }
@@ -370,7 +378,6 @@ func RunEtcdSnapshotSave(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 }
 
 func DownloadEtcdSnapshotFromS3(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry, etcdSnapshotImage string, name string, es v3.ETCDService) error {
-
 	log.Infof(ctx, "[etcd] Get snapshot [%s] on host [%s]", name, etcdHost.Address)
 	s3Backend := es.BackupConfig.S3BackupConfig
 	if len(s3Backend.Endpoint) == 0 || len(s3Backend.BucketName) == 0 {
@@ -426,9 +433,10 @@ func DownloadEtcdSnapshotFromS3(ctx context.Context, etcdHost *hosts.Host, prsMa
 	return docker.RemoveContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdDownloadBackupContainerName)
 }
 
-func RestoreEtcdSnapshot(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry, etcdRestoreImage, snapshotName, initCluster string, es v3.ETCDService) error {
+func RestoreEtcdSnapshot(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry,
+	etcdRestoreImage, etcdBackupImage, snapshotName, initCluster string, es v3.ETCDService) error {
 	log.Infof(ctx, "[etcd] Restoring [%s] snapshot on etcd host [%s]", snapshotName, etcdHost.Address)
-	nodeName := pki.GetEtcdCrtName(etcdHost.InternalAddress)
+	nodeName := pki.GetCrtNameForHost(etcdHost, pki.EtcdCertName)
 	snapshotPath := fmt.Sprintf("%s%s", EtcdSnapshotPath, snapshotName)
 
 	// make sure that restore path is empty otherwise etcd restore will fail
@@ -485,36 +493,41 @@ func RestoreEtcdSnapshot(ctx context.Context, etcdHost *hosts.Host, prsMap map[s
 	if err := docker.RemoveContainer(ctx, etcdHost.DClient, etcdHost.Address, EtcdRestoreContainerName); err != nil {
 		return err
 	}
-	return RunEtcdSnapshotRemove(ctx, etcdHost, prsMap, etcdRestoreImage, snapshotName, true, es)
+	return RunEtcdSnapshotRemove(ctx, etcdHost, prsMap, etcdBackupImage, snapshotName, true, es)
 }
 
 func RunEtcdSnapshotRemove(ctx context.Context, etcdHost *hosts.Host, prsMap map[string]v3.PrivateRegistry, etcdSnapshotImage string, name string, cleanupRestore bool, es v3.ETCDService) error {
 	log.Infof(ctx, "[etcd] Removing snapshot [%s] from host [%s]", name, etcdHost.Address)
-
-	compressedPath := fmt.Sprintf("/backup/%s.%s", name, EtcdSnapshotCompressedExtension)
-	uncompressedPath := fmt.Sprintf("/backup/%s", name)
-	// Make sure we have a safe path to remove
-	for _, p := range []string{compressedPath, uncompressedPath} {
-		if safePath, err := filepath.Match("/backup/*", p); err != nil || !safePath {
-			return fmt.Errorf("invalid or malformed snapshot path [%s]: %v", p, err)
-		}
-	}
-
 	imageCfg := &container.Config{
 		Image: etcdSnapshotImage,
 		Env:   es.ExtraEnv,
+		Cmd: []string{
+			"/opt/rke-tools/rke-etcd-backup",
+			"etcd-backup",
+			"delete",
+			"--name", name,
+		},
 	}
 	if cleanupRestore {
-		// Since we have to support compressed and uncompressed versions of snapshots.
-		// We can't remove the uncompressed snapshot unless we are sure the compressed
-		// is there, hence the complex check. The || true is to get a 0 exist status even if -f is false.
-		imageCfg.Cmd = []string{
-			"sh", "-c", fmt.Sprintf("[ -f %s ] && rm -f %s || true", compressedPath, uncompressedPath),
+		imageCfg.Cmd = append(imageCfg.Cmd, "--cleanup")
+	}
+	if es.BackupConfig != nil && es.BackupConfig.S3BackupConfig != nil {
+		s3cmd := []string{
+			"--s3-backup",
+			"--s3-endpoint=" + es.BackupConfig.S3BackupConfig.Endpoint,
+			"--s3-accessKey=" + es.BackupConfig.S3BackupConfig.AccessKey,
+			"--s3-secretKey=" + es.BackupConfig.S3BackupConfig.SecretKey,
+			"--s3-bucketName=" + es.BackupConfig.S3BackupConfig.BucketName,
+			"--s3-region=" + es.BackupConfig.S3BackupConfig.Region,
 		}
-	} else {
-		imageCfg.Cmd = []string{
-			"sh", "-c", fmt.Sprintf("rm -f %s %s", compressedPath, uncompressedPath),
+		if es.BackupConfig.S3BackupConfig.CustomCA != "" {
+			caStr := base64.StdEncoding.EncodeToString([]byte(es.BackupConfig.S3BackupConfig.CustomCA))
+			s3cmd = append(s3cmd, "--s3-endpoint-ca="+caStr)
 		}
+		if es.BackupConfig.S3BackupConfig.Folder != "" {
+			s3cmd = append(s3cmd, "--s3-folder="+es.BackupConfig.S3BackupConfig.Folder)
+		}
+		imageCfg.Cmd = append(imageCfg.Cmd, s3cmd...)
 	}
 
 	hostCfg := &container.HostConfig{
@@ -523,7 +536,6 @@ func RunEtcdSnapshotRemove(ctx context.Context, etcdHost *hosts.Host, prsMap map
 		},
 		RestartPolicy: container.RestartPolicy{Name: "no"},
 	}
-
 	if err := docker.DoRemoveContainer(ctx, etcdHost.DClient, EtcdSnapshotRemoveContainerName, etcdHost.Address); err != nil {
 		return err
 	}
@@ -727,7 +739,11 @@ func setEtcdPermissions(ctx context.Context, etcdHost *hosts.Host, prsMap map[st
 	hostCfg := &container.HostConfig{
 		Binds: []string{dataBind},
 	}
-	return docker.DoRunOnetimeContainer(ctx, etcdHost.DClient, imageCfg, hostCfg, EtcdPermFixContainerName, etcdHost.Address, ETCDRole, prsMap)
+	if err := docker.DoRunOnetimeContainer(ctx, etcdHost.DClient, imageCfg, hostCfg, EtcdPermFixContainerName,
+		etcdHost.Address, ETCDRole, prsMap); err != nil {
+		return err
+	}
+	return docker.DoRemoveContainer(ctx, etcdHost.DClient, EtcdPermFixContainerName, etcdHost.Address)
 }
 
 func getSanitizedSnapshotCmd(imageCfg *container.Config, bc *v3.BackupConfig) string {

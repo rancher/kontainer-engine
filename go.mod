@@ -5,7 +5,7 @@ go 1.13
 replace (
 	git.apache.org/thrift.git => github.com/apache/thrift v0.12.0
 	github.com/Azure/go-autorest => github.com/Azure/go-autorest v12.2.0+incompatible
-	k8s.io/client-go => k8s.io/client-go v0.0.0-20190918160344-1fbdaa4c8d90
+	k8s.io/client-go => k8s.io/client-go v0.17.2
 )
 
 require (
@@ -20,20 +20,20 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.9.6 // indirect
 	github.com/heptio/authenticator v0.0.0-20180409043135-d282f87a1972
 	github.com/pkg/errors v0.8.1
-	github.com/rancher/norman v0.0.0-20190930164704-e09204b63081
-	github.com/rancher/rke v0.3.0-rc11.0.20190930172345-88449ec73b31
-	github.com/rancher/types v0.0.0-20190930165650-6bbedae77a35
+	github.com/rancher/norman v0.0.0-20200123223841-6d86f4e37a69
+	github.com/rancher/rke v1.1.0-rc4.0.20200123230443-25e7f987775d
+	github.com/rancher/types v0.0.0-20200123224322-9adcafc483ee
 	github.com/sirupsen/logrus v1.4.2
-	github.com/stretchr/testify v1.3.0
+	github.com/stretchr/testify v1.4.0
 	github.com/urfave/cli v1.20.0
-	golang.org/x/crypto v0.0.0-20190611184440-5c40567a22f8
-	golang.org/x/net v0.0.0-20190812203447-cdfb69ac37fc
+	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7
+	golang.org/x/net v0.0.0-20191004110552-13f9640d40b9
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	google.golang.org/api v0.4.0
-	google.golang.org/grpc v1.23.0
+	google.golang.org/grpc v1.23.1
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127
-	gopkg.in/yaml.v2 v2.2.2
-	k8s.io/api v0.0.0-20190918155943-95b840bb6a1f
-	k8s.io/apimachinery v0.0.0-20190913080033-27d36303b655
+	gopkg.in/yaml.v2 v2.2.4
+	k8s.io/api v0.17.2
+	k8s.io/apimachinery v0.17.2
 	k8s.io/client-go v11.0.1-0.20190805182715-88a2adca7e76+incompatible
 )

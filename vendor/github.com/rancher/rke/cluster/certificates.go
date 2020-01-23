@@ -12,7 +12,6 @@ import (
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/pki/cert"
 	"github.com/rancher/rke/services"
-	"github.com/sirupsen/logrus"
 )
 
 func SetUpAuthentication(ctx context.Context, kubeCluster, currentCluster *Cluster, fullState *FullState) error {
@@ -22,20 +21,6 @@ func SetUpAuthentication(ctx context.Context, kubeCluster, currentCluster *Clust
 		return nil
 	}
 	return nil
-}
-
-func regenerateAPICertificate(c *Cluster, certificates map[string]pki.CertificatePKI) (map[string]pki.CertificatePKI, error) {
-	logrus.Debugf("[certificates] Regenerating kubeAPI certificate")
-	kubeAPIAltNames := pki.GetAltNames(c.ControlPlaneHosts, c.ClusterDomain, c.KubernetesServiceIP, c.Authentication.SANs)
-	caCrt := certificates[pki.CACertName].Certificate
-	caKey := certificates[pki.CACertName].Key
-	kubeAPIKey := certificates[pki.KubeAPICertName].Key
-	kubeAPICert, _, err := pki.GenerateSignedCertAndKey(caCrt, caKey, true, pki.KubeAPICertName, kubeAPIAltNames, kubeAPIKey, nil)
-	if err != nil {
-		return nil, err
-	}
-	certificates[pki.KubeAPICertName] = pki.ToCertObject(pki.KubeAPICertName, "", "", kubeAPICert, kubeAPIKey, nil)
-	return certificates, nil
 }
 
 func GetClusterCertsFromKubernetes(ctx context.Context, kubeCluster *Cluster) (map[string]pki.CertificatePKI, error) {
@@ -59,13 +44,13 @@ func GetClusterCertsFromKubernetes(ctx context.Context, kubeCluster *Cluster) (m
 	}
 
 	for _, etcdHost := range kubeCluster.EtcdHosts {
-		etcdName := pki.GetEtcdCrtName(etcdHost.InternalAddress)
+		etcdName := pki.GetCrtNameForHost(etcdHost, pki.EtcdCertName)
 		certificatesNames = append(certificatesNames, etcdName)
 	}
 
 	certMap := make(map[string]pki.CertificatePKI)
 	for _, certName := range certificatesNames {
-		secret, err := k8s.GetSecret(k8sClient, certName)
+		secret, err := k8s.GetSystemSecret(k8sClient, certName)
 		if err != nil && !strings.HasPrefix(certName, "kube-etcd") &&
 			!strings.Contains(certName, pki.RequestHeaderCACertName) &&
 			!strings.Contains(certName, pki.APIProxyClientCertName) &&
@@ -132,35 +117,20 @@ func (c *Cluster) getBackupHosts() []*hosts.Host {
 	return backupHosts
 }
 
-func regenerateAPIAggregationCerts(c *Cluster, certificates map[string]pki.CertificatePKI) (map[string]pki.CertificatePKI, error) {
-	logrus.Debugf("[certificates] Regenerating Kubernetes API server aggregation layer requestheader client CA certificates")
-	requestHeaderCACrt, requestHeaderCAKey, err := pki.GenerateCACertAndKey(pki.RequestHeaderCACertName, nil)
-	if err != nil {
-		return nil, err
-	}
-	certificates[pki.RequestHeaderCACertName] = pki.ToCertObject(pki.RequestHeaderCACertName, "", "", requestHeaderCACrt, requestHeaderCAKey, nil)
-
-	//generate API server proxy client key and certs
-	logrus.Debugf("[certificates] Regenerating Kubernetes API server proxy client certificates")
-	apiserverProxyClientCrt, apiserverProxyClientKey, err := pki.GenerateSignedCertAndKey(requestHeaderCACrt, requestHeaderCAKey, true, pki.APIProxyClientCertName, nil, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	certificates[pki.APIProxyClientCertName] = pki.ToCertObject(pki.APIProxyClientCertName, "", "", apiserverProxyClientCrt, apiserverProxyClientKey, nil)
-	return certificates, nil
-}
-
 func RotateRKECertificates(ctx context.Context, c *Cluster, flags ExternalFlags, clusterState *FullState) error {
 	var (
 		serviceAccountTokenKey string
 	)
-	componentsCertsFuncMap := map[string]pki.GenFunc{
-		services.KubeAPIContainerName:        pki.GenerateKubeAPICertificate,
-		services.KubeControllerContainerName: pki.GenerateKubeControllerCertificate,
-		services.SchedulerContainerName:      pki.GenerateKubeSchedulerCertificate,
-		services.KubeproxyContainerName:      pki.GenerateKubeProxyCertificate,
-		services.KubeletContainerName:        pki.GenerateKubeNodeCertificate,
-		services.EtcdContainerName:           pki.GenerateEtcdCertificates,
+	componentsCertsFuncMap := map[string][]pki.GenFunc{
+		services.KubeAPIContainerName:        []pki.GenFunc{pki.GenerateKubeAPICertificate},
+		services.KubeControllerContainerName: []pki.GenFunc{pki.GenerateKubeControllerCertificate},
+		services.SchedulerContainerName:      []pki.GenFunc{pki.GenerateKubeSchedulerCertificate},
+		services.KubeproxyContainerName:      []pki.GenFunc{pki.GenerateKubeProxyCertificate},
+		services.KubeletContainerName:        []pki.GenFunc{pki.GenerateKubeNodeCertificate},
+		services.EtcdContainerName:           []pki.GenFunc{pki.GenerateEtcdCertificates},
+	}
+	if c.IsKubeletGenerateServingCertificateEnabled() {
+		componentsCertsFuncMap[services.KubeletContainerName] = append(componentsCertsFuncMap[services.KubeletContainerName], pki.GenerateKubeletCertificate)
 	}
 	rotateFlags := c.RancherKubernetesEngineConfig.RotateCertificates
 	if rotateFlags.CACertificates {
@@ -171,10 +141,12 @@ func RotateRKECertificates(ctx context.Context, c *Cluster, flags ExternalFlags,
 		rotateFlags.Services = nil
 	}
 	for _, k8sComponent := range rotateFlags.Services {
-		genFunc := componentsCertsFuncMap[k8sComponent]
-		if genFunc != nil {
-			if err := genFunc(ctx, c.Certificates, c.RancherKubernetesEngineConfig, flags.ClusterFilePath, flags.ConfigDir, true); err != nil {
-				return err
+		genFunctions := componentsCertsFuncMap[k8sComponent]
+		if genFunctions != nil {
+			for _, genFunc := range genFunctions {
+				if err := genFunc(ctx, c.Certificates, c.RancherKubernetesEngineConfig, flags.ClusterFilePath, flags.ConfigDir, true); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -248,4 +220,14 @@ func compareCerts(ctx context.Context, kubeCluster, currentCluster *Cluster) {
 			}
 		}
 	}
+}
+
+func (c *Cluster) IsKubeletGenerateServingCertificateEnabled() bool {
+	if c == nil {
+		return false
+	}
+	if c.Services.Kubelet.GenerateServingCertificate {
+		return true
+	}
+	return false
 }

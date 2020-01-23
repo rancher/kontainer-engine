@@ -105,6 +105,7 @@ const (
 	FlannelBackend   = "FlannelBackend"
 	CanalInterface   = "CanalInterface"
 	WeavePassword    = "WeavePassword"
+	MTU              = "MTU"
 	RBACConfig       = "RBACConfig"
 	ClusterVersion   = "ClusterVersion"
 
@@ -194,6 +195,7 @@ func (c *Cluster) doCalicoDeploy(ctx context.Context, data map[string]interface{
 		FlexVolImg:       c.SystemImages.CalicoFlexVol,
 		RBACConfig:       c.Authorization.Mode,
 		NodeSelector:     c.Network.NodeSelector,
+		MTU:              c.Network.MTU,
 	}
 	pluginYaml, err := c.getNetworkPluginManifest(calicoConfig, data)
 	if err != nil {
@@ -232,6 +234,7 @@ func (c *Cluster) doCanalDeploy(ctx context.Context, data map[string]interface{}
 			"Port": flannelPort,
 		},
 		NodeSelector: c.Network.NodeSelector,
+		MTU:          c.Network.MTU,
 	}
 	pluginYaml, err := c.getNetworkPluginManifest(canalConfig, data)
 	if err != nil {
@@ -249,6 +252,7 @@ func (c *Cluster) doWeaveDeploy(ctx context.Context, data map[string]interface{}
 		WeaveLoopbackImage: c.SystemImages.Alpine,
 		RBACConfig:         c.Authorization.Mode,
 		NodeSelector:       c.Network.NodeSelector,
+		MTU:                c.Network.MTU,
 	}
 	pluginYaml, err := c.getNetworkPluginManifest(weaveConfig, data)
 	if err != nil {
@@ -273,12 +277,12 @@ func (c *Cluster) getNetworkPluginManifest(pluginConfig, data map[string]interfa
 func (c *Cluster) CheckClusterPorts(ctx context.Context, currentCluster *Cluster) error {
 	if currentCluster != nil {
 		newEtcdHost := hosts.GetToAddHosts(currentCluster.EtcdHosts, c.EtcdHosts)
-		newControlPlanHosts := hosts.GetToAddHosts(currentCluster.ControlPlaneHosts, c.ControlPlaneHosts)
+		newControlPlaneHosts := hosts.GetToAddHosts(currentCluster.ControlPlaneHosts, c.ControlPlaneHosts)
 		newWorkerHosts := hosts.GetToAddHosts(currentCluster.WorkerHosts, c.WorkerHosts)
 
 		if len(newEtcdHost) == 0 &&
 			len(newWorkerHosts) == 0 &&
-			len(newControlPlanHosts) == 0 {
+			len(newControlPlaneHosts) == 0 {
 			log.Infof(ctx, "[network] No hosts added existing cluster, skipping port check")
 			return nil
 		}

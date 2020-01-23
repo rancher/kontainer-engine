@@ -68,15 +68,14 @@ func (c *Cluster) PrepareBackup(ctx context.Context, snapshotPath string) error 
 			if err := docker.StopContainer(ctx, host.DClient, host.Address, services.EtcdContainerName); err != nil {
 				log.Warnf(ctx, "failed to stop etcd container on host [%s]: %v", host.Address, err)
 			}
-			if backupServer == nil { // start the download server, only one node should have it!
-				if err := services.StartBackupServer(ctx, host, c.PrivateRegistriesMap, backupImage, snapshotPath); err != nil {
-					log.Warnf(ctx, "failed to start backup server on host [%s]: %v", host.Address, err)
-					errors = append(errors, err)
-					continue
-				}
-				backupServer = host
-				break
+			// start the download server, only one node should have it!
+			if err := services.StartBackupServer(ctx, host, c.PrivateRegistriesMap, backupImage, snapshotPath); err != nil {
+				log.Warnf(ctx, "failed to start backup server on host [%s]: %v", host.Address, err)
+				errors = append(errors, err)
+				continue
 			}
+			backupServer = host
+			break
 		}
 
 		if backupServer == nil { //failed to start the backupServer, I will cleanup and exit
@@ -89,7 +88,7 @@ func (c *Cluster) PrepareBackup(ctx context.Context, snapshotPath string) error 
 		}
 		// start downloading the snapshot
 		for _, host := range c.EtcdHosts {
-			if backupServer != nil && host.Address == backupServer.Address { // we skip the backup server if it's there
+			if host.Address == backupServer.Address { // we skip the backup server if it's there
 				continue
 			}
 			if err := services.DownloadEtcdSnapshotFromBackupServer(ctx, host, c.PrivateRegistriesMap, backupImage, snapshotPath, backupServer); err != nil {
@@ -131,8 +130,10 @@ func (c *Cluster) PrepareBackup(ctx context.Context, snapshotPath string) error 
 func (c *Cluster) RestoreEtcdSnapshot(ctx context.Context, snapshotPath string) error {
 	// Start restore process on all etcd hosts
 	initCluster := services.GetEtcdInitialCluster(c.EtcdHosts)
+	backupImage := c.getBackupImage()
 	for _, host := range c.EtcdHosts {
-		if err := services.RestoreEtcdSnapshot(ctx, host, c.PrivateRegistriesMap, c.SystemImages.Etcd, snapshotPath, initCluster, c.Services.Etcd); err != nil {
+		if err := services.RestoreEtcdSnapshot(ctx, host, c.PrivateRegistriesMap, c.SystemImages.Etcd, backupImage,
+			snapshotPath, initCluster, c.Services.Etcd); err != nil {
 			return fmt.Errorf("[etcd] Failed to restore etcd snapshot: %v", err)
 		}
 	}
@@ -142,7 +143,8 @@ func (c *Cluster) RestoreEtcdSnapshot(ctx context.Context, snapshotPath string) 
 func (c *Cluster) RemoveEtcdSnapshot(ctx context.Context, snapshotName string) error {
 	backupImage := c.getBackupImage()
 	for _, host := range c.EtcdHosts {
-		if err := services.RunEtcdSnapshotRemove(ctx, host, c.PrivateRegistriesMap, backupImage, snapshotName, false, c.Services.Etcd); err != nil {
+		if err := services.RunEtcdSnapshotRemove(ctx, host, c.PrivateRegistriesMap, backupImage, snapshotName,
+			false, c.Services.Etcd); err != nil {
 			return err
 		}
 	}

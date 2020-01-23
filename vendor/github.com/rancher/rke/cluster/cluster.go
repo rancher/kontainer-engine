@@ -2,15 +2,16 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"reflect"
 	"strings"
 	"time"
 
-	"github.com/rancher/rke/pki/cert"
-
 	"github.com/docker/docker/api/types"
+	ghodssyaml "github.com/ghodss/yaml"
+	"github.com/rancher/norman/types/convert"
 	"github.com/rancher/rke/authz"
 	"github.com/rancher/rke/docker"
 	"github.com/rancher/rke/hosts"
@@ -18,6 +19,7 @@ import (
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/metadata"
 	"github.com/rancher/rke/pki"
+	"github.com/rancher/rke/pki/cert"
 	"github.com/rancher/rke/services"
 	"github.com/rancher/rke/util"
 	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
@@ -25,6 +27,10 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	apiserverv1alpha1 "k8s.io/apiserver/pkg/apis/apiserver/v1alpha1"
+	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/transport"
@@ -58,29 +64,32 @@ type Cluster struct {
 	UseKubectlDeploy                 bool
 	v3.RancherKubernetesEngineConfig `yaml:",inline"`
 	WorkerHosts                      []*hosts.Host
+	EncryptionConfig                 encryptionConfig
+}
+
+type encryptionConfig struct {
+	RewriteSecrets         bool
+	RotateKey              bool
+	EncryptionProviderFile string
 }
 
 const (
-	AuthnX509Provider       = "x509"
-	AuthnWebhookProvider    = "webhook"
-	StateConfigMapName      = "cluster-state"
-	FullStateConfigMapName  = "full-cluster-state"
-	UpdateStateTimeout      = 30
-	GetStateTimeout         = 30
-	KubernetesClientTimeOut = 30
-	SyncWorkers             = 10
-	NoneAuthorizationMode   = "none"
-	LocalNodeAddress        = "127.0.0.1"
-	LocalNodeHostname       = "localhost"
-	LocalNodeUser           = "root"
-	CloudProvider           = "CloudProvider"
-	ControlPlane            = "controlPlane"
-	WorkerPlane             = "workerPlan"
-	EtcdPlane               = "etcd"
-
-	KubeAppLabel = "k8s-app"
-	AppLabel     = "app"
-	NameLabel    = "name"
+	AuthnX509Provider      = "x509"
+	AuthnWebhookProvider   = "webhook"
+	StateConfigMapName     = "cluster-state"
+	FullStateConfigMapName = "full-cluster-state"
+	UpdateStateTimeout     = 30
+	GetStateTimeout        = 30
+	SyncWorkers            = 10
+	NoneAuthorizationMode  = "none"
+	LocalNodeAddress       = "127.0.0.1"
+	LocalNodeHostname      = "localhost"
+	LocalNodeUser          = "root"
+	CloudProvider          = "CloudProvider"
+	ControlPlane           = "controlPlane"
+	KubeAppLabel           = "k8s-app"
+	AppLabel               = "app"
+	NameLabel              = "name"
 
 	WorkerThreads = util.WorkerThreads
 
@@ -144,17 +153,215 @@ func (c *Cluster) DeployWorkerPlane(ctx context.Context, svcOptionData map[strin
 	return nil
 }
 
+func parseAuditLogConfig(clusterFile string, rkeConfig *v3.RancherKubernetesEngineConfig) error {
+	if rkeConfig.Services.KubeAPI.AuditLog != nil &&
+		rkeConfig.Services.KubeAPI.AuditLog.Enabled &&
+		rkeConfig.Services.KubeAPI.AuditLog.Configuration != nil &&
+		rkeConfig.Services.KubeAPI.AuditLog.Configuration.Policy == nil {
+		return nil
+	}
+	logrus.Debugf("audit log policy found in cluster.yml")
+	var r map[string]interface{}
+	err := ghodssyaml.Unmarshal([]byte(clusterFile), &r)
+	if err != nil {
+		return fmt.Errorf("error unmarshalling: %v", err)
+	}
+	if r["services"] == nil {
+		return nil
+	}
+	services := r["services"].(map[string]interface{})
+	if services["kube-api"] == nil {
+		return nil
+	}
+	kubeapi := services["kube-api"].(map[string]interface{})
+	if kubeapi["audit_log"] == nil {
+		return nil
+	}
+	auditlog := kubeapi["audit_log"].(map[string]interface{})
+	if auditlog["configuration"] == nil {
+		return nil
+	}
+	alc := auditlog["configuration"].(map[string]interface{})
+	if alc["policy"] == nil {
+		return nil
+	}
+	policyBytes, err := json.Marshal(alc["policy"])
+	if err != nil {
+		return fmt.Errorf("error marshalling audit policy: %v", err)
+	}
+	scheme := runtime.NewScheme()
+	err = auditv1.AddToScheme(scheme)
+	if err != nil {
+		return fmt.Errorf("error adding to scheme: %v", err)
+	}
+	codecs := serializer.NewCodecFactory(scheme)
+	p := auditv1.Policy{}
+	err = runtime.DecodeInto(codecs.UniversalDecoder(), policyBytes, &p)
+	if err != nil || p.Kind != "Policy" {
+		return fmt.Errorf("error decoding audit policy: %v", err)
+	}
+	rkeConfig.Services.KubeAPI.AuditLog.Configuration.Policy = &p
+	return err
+}
+
+func parseAdmissionConfig(clusterFile string, rkeConfig *v3.RancherKubernetesEngineConfig) error {
+	if rkeConfig.Services.KubeAPI.AdmissionConfiguration == nil {
+		return nil
+	}
+	logrus.Debugf("admission configuration found in cluster.yml")
+	var r map[string]interface{}
+	err := ghodssyaml.Unmarshal([]byte(clusterFile), &r)
+	if err != nil {
+		return fmt.Errorf("error unmarshalling: %v", err)
+	}
+	if r["services"] == nil {
+		return nil
+	}
+	services := r["services"].(map[string]interface{})
+	if services["kube-api"] == nil {
+		return nil
+	}
+	kubeapi := services["kube-api"].(map[string]interface{})
+	if kubeapi["admission_configuration"] == nil {
+		return nil
+	}
+	data, err := json.Marshal(kubeapi["admission_configuration"])
+	if err != nil {
+		return fmt.Errorf("error marshalling admission configuration: %v", err)
+	}
+	scheme := runtime.NewScheme()
+	err = apiserverv1alpha1.AddToScheme(scheme)
+	if err != nil {
+		return fmt.Errorf("error adding to scheme: %v", err)
+	}
+	err = scheme.SetVersionPriority(apiserverv1alpha1.SchemeGroupVersion)
+	if err != nil {
+		return fmt.Errorf("error setting version priority: %v", err)
+	}
+	codecs := serializer.NewCodecFactory(scheme)
+	decoder := codecs.UniversalDecoder(apiserverv1alpha1.SchemeGroupVersion)
+	decodedObj, err := runtime.Decode(decoder, data)
+	if err != nil {
+		return fmt.Errorf("error decoding data: %v", err)
+	}
+	decodedConfig, ok := decodedObj.(*apiserverv1alpha1.AdmissionConfiguration)
+	if !ok {
+		return fmt.Errorf("unexpected type: %T", decodedObj)
+	}
+	rkeConfig.Services.KubeAPI.AdmissionConfiguration = decodedConfig
+	return nil
+}
+
+func parseIngressConfig(clusterFile string, rkeConfig *v3.RancherKubernetesEngineConfig) error {
+	if &rkeConfig.Ingress == nil {
+		return nil
+	}
+	var r map[string]interface{}
+	err := ghodssyaml.Unmarshal([]byte(clusterFile), &r)
+	if err != nil {
+		return fmt.Errorf("[parseIngressConfig] error unmarshalling ingress config: %v", err)
+	}
+	ingressMap := convert.ToMapInterface(r["ingress"])
+	if err := parseIngressExtraEnv(ingressMap, rkeConfig); err != nil {
+		return err
+	}
+	if err := parseIngressExtraVolumes(ingressMap, rkeConfig); err != nil {
+		return err
+	}
+	if err := parseIngressExtraVolumeMounts(ingressMap, rkeConfig); err != nil {
+		return err
+	}
+	return nil
+}
+
+func parseIngressExtraEnv(ingressMap map[string]interface{}, rkeConfig *v3.RancherKubernetesEngineConfig) error {
+	extraEnvs, ok := ingressMap["extra_envs"]
+	if !ok {
+		return nil
+	}
+	ingressEnvBytes, err := json.Marshal(extraEnvs)
+	if err != nil {
+		return fmt.Errorf("[parseIngressExtraEnv] error marshalling ingress config extraEnvs: %v", err)
+	}
+	var envs []v3.ExtraEnv
+	err = json.Unmarshal(ingressEnvBytes, &envs)
+	if err != nil {
+		return fmt.Errorf("[parseIngressExtraEnv] error unmarshaling ingress config extraEnvs: %v", err)
+	}
+	rkeConfig.Ingress.ExtraEnvs = envs
+	return nil
+}
+
+func parseIngressExtraVolumes(ingressMap map[string]interface{}, rkeConfig *v3.RancherKubernetesEngineConfig) error {
+	extraVolumes, ok := ingressMap["extra_volumes"]
+	if !ok {
+		return nil
+	}
+	ingressVolBytes, err := json.Marshal(extraVolumes)
+	if err != nil {
+		return fmt.Errorf("[parseIngressExtraVolumes] error marshalling ingress config extraVolumes: %v", err)
+	}
+	var volumes []v3.ExtraVolume
+	err = json.Unmarshal(ingressVolBytes, &volumes)
+	if err != nil {
+		return fmt.Errorf("[parseIngressExtraVolumes] error unmarshaling ingress config extraVolumes: %v", err)
+	}
+	rkeConfig.Ingress.ExtraVolumes = volumes
+	return nil
+}
+
+func parseIngressExtraVolumeMounts(ingressMap map[string]interface{}, rkeConfig *v3.RancherKubernetesEngineConfig) error {
+	extraVolMounts, ok := ingressMap["extra_volume_mounts"]
+	if !ok {
+		return nil
+	}
+	ingressVolMountBytes, err := json.Marshal(extraVolMounts)
+	if err != nil {
+		return fmt.Errorf("[parseIngressExtraVolumeMounts] error marshalling ingress config extraVolumeMounts: %v", err)
+	}
+	var volumeMounts []v3.ExtraVolumeMount
+	err = json.Unmarshal(ingressVolMountBytes, &volumeMounts)
+	if err != nil {
+		return fmt.Errorf("[parseIngressExtraVolumeMounts] error unmarshaling ingress config extraVolumeMounts: %v", err)
+	}
+	rkeConfig.Ingress.ExtraVolumeMounts = volumeMounts
+	return nil
+}
+
 func ParseConfig(clusterFile string) (*v3.RancherKubernetesEngineConfig, error) {
 	logrus.Debugf("Parsing cluster file [%v]", clusterFile)
 	var rkeConfig v3.RancherKubernetesEngineConfig
+
+	// the customConfig is mapped to a k8s type, which doesn't unmarshal well because it has a
+	// nested struct and no yaml tags. Therefor, we have to re-parse it again and assign it correctly.
+	// this only affects rke cli. Since rkeConfig is passed from rancher directly in the rancher use case.
+	clusterFile, secretConfig, err := resolveCustomEncryptionConfig(clusterFile)
+	if err != nil {
+		return nil, err
+	}
 	if err := yaml.Unmarshal([]byte(clusterFile), &rkeConfig); err != nil {
 		return nil, err
+	}
+
+	if isEncryptionEnabled(&rkeConfig) && secretConfig != nil {
+		rkeConfig.Services.KubeAPI.SecretsEncryptionConfig.CustomConfig = secretConfig
+	}
+	if err := parseAdmissionConfig(clusterFile, &rkeConfig); err != nil {
+		return &rkeConfig, fmt.Errorf("error parsing admission config: %v", err)
+	}
+	if err := parseAuditLogConfig(clusterFile, &rkeConfig); err != nil {
+		return &rkeConfig, fmt.Errorf("error parsing audit log config: %v", err)
+	}
+
+	if err := parseIngressConfig(clusterFile, &rkeConfig); err != nil {
+		return &rkeConfig, fmt.Errorf("error parsing ingress config: %v", err)
 	}
 	return &rkeConfig, nil
 }
 
-func InitClusterObject(ctx context.Context, rkeConfig *v3.RancherKubernetesEngineConfig, flags ExternalFlags) (*Cluster, error) {
+func InitClusterObject(ctx context.Context, rkeConfig *v3.RancherKubernetesEngineConfig, flags ExternalFlags, encryptConfig string) (*Cluster, error) {
 	// basic cluster object from rkeConfig
+	var err error
 	c := &Cluster{
 		AuthnStrategies:               make(map[string]bool),
 		RancherKubernetesEngineConfig: *rkeConfig,
@@ -164,6 +371,9 @@ func InitClusterObject(ctx context.Context, rkeConfig *v3.RancherKubernetesEngin
 		CertificateDir:                flags.CertificateDir,
 		StateFilePath:                 GetStateFilePath(flags.ClusterFilePath, flags.ConfigDir),
 		PrivateRegistriesMap:          make(map[string]v3.PrivateRegistry),
+		EncryptionConfig: encryptionConfig{
+			EncryptionProviderFile: encryptConfig,
+		},
 	}
 	if metadata.K8sVersionToRKESystemImages == nil {
 		metadata.InitMetadata(ctx)
@@ -177,14 +387,26 @@ func InitClusterObject(ctx context.Context, rkeConfig *v3.RancherKubernetesEngin
 	if len(c.CertificateDir) == 0 {
 		c.CertificateDir = GetCertificateDirPath(c.ConfigPath, c.ConfigDir)
 	}
+	// We don't manage custom configuration, if it's there we just use it.
+	if isEncryptionCustomConfig(rkeConfig) {
+		if c.EncryptionConfig.EncryptionProviderFile, err = c.readEncryptionCustomConfig(); err != nil {
+			return nil, err
+		}
+	} else if isEncryptionEnabled(rkeConfig) && c.EncryptionConfig.EncryptionProviderFile == "" {
+		if c.EncryptionConfig.EncryptionProviderFile, err = c.getEncryptionProviderFile(); err != nil {
+			return nil, err
+		}
+	}
 
 	// Setting cluster Defaults
-	err := c.setClusterDefaults(ctx, flags)
+	err = c.setClusterDefaults(ctx, flags)
 	if err != nil {
 		return nil, err
 	}
 	// extract cluster network configuration
-	c.setNetworkOptions()
+	if err = c.setNetworkOptions(); err != nil {
+		return nil, fmt.Errorf("failed set network options: %v", err)
+	}
 
 	// Register cloud provider
 	if err := c.setCloudProvider(); err != nil {
@@ -265,14 +487,6 @@ func rebuildLocalAdminConfig(ctx context.Context, kubeCluster *Cluster) error {
 	return nil
 }
 
-func isLocalConfigWorking(ctx context.Context, localKubeConfigPath string, k8sWrapTransport transport.WrapperFunc) bool {
-	if _, err := GetK8sVersion(localKubeConfigPath, k8sWrapTransport); err != nil {
-		log.Infof(ctx, "[reconcile] Local config is not valid (error: %v), rebuilding admin config", err)
-		return false
-	}
-	return true
-}
-
 func getLocalConfigAddress(localConfigPath string) (string, error) {
 	config, err := clientcmd.BuildConfigFromFlags("", localConfigPath)
 	if err != nil {
@@ -300,7 +514,7 @@ func getLocalAdminConfigWithNewAddress(localConfigPath, cpAddress string, cluste
 
 func ApplyAuthzResources(ctx context.Context, rkeConfig v3.RancherKubernetesEngineConfig, flags ExternalFlags, dailersOptions hosts.DialersOptions) error {
 	// dialer factories are not needed here since we are not uses docker only k8s jobs
-	kubeCluster, err := InitClusterObject(ctx, &rkeConfig, flags)
+	kubeCluster, err := InitClusterObject(ctx, &rkeConfig, flags, "")
 	if err != nil {
 		return err
 	}
@@ -472,7 +686,7 @@ func ConfigureCluster(
 	data map[string]interface{},
 	useKubectl bool) error {
 	// dialer factories are not needed here since we are not uses docker only k8s jobs
-	kubeCluster, err := InitClusterObject(ctx, &rkeConfig, flags)
+	kubeCluster, err := InitClusterObject(ctx, &rkeConfig, flags, "")
 	if err != nil {
 		return err
 	}

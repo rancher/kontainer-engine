@@ -274,6 +274,16 @@ func buildCleanerConfig(host *Host, toCleanDirs []string, cleanerImage string) (
 
 func NodesToHosts(rkeNodes []v3.RKEConfigNode, nodeRole string) []*Host {
 	hostList := make([]*Host, 0)
+	// Return all nodes if there is no noderole passed to the function
+	if nodeRole == "" {
+		for _, node := range rkeNodes {
+			newHost := Host{
+				RKEConfigNode: node,
+			}
+			hostList = append(hostList, &newHost)
+		}
+		return hostList
+	}
 	for _, node := range rkeNodes {
 		for _, role := range node.Role {
 			if role == nodeRole {
@@ -337,6 +347,7 @@ func DoRunLogCleaner(ctx context.Context, host *Host, alpineImage string, prsMap
 	}
 	hostCfg := &container.HostConfig{
 		Binds: []string{
+			host.DockerInfo.DockerRootDir + ":" + host.DockerInfo.DockerRootDir,
 			"/var/lib:/var/lib",
 		},
 		Privileged: true,

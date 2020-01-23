@@ -30,7 +30,8 @@ const (
 	ClusterActionBackupEtcd            = "backupEtcd"
 	ClusterActionRestoreFromEtcdBackup = "restoreFromEtcdBackup"
 	ClusterActionRotateCertificates    = "rotateCertificates"
-	ClusterActionRunCISScan            = "runSecurityScan"
+	ClusterActionRunSecurityScan       = "runSecurityScan"
+	ClusterActionSaveAsTemplate        = "saveAsTemplate"
 
 	// ClusterConditionReady Cluster ready to serve API (healthy when true, unhealthy when false)
 	ClusterConditionReady          condition.Cond = "Ready"
@@ -88,6 +89,7 @@ type Cluster struct {
 type ClusterSpecBase struct {
 	DesiredAgentImage                    string                         `json:"desiredAgentImage"`
 	DesiredAuthImage                     string                         `json:"desiredAuthImage"`
+	AgentImageOverride                   string                         `json:"agentImageOverride"`
 	RancherKubernetesEngineConfig        *RancherKubernetesEngineConfig `json:"rancherKubernetesEngineConfig,omitempty"`
 	DefaultPodSecurityPolicyTemplateName string                         `json:"defaultPodSecurityPolicyTemplateName,omitempty" norman:"type=reference[podSecurityPolicyTemplate]"`
 	DefaultClusterRoleForProjectMembers  string                         `json:"defaultClusterRoleForProjectMembers,omitempty" norman:"type=reference[roleTemplate]"`
@@ -242,6 +244,7 @@ type Capabilities struct {
 	NodePoolScalingSupported bool                     `json:"nodePoolScalingSupported,omitempty"`
 	NodePortRange            string                   `json:"nodePortRange,omitempty"`
 	TaintSupport             *bool                    `json:"taintSupport,omitempty"`
+	PspEnabled               bool                     `json:"pspEnabled,omitempty"`
 }
 
 type LoadBalancerCapabilities struct {
@@ -287,4 +290,14 @@ type LocalClusterAuthEndpoint struct {
 
 type CertExpiration struct {
 	ExpirationDate string `json:"expirationDate,omitempty"`
+}
+
+type SaveAsTemplateInput struct {
+	ClusterTemplateName         string `json:"clusterTemplateName,omitempty"`
+	ClusterTemplateRevisionName string `json:"clusterTemplateRevisionName,omitempty"`
+}
+
+type SaveAsTemplateOutput struct {
+	ClusterTemplateName         string `json:"clusterTemplateName,omitempty"`
+	ClusterTemplateRevisionName string `json:"clusterTemplateRevisionName,omitempty"`
 }

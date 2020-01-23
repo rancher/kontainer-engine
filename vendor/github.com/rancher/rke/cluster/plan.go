@@ -19,7 +19,7 @@ import (
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
 	"github.com/rancher/rke/util"
-	"github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 )
 
@@ -50,6 +50,8 @@ const (
 	// MaxEtcdOldEnvVersion The versions are maxed out for minor versions because -rancher1 suffix will cause semver to think its older, example: v1.15.0 > v1.15.0-rancher1
 	MaxEtcdOldEnvVersion = "v3.2.99"
 	MaxK8s115Version     = "v1.15"
+
+	EncryptionProviderConfigArgument = "encryption-provider-config"
 )
 
 var admissionControlOptionNames = []string{"enable-admission-plugins", "admission-control"}
@@ -69,7 +71,7 @@ func GetServiceOptionData(data map[string]interface{}) map[string]*v3.Kubernetes
 
 func GeneratePlan(ctx context.Context, rkeConfig *v3.RancherKubernetesEngineConfig, hostsInfoMap map[string]types.Info, data map[string]interface{}) (v3.RKEPlan, error) {
 	clusterPlan := v3.RKEPlan{}
-	myCluster, err := InitClusterObject(ctx, rkeConfig, ExternalFlags{})
+	myCluster, err := InitClusterObject(ctx, rkeConfig, ExternalFlags{}, "")
 	if err != nil {
 		return clusterPlan, err
 	}
@@ -105,19 +107,27 @@ func BuildRKEConfigNodePlan(ctx context.Context, myCluster *Cluster, host *hosts
 		portChecks = append(portChecks, BuildPortChecksFromPortList(host, ControlPlanePortList, ProtocolTCP)...)
 	}
 	if host.IsEtcd {
-		processes[services.EtcdContainerName] = myCluster.BuildEtcdProcess(host, myCluster.EtcdReadyHosts, prefixPath)
+		processes[services.EtcdContainerName] = myCluster.BuildEtcdProcess(host, myCluster.EtcdReadyHosts, prefixPath, svcOptionData)
 
 		portChecks = append(portChecks, BuildPortChecksFromPortList(host, EtcdPortList, ProtocolTCP)...)
 	}
-	cloudConfig := v3.File{
-		Name:     cloudConfigFileName,
-		Contents: b64.StdEncoding.EncodeToString([]byte(myCluster.CloudConfigFile)),
+	files := []v3.File{
+		v3.File{
+			Name:     cloudConfigFileName,
+			Contents: b64.StdEncoding.EncodeToString([]byte(myCluster.CloudConfigFile)),
+		},
+	}
+	if myCluster.IsEncryptionEnabled() {
+		files = append(files, v3.File{
+			Name:     EncryptionProviderFilePath,
+			Contents: b64.StdEncoding.EncodeToString([]byte(myCluster.EncryptionConfig.EncryptionProviderFile)),
+		})
 	}
 	return v3.RKEConfigNodePlan{
 		Address:    host.Address,
 		Processes:  osLimitationFilter(hostDockerInfo.OSType, processes),
 		PortChecks: portChecks,
-		Files:      []v3.File{cloudConfig},
+		Files:      files,
 		Annotations: map[string]string{
 			k8s.ExternalAddressAnnotation: host.Address,
 			k8s.InternalAddressAnnotation: host.InternalAddress,
@@ -210,6 +220,14 @@ func (c *Cluster) BuildKubeAPIProcess(host *hosts.Host, prefixPath string, svcOp
 			c.Services.KubeAPI.ExtraEnv,
 			fmt.Sprintf("%s=%s", CloudConfigSumEnv, getCloudConfigChecksum(c.CloudConfigFile)))
 	}
+	if c.EncryptionConfig.EncryptionProviderFile != "" {
+		CommandArgs[EncryptionProviderConfigArgument] = EncryptionProviderFilePath
+	}
+
+	if c.IsKubeletGenerateServingCertificateEnabled() {
+		CommandArgs["kubelet-certificate-authority"] = pki.GetCertPath(pki.CACertName)
+	}
+
 	serviceOptions := c.GetKubernetesServicesOptions(host.DockerInfo.OSType, svcOptionData)
 	if serviceOptions.KubeAPI != nil {
 		for k, v := range serviceOptions.KubeAPI {
@@ -234,17 +252,36 @@ func (c *Cluster) BuildKubeAPIProcess(host *hosts.Host, prefixPath string, svcOp
 		CommandArgs["advertise-address"] = host.InternalAddress
 	}
 
+	admissionControlOptionName := ""
+	for _, optionName := range admissionControlOptionNames {
+		if _, ok := CommandArgs[optionName]; ok {
+			admissionControlOptionName = optionName
+			break
+		}
+	}
+
 	if c.Services.KubeAPI.PodSecurityPolicy {
 		CommandArgs["runtime-config"] = "policy/v1beta1/podsecuritypolicy=true"
-		for _, optionName := range admissionControlOptionNames {
-			if _, ok := CommandArgs[optionName]; ok {
-				if c.Services.KubeAPI.AlwaysPullImages {
-					CommandArgs[optionName] = CommandArgs[optionName] + ",PodSecurityPolicy,AlwaysPullImages"
-				} else {
-					CommandArgs[optionName] = CommandArgs[optionName] + ",PodSecurityPolicy"
-				}
-				break
-			}
+		CommandArgs[admissionControlOptionName] = CommandArgs[admissionControlOptionName] + ",PodSecurityPolicy"
+	}
+
+	if c.Services.KubeAPI.AlwaysPullImages {
+		CommandArgs[admissionControlOptionName] = CommandArgs[admissionControlOptionName] + ",AlwaysPullImages"
+	}
+
+	if c.Services.KubeAPI.EventRateLimit != nil && c.Services.KubeAPI.EventRateLimit.Enabled {
+		CommandArgs[KubeAPIArgAdmissionControlConfigFile] = DefaultKubeAPIArgAdmissionControlConfigFileValue
+		CommandArgs[admissionControlOptionName] = CommandArgs[admissionControlOptionName] + ",EventRateLimit"
+	}
+
+	if c.Services.KubeAPI.AuditLog != nil {
+		if alc := c.Services.KubeAPI.AuditLog.Configuration; alc != nil {
+			CommandArgs[KubeAPIArgAuditLogPath] = alc.Path
+			CommandArgs[KubeAPIArgAuditLogMaxAge] = strconv.Itoa(alc.MaxAge)
+			CommandArgs[KubeAPIArgAuditLogMaxBackup] = strconv.Itoa(alc.MaxBackup)
+			CommandArgs[KubeAPIArgAuditLogMaxSize] = strconv.Itoa(alc.MaxSize)
+			CommandArgs[KubeAPIArgAuditLogFormat] = alc.Format
+			CommandArgs[KubeAPIArgAuditPolicyFile] = DefaultKubeAPIArgAuditPolicyFileValue
 		}
 	}
 
@@ -253,6 +290,9 @@ func (c *Cluster) BuildKubeAPIProcess(host *hosts.Host, prefixPath string, svcOp
 	}
 	Binds := []string{
 		fmt.Sprintf("%s:/etc/kubernetes:z", path.Join(prefixPath, "/etc/kubernetes")),
+	}
+	if c.Services.KubeAPI.AuditLog != nil && c.Services.KubeAPI.AuditLog.Enabled {
+		Binds = append(Binds, fmt.Sprintf("%s:/var/log/kube-audit:z", path.Join(prefixPath, "/var/log/kube-audit")))
 	}
 
 	// Override args if they exist, add additional args
@@ -422,6 +462,11 @@ func (c *Cluster) BuildKubeletProcess(host *hosts.Host, prefixPath string, svcOp
 			CommandArgs["cloud-config"] = path.Join(prefixPath, cloudConfigFileName)
 		}
 	}
+	if c.IsKubeletGenerateServingCertificateEnabled() {
+		CommandArgs["tls-cert-file"] = pki.GetCertPath(pki.GetCrtNameForHost(host, pki.KubeletCertName))
+		CommandArgs["tls-private-key-file"] = pki.GetCertPath(fmt.Sprintf("%s-key", pki.GetCrtNameForHost(host, pki.KubeletCertName)))
+	}
+
 	if len(c.CloudProvider.Name) > 0 {
 		c.Services.Kubelet.ExtraEnv = append(
 			c.Services.Kubelet.ExtraEnv,
@@ -585,6 +630,14 @@ func (c *Cluster) BuildKubeProxyProcess(host *hosts.Host, prefixPath string, svc
 			CommandArgs[k] = v
 		}
 	}
+	// If cloudprovider is set (not empty), set the bind address because the node will not be able to retrieve it's IP address in case cloud provider changes the node object name (i.e. AWS and Openstack)
+	if c.CloudProvider.Name != "" {
+		if host.InternalAddress != "" && host.Address != host.InternalAddress {
+			CommandArgs["bind-address"] = host.InternalAddress
+		} else {
+			CommandArgs["bind-address"] = host.Address
+		}
+	}
 
 	// Best security practice is to listen on localhost, but DinD uses private container network instead of Host.
 	if c.DinD {
@@ -594,9 +647,11 @@ func (c *Cluster) BuildKubeProxyProcess(host *hosts.Host, prefixPath string, svc
 	VolumesFrom := []string{
 		services.SidekickContainerName,
 	}
+	//TODO: we should reevaluate if any of the bind mounts here should be using read-only mode
 	Binds := []string{
 		fmt.Sprintf("%s:/etc/kubernetes:z", path.Join(prefixPath, "/etc/kubernetes")),
 		"/run:/run",
+		"/lib/modules:/lib/modules:z,ro",
 	}
 	if host.DockerInfo.OSType == "windows" { // compatible with Windows
 		Binds = []string{
@@ -850,8 +905,8 @@ func (c *Cluster) BuildSidecarProcess(host *hosts.Host, prefixPath string) v3.Pr
 	}
 }
 
-func (c *Cluster) BuildEtcdProcess(host *hosts.Host, etcdHosts []*hosts.Host, prefixPath string) v3.Process {
-	nodeName := pki.GetEtcdCrtName(host.InternalAddress)
+func (c *Cluster) BuildEtcdProcess(host *hosts.Host, etcdHosts []*hosts.Host, prefixPath string, svcOptionData map[string]*v3.KubernetesServicesOptions) v3.Process {
+	nodeName := pki.GetCrtNameForHost(host, pki.EtcdCertName)
 	initCluster := ""
 	architecture := "amd64"
 	if len(etcdHosts) == 0 {
@@ -870,8 +925,6 @@ func (c *Cluster) BuildEtcdProcess(host *hosts.Host, etcdHosts []*hosts.Host, pr
 	}
 	args := []string{
 		"/usr/local/bin/etcd",
-		"--peer-client-cert-auth",
-		"--client-cert-auth",
 	}
 
 	// If InternalAddress is not explicitly set, it's set to the same value as Address. This is all good until we deploy on a host with a DNATed public address like AWS, in that case we can't bind to that address so we fall back to 0.0.0.0
@@ -903,10 +956,30 @@ func (c *Cluster) BuildEtcdProcess(host *hosts.Host, etcdHosts []*hosts.Host, pr
 		fmt.Sprintf("%s:/etc/kubernetes:z", path.Join(prefixPath, "/etc/kubernetes")),
 	}
 
+	serviceOptions := c.GetKubernetesServicesOptions(host.DockerInfo.OSType, svcOptionData)
+	if serviceOptions.Etcd != nil {
+		for k, v := range serviceOptions.Etcd {
+			// if the value is empty, we remove that option
+			if len(v) == 0 {
+				delete(CommandArgs, k)
+				continue
+			}
+			CommandArgs[k] = v
+		}
+	}
+
 	for arg, value := range c.Services.Etcd.ExtraArgs {
 		if _, ok := c.Services.Etcd.ExtraArgs[arg]; ok {
 			CommandArgs[arg] = value
 		}
+	}
+
+	// adding the old default value from L922 if not present in metadata options or passed by user
+	if _, ok := CommandArgs["client-cert-auth"]; !ok {
+		args = append(args, "--client-cert-auth")
+	}
+	if _, ok := CommandArgs["peer-client-cert-auth"]; !ok {
+		args = append(args, "--peer-client-cert-auth")
 	}
 
 	for arg, value := range CommandArgs {
@@ -1018,27 +1091,39 @@ func (c *Cluster) getDefaultKubernetesServicesOptions(osType string) v3.Kubernet
 		serviceOptionsTemplate = metadata.K8sVersionToServiceOptions
 	}
 
-	// read service options from minor version first
+	// read service options from most specific cluster version first
+	// Example c.Version: v1.16.3-rancher1-1
+	logrus.Debugf("getDefaultKubernetesServicesOptions: getting serviceOptions for cluster version [%s]", c.Version)
 	if serviceOptions, ok := serviceOptionsTemplate[c.Version]; ok {
+		logrus.Debugf("getDefaultKubernetesServicesOptions: serviceOptions [%v] found for cluster version [%s]", serviceOptions, c.Version)
 		return serviceOptions
 	}
 
+	// Get vX.X from cluster version
+	// Example clusterMajorVersion: v1.16
 	clusterMajorVersion := util.GetTagMajorVersion(c.Version)
+	// Retrieve image tag from Kubernetes image
+	// Example k8sImageTag: v1.16.3-rancher1
 	k8sImageTag, err := util.GetImageTagFromImage(c.SystemImages.Kubernetes)
 	if err != nil {
 		logrus.Warn(err)
 	}
 
+	// Example k8sImageMajorVersion: v1.16
 	k8sImageMajorVersion := util.GetTagMajorVersion(k8sImageTag)
 
+	// Image tag version from Kubernetes image takes precedence over cluster version
 	if clusterMajorVersion != k8sImageMajorVersion && k8sImageMajorVersion != "" {
+		logrus.Debugf("getDefaultKubernetesServicesOptions: cluster major version: [%s] is not equal to kubernetes image major version: [%s], setting cluster major version to [%s]", clusterMajorVersion, k8sImageMajorVersion, k8sImageMajorVersion)
 		clusterMajorVersion = k8sImageMajorVersion
 	}
 
 	if serviceOptions, ok := serviceOptionsTemplate[clusterMajorVersion]; ok {
+		logrus.Debugf("getDefaultKubernetesServicesOptions: serviceOptions [%v] found for cluster major version [%s]", serviceOptions, clusterMajorVersion)
 		return serviceOptions
 	}
 
+	logrus.Warnf("getDefaultKubernetesServicesOptions: No serviceOptions found for cluster version [%s] or cluster major version [%s]", c.Version, clusterMajorVersion)
 	return v3.KubernetesServicesOptions{}
 }
 
