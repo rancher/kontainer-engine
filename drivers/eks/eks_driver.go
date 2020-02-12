@@ -334,8 +334,7 @@ func getStateFromOptions(driverOptions *types.DriverOptions) (state, error) {
 	state.AMI = options.GetValueFromDriverOptions(driverOptions, types.StringType, "ami").(string)
 	state.AssociateWorkerNodePublicIP, _ = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "associate-worker-node-public-ip", "associateWorkerNodePublicIp").(*bool)
 	state.KeyPairName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "keyPairName").(string)
-	state.EBSEncryption = options.GetValueFromDriverOptions(driverOptions, types.BoolType, "ebs-encryption", "EBSEncryption").(bool)
-
+	state.EBSEncryption = options.GetValueFromDriverOptions(driverOptions, types.BoolType, "ebsEncryption", "EBSEncryption").(bool)
 	// UserData
 	state.UserData = options.GetValueFromDriverOptions(driverOptions, types.StringType, "user-data", "userData").(string)
 
