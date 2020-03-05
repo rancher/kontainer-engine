@@ -16,8 +16,10 @@ import (
 	"github.com/rancher/rke/util"
 	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
+	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	apiserverv1alpha1 "k8s.io/apiserver/pkg/apis/apiserver/v1alpha1"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
 )
@@ -76,6 +78,30 @@ const (
 	KubeAPIArgAuditPolicyFile             = "audit-policy-file"
 	DefaultKubeAPIArgAuditLogPathValue    = "/var/log/kube-audit/audit-log.json"
 	DefaultKubeAPIArgAuditPolicyFileValue = "/etc/kubernetes/audit-policy.yaml"
+
+	DefaultMaxUnavailableWorker       = "10%"
+	DefaultMaxUnavailableControlplane = "1"
+	DefaultNodeDrainTimeout           = 120
+	DefaultNodeDrainGracePeriod       = -1
+	DefaultNodeDrainIgnoreDaemonsets  = true
+)
+
+var (
+	DefaultDaemonSetMaxUnavailable        = intstr.FromInt(1)
+	DefaultDeploymentUpdateStrategyParams = intstr.FromString("25%")
+	DefaultDaemonSetUpdateStrategy        = appsv1.DaemonSetUpdateStrategy{
+		Type:          appsv1.RollingUpdateDaemonSetStrategyType,
+		RollingUpdate: &appsv1.RollingUpdateDaemonSet{MaxUnavailable: &DefaultDaemonSetMaxUnavailable},
+	}
+	DefaultDeploymentUpdateStrategy = appsv1.DeploymentStrategy{
+		Type: appsv1.RollingUpdateDeploymentStrategyType,
+		RollingUpdate: &appsv1.RollingUpdateDeployment{
+			MaxUnavailable: &DefaultDeploymentUpdateStrategyParams,
+			MaxSurge:       &DefaultDeploymentUpdateStrategyParams,
+		},
+	}
+	DefaultClusterProportionalAutoscalerLinearParams = v3.LinearAutoscalerParams{CoresPerReplica: 128, NodesPerReplica: 4, Min: 1, PreventSinglePointFailure: true}
+	DefaultMonitoringAddonReplicas                   = int32(1)
 )
 
 type ExternalFlags struct {
@@ -188,8 +214,36 @@ func (c *Cluster) setClusterDefaults(ctx context.Context, flags ExternalFlags) e
 	c.setClusterServicesDefaults()
 	c.setClusterNetworkDefaults()
 	c.setClusterAuthnDefaults()
-
+	c.setNodeUpgradeStrategy()
+	c.setAddonsDefaults()
 	return nil
+}
+
+func (c *Cluster) setNodeUpgradeStrategy() {
+	if c.UpgradeStrategy == nil {
+		logrus.Debugf("No input provided for maxUnavailableWorker, setting it to default value of %v percent", strings.TrimRight(DefaultMaxUnavailableWorker, "%"))
+		logrus.Debugf("No input provided for maxUnavailableControlplane, setting it to default value of %v", DefaultMaxUnavailableControlplane)
+		c.UpgradeStrategy = &v3.NodeUpgradeStrategy{
+			MaxUnavailableWorker:       DefaultMaxUnavailableWorker,
+			MaxUnavailableControlplane: DefaultMaxUnavailableControlplane,
+		}
+		return
+	}
+	setDefaultIfEmpty(&c.UpgradeStrategy.MaxUnavailableWorker, DefaultMaxUnavailableWorker)
+	setDefaultIfEmpty(&c.UpgradeStrategy.MaxUnavailableControlplane, DefaultMaxUnavailableControlplane)
+	if !c.UpgradeStrategy.Drain {
+		return
+	}
+	if c.UpgradeStrategy.DrainInput == nil {
+		c.UpgradeStrategy.DrainInput = &v3.NodeDrainInput{
+			IgnoreDaemonSets: DefaultNodeDrainIgnoreDaemonsets,
+			// default to 120 seems to work better for controlplane nodes
+			Timeout: DefaultNodeDrainTimeout,
+			//Period of time in seconds given to each pod to terminate gracefully.
+			// If negative, the default value specified in the pod will be used
+			GracePeriod: DefaultNodeDrainGracePeriod,
+		}
+	}
 }
 
 func (c *Cluster) setClusterServicesDefaults() {
@@ -314,7 +368,7 @@ func newDefaultEventRateLimitConfig() *v3.Configuration {
 	return &v3.Configuration{
 		TypeMeta: v1.TypeMeta{
 			Kind:       "Configuration",
-			APIVersion: v3.SchemeGroupVersion.String(),
+			APIVersion: "eventratelimit.admission.k8s.io/v1alpha1",
 		},
 		Limits: []v3.Limit{
 			{
@@ -399,6 +453,7 @@ func (c *Cluster) setClusterImageDefaults() error {
 		&c.SystemImages.Ingress:                   d(imageDefaults.Ingress, privRegURL),
 		&c.SystemImages.IngressBackend:            d(imageDefaults.IngressBackend, privRegURL),
 		&c.SystemImages.MetricsServer:             d(imageDefaults.MetricsServer, privRegURL),
+		&c.SystemImages.Nodelocal:                 d(imageDefaults.Nodelocal, privRegURL),
 		// this's a stopgap, we could drop this after https://github.com/kubernetes/kubernetes/pull/75618 merged
 		&c.SystemImages.WindowsPodInfraContainer: d(imageDefaults.WindowsPodInfraContainer, privRegURL),
 	}
@@ -537,4 +592,43 @@ func GetExternalFlags(local, updateOnly, disablePortCheck bool, configDir, clust
 		ConfigDir:        configDir,
 		ClusterFilePath:  clusterFilePath,
 	}
+}
+
+func (c *Cluster) setAddonsDefaults() {
+	c.Ingress.UpdateStrategy = setDaemonsetAddonDefaults(c.Ingress.UpdateStrategy)
+	c.Network.UpdateStrategy = setDaemonsetAddonDefaults(c.Network.UpdateStrategy)
+	c.DNS.UpdateStrategy = setDeploymentAddonDefaults(c.DNS.UpdateStrategy)
+	if c.DNS.LinearAutoscalerParams == nil {
+		c.DNS.LinearAutoscalerParams = &DefaultClusterProportionalAutoscalerLinearParams
+	}
+	c.Monitoring.UpdateStrategy = setDeploymentAddonDefaults(c.Monitoring.UpdateStrategy)
+	if c.Monitoring.Replicas == nil {
+		c.Monitoring.Replicas = &DefaultMonitoringAddonReplicas
+	}
+}
+
+func setDaemonsetAddonDefaults(updateStrategy *appsv1.DaemonSetUpdateStrategy) *appsv1.DaemonSetUpdateStrategy {
+	if updateStrategy != nil && updateStrategy.Type != appsv1.RollingUpdateDaemonSetStrategyType {
+		return updateStrategy
+	}
+	if updateStrategy == nil || updateStrategy.RollingUpdate == nil || updateStrategy.RollingUpdate.MaxUnavailable == nil {
+		return &DefaultDaemonSetUpdateStrategy
+	}
+	return updateStrategy
+}
+
+func setDeploymentAddonDefaults(updateStrategy *appsv1.DeploymentStrategy) *appsv1.DeploymentStrategy {
+	if updateStrategy != nil && updateStrategy.Type != appsv1.RollingUpdateDeploymentStrategyType {
+		return updateStrategy
+	}
+	if updateStrategy == nil || updateStrategy.RollingUpdate == nil {
+		return &DefaultDeploymentUpdateStrategy
+	}
+	if updateStrategy.RollingUpdate.MaxUnavailable == nil {
+		updateStrategy.RollingUpdate.MaxUnavailable = &DefaultDeploymentUpdateStrategyParams
+	}
+	if updateStrategy.RollingUpdate.MaxSurge == nil {
+		updateStrategy.RollingUpdate.MaxSurge = &DefaultDeploymentUpdateStrategyParams
+	}
+	return updateStrategy
 }
