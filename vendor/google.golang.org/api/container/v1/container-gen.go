@@ -49,8 +49,8 @@ import (
 	"strconv"
 	"strings"
 
-	gensupport "google.golang.org/api/gensupport"
 	googleapi "google.golang.org/api/googleapi"
+	gensupport "google.golang.org/api/internal/gensupport"
 	option "google.golang.org/api/option"
 	htransport "google.golang.org/api/transport/http"
 )
@@ -280,7 +280,7 @@ type AcceleratorConfig struct {
 
 	// AcceleratorType: The accelerator type resource name. List of
 	// supported accelerators
-	// [here](/compute/docs/gpus/#Introduction)
+	// [here](/compute/docs/gpus)
 	AcceleratorType string `json:"acceleratorType,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "AcceleratorCount") to
@@ -325,6 +325,14 @@ type AddonsConfig struct {
 	HttpLoadBalancing *HttpLoadBalancing `json:"httpLoadBalancing,omitempty"`
 
 	// KubernetesDashboard: Configuration for the Kubernetes Dashboard.
+	// This addon is deprecated, and will be disabled in 1.15. It is
+	// recommended
+	// to use the Cloud Console to manage and monitor your Kubernetes
+	// clusters,
+	// workloads and applications. For more information,
+	// see:
+	// https://cloud.google.com/kubernetes-engine/docs/concepts/dashboar
+	// ds
 	KubernetesDashboard *KubernetesDashboard `json:"kubernetesDashboard,omitempty"`
 
 	// NetworkPolicyConfig: Configuration for NetworkPolicy. This only
@@ -355,6 +363,42 @@ type AddonsConfig struct {
 
 func (s *AddonsConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod AddonsConfig
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// AuthenticatorGroupsConfig: Configuration for returning group
+// information from authenticators.
+type AuthenticatorGroupsConfig struct {
+	// Enabled: Whether this cluster should return group membership
+	// lookups
+	// during authentication using a group of security groups.
+	Enabled bool `json:"enabled,omitempty"`
+
+	// SecurityGroup: The name of the security group-of-groups to be used.
+	// Only relevant
+	// if enabled = true.
+	SecurityGroup string `json:"securityGroup,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Enabled") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Enabled") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *AuthenticatorGroupsConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod AuthenticatorGroupsConfig
 	raw := NoMethod(*s)
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
@@ -396,6 +440,102 @@ type AutoUpgradeOptions struct {
 
 func (s *AutoUpgradeOptions) MarshalJSON() ([]byte, error) {
 	type NoMethod AutoUpgradeOptions
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// AutoprovisioningNodePoolDefaults: AutoprovisioningNodePoolDefaults
+// contains defaults for a node pool created
+// by NAP.
+type AutoprovisioningNodePoolDefaults struct {
+	// OauthScopes: Scopes that are used by NAP when creating node pools. If
+	// oauth_scopes are
+	// specified, service_account should be empty.
+	OauthScopes []string `json:"oauthScopes,omitempty"`
+
+	// ServiceAccount: The Google Cloud Platform Service Account to be used
+	// by the node VMs. If
+	// service_account is specified, scopes should be empty.
+	ServiceAccount string `json:"serviceAccount,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "OauthScopes") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "OauthScopes") to include
+	// in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. However, any field with
+	// an empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *AutoprovisioningNodePoolDefaults) MarshalJSON() ([]byte, error) {
+	type NoMethod AutoprovisioningNodePoolDefaults
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// BigQueryDestination: Parameters for using BigQuery as the destination
+// of resource usage export.
+type BigQueryDestination struct {
+	// DatasetId: The ID of a BigQuery Dataset.
+	DatasetId string `json:"datasetId,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "DatasetId") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "DatasetId") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *BigQueryDestination) MarshalJSON() ([]byte, error) {
+	type NoMethod BigQueryDestination
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// BinaryAuthorization: Configuration for Binary Authorization.
+type BinaryAuthorization struct {
+	// Enabled: Enable Binary Authorization for this cluster. If enabled,
+	// all container
+	// images will be validated by Binary Authorization.
+	Enabled bool `json:"enabled,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Enabled") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Enabled") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *BinaryAuthorization) MarshalJSON() ([]byte, error) {
+	type NoMethod BinaryAuthorization
 	raw := NoMethod(*s)
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
@@ -519,6 +659,16 @@ type Cluster struct {
 	// in the cluster.
 	AddonsConfig *AddonsConfig `json:"addonsConfig,omitempty"`
 
+	// AuthenticatorGroupsConfig: Configuration controlling RBAC group
+	// membership information.
+	AuthenticatorGroupsConfig *AuthenticatorGroupsConfig `json:"authenticatorGroupsConfig,omitempty"`
+
+	// Autoscaling: Cluster-level autoscaling configuration.
+	Autoscaling *ClusterAutoscaling `json:"autoscaling,omitempty"`
+
+	// BinaryAuthorization: Configuration for Binary Authorization.
+	BinaryAuthorization *BinaryAuthorization `json:"binaryAuthorization,omitempty"`
+
 	// ClusterIpv4Cidr: The IP address range of the container pods in this
 	// cluster,
 	// in
@@ -555,6 +705,9 @@ type Cluster struct {
 	// being
 	// upgraded, this reflects the minimum version of all nodes.
 	CurrentNodeVersion string `json:"currentNodeVersion,omitempty"`
+
+	// DatabaseEncryption: Configuration of etcd encryption.
+	DatabaseEncryption *DatabaseEncryption `json:"databaseEncryption,omitempty"`
 
 	// DefaultMaxPodsConstraint: The default constraint on the maximum
 	// number of pods that can be run
@@ -632,6 +785,8 @@ type Cluster struct {
 	// an
 	// auto-generated name. Do not use this and a node_pool at the same
 	// time.
+	//
+	// This field is deprecated, use node_pool.initial_node_count instead.
 	InitialNodeCount int64 `json:"initialNodeCount,omitempty"`
 
 	// InstanceGroupUrls: Deprecated. Use node_pools.instance_group_urls.
@@ -667,6 +822,9 @@ type Cluster struct {
 	// logs.
 	// Currently available options:
 	//
+	// * "logging.googleapis.com/kubernetes" - the Google Cloud
+	// Logging
+	// service with Kubernetes-native resource model
 	// * `logging.googleapis.com` - the Google Cloud Logging service.
 	// * `none` - no logs will be exported from the cluster.
 	// * if left as an empty string,`logging.googleapis.com` will be used.
@@ -702,8 +860,9 @@ type Cluster struct {
 
 	// Name: The name of this cluster. The name must be unique within this
 	// project
-	// and zone, and can be up to 40 characters with the following
-	// restrictions:
+	// and location (e.g. zone or region), and can be up to 40 characters
+	// with
+	// the following restrictions:
 	//
 	// * Lowercase letters, numbers, and hyphens only.
 	// * Must start with a letter.
@@ -725,7 +884,6 @@ type Cluster struct {
 	NetworkPolicy *NetworkPolicy `json:"networkPolicy,omitempty"`
 
 	// NodeConfig: Parameters used in creating the cluster's nodes.
-	// See `nodeConfig` for the description of its properties.
 	// For requests, this field should only be used in lieu of a
 	// "node_pool" object, since this configuration (along with
 	// the
@@ -735,16 +893,21 @@ type Cluster struct {
 	// time.
 	// For responses, this field will be populated with the node
 	// configuration of
-	// the first node pool.
+	// the first node pool. (For configuration of each node pool,
+	// see
+	// `node_pool.config`)
 	//
 	// If unspecified, the defaults are used.
+	// This field is deprecated, use node_pool.config instead.
 	NodeConfig *NodeConfig `json:"nodeConfig,omitempty"`
 
 	// NodeIpv4CidrSize: [Output only] The size of the address space on each
 	// node for hosting
 	// containers. This is provisioned from within the
 	// `container_ipv4_cidr`
-	// range.
+	// range. This field will only be set when cluster is in route-based
+	// network
+	// mode.
 	NodeIpv4CidrSize int64 `json:"nodeIpv4CidrSize,omitempty"`
 
 	// NodePools: The node pools associated with this cluster.
@@ -760,6 +923,11 @@ type Cluster struct {
 	// annotate any related
 	// Google Compute Engine resources.
 	ResourceLabels map[string]string `json:"resourceLabels,omitempty"`
+
+	// ResourceUsageExportConfig: Configuration for exporting resource
+	// usages. Resource usage export is
+	// disabled when this config is unspecified.
+	ResourceUsageExportConfig *ResourceUsageExportConfig `json:"resourceUsageExportConfig,omitempty"`
 
 	// SelfLink: [Output only] Server-defined URL for the resource.
 	SelfLink string `json:"selfLink,omitempty"`
@@ -818,6 +986,10 @@ type Cluster struct {
 	// notation (e.g. `1.2.3.4/29`).
 	TpuIpv4CidrBlock string `json:"tpuIpv4CidrBlock,omitempty"`
 
+	// VerticalPodAutoscaling: Cluster-level Vertical Pod Autoscaling
+	// configuration.
+	VerticalPodAutoscaling *VerticalPodAutoscaling `json:"verticalPodAutoscaling,omitempty"`
+
 	// Zone: [Output only] The name of the Google Compute
 	// Engine
 	// [zone](/compute/docs/zones#available) in which the
@@ -853,6 +1025,56 @@ func (s *Cluster) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// ClusterAutoscaling: ClusterAutoscaling contains global, per-cluster
+// information
+// required by Cluster Autoscaler to automatically adjust
+// the size of the cluster and create/delete
+// node pools based on the current needs.
+type ClusterAutoscaling struct {
+	// AutoprovisioningLocations: The list of Google Compute Engine
+	// [zones](/compute/docs/zones#available)
+	// in which the NodePool's nodes can be created by NAP.
+	AutoprovisioningLocations []string `json:"autoprovisioningLocations,omitempty"`
+
+	// AutoprovisioningNodePoolDefaults: AutoprovisioningNodePoolDefaults
+	// contains defaults for a node pool
+	// created by NAP.
+	AutoprovisioningNodePoolDefaults *AutoprovisioningNodePoolDefaults `json:"autoprovisioningNodePoolDefaults,omitempty"`
+
+	// EnableNodeAutoprovisioning: Enables automatic node pool creation and
+	// deletion.
+	EnableNodeAutoprovisioning bool `json:"enableNodeAutoprovisioning,omitempty"`
+
+	// ResourceLimits: Contains global constraints regarding minimum and
+	// maximum
+	// amount of resources in the cluster.
+	ResourceLimits []*ResourceLimit `json:"resourceLimits,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g.
+	// "AutoprovisioningLocations") to unconditionally include in API
+	// requests. By default, fields with empty values are omitted from API
+	// requests. However, any non-pointer, non-interface field appearing in
+	// ForceSendFields will be sent to the server regardless of whether the
+	// field is empty or not. This may be used to include empty fields in
+	// Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g.
+	// "AutoprovisioningLocations") to include in API requests with the JSON
+	// null value. By default, fields with empty values are omitted from API
+	// requests. However, any field with an empty value appearing in
+	// NullFields will be sent to the server as null. It is an error if a
+	// field in this list has a non-empty value. This may be used to include
+	// null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *ClusterAutoscaling) MarshalJSON() ([]byte, error) {
+	type NoMethod ClusterAutoscaling
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
 // ClusterUpdate: ClusterUpdate describes an update to the cluster.
 // Exactly one update can
 // be applied to a cluster with each request, so at most one field can
@@ -863,9 +1085,23 @@ type ClusterUpdate struct {
 	// to run in the cluster.
 	DesiredAddonsConfig *AddonsConfig `json:"desiredAddonsConfig,omitempty"`
 
+	// DesiredBinaryAuthorization: The desired configuration options for the
+	// Binary Authorization feature.
+	DesiredBinaryAuthorization *BinaryAuthorization `json:"desiredBinaryAuthorization,omitempty"`
+
+	// DesiredClusterAutoscaling: Cluster-level autoscaling configuration.
+	DesiredClusterAutoscaling *ClusterAutoscaling `json:"desiredClusterAutoscaling,omitempty"`
+
+	// DesiredDatabaseEncryption: Configuration of etcd encryption.
+	DesiredDatabaseEncryption *DatabaseEncryption `json:"desiredDatabaseEncryption,omitempty"`
+
 	// DesiredImageType: The desired image type for the node pool.
 	// NOTE: Set the "desired_node_pool" field as well.
 	DesiredImageType string `json:"desiredImageType,omitempty"`
+
+	// DesiredIntraNodeVisibilityConfig: The desired config of Intra-node
+	// visibility.
+	DesiredIntraNodeVisibilityConfig *IntraNodeVisibilityConfig `json:"desiredIntraNodeVisibilityConfig,omitempty"`
 
 	// DesiredLocations: The desired list of Google Compute
 	// Engine
@@ -879,6 +1115,17 @@ type ClusterUpdate struct {
 	//
 	// This list must always include the cluster's primary zone.
 	DesiredLocations []string `json:"desiredLocations,omitempty"`
+
+	// DesiredLoggingService: The logging service the cluster should use to
+	// write logs.
+	// Currently available options:
+	//
+	// * "logging.googleapis.com/kubernetes" - the Google Cloud
+	// Logging
+	// service with Kubernetes-native resource model
+	// * "logging.googleapis.com" - the Google Cloud Logging service
+	// * "none" - no logs will be exported from the cluster
+	DesiredLoggingService string `json:"desiredLoggingService,omitempty"`
 
 	// DesiredMasterAuthorizedNetworksConfig: The desired configuration
 	// options for master authorized networks feature.
@@ -903,6 +1150,9 @@ type ClusterUpdate struct {
 	// use to write metrics.
 	// Currently available options:
 	//
+	// * "monitoring.googleapis.com/kubernetes" - the Google Cloud
+	// Monitoring
+	// service with Kubernetes-native resource model
 	// * "monitoring.googleapis.com" - the Google Cloud Monitoring service
 	// * "none" - no metrics will be exported from the cluster
 	DesiredMonitoringService string `json:"desiredMonitoringService,omitempty"`
@@ -938,6 +1188,14 @@ type ClusterUpdate struct {
 	// - "1.X.Y-gke.N": picks an explicit Kubernetes version
 	// - "-": picks the Kubernetes master version
 	DesiredNodeVersion string `json:"desiredNodeVersion,omitempty"`
+
+	// DesiredResourceUsageExportConfig: The desired configuration for
+	// exporting resource usage.
+	DesiredResourceUsageExportConfig *ResourceUsageExportConfig `json:"desiredResourceUsageExportConfig,omitempty"`
+
+	// DesiredVerticalPodAutoscaling: Cluster-level Vertical Pod Autoscaling
+	// configuration.
+	DesiredVerticalPodAutoscaling *VerticalPodAutoscaling `json:"desiredVerticalPodAutoscaling,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "DesiredAddonsConfig")
 	// to unconditionally include in API requests. By default, fields with
@@ -1010,6 +1268,39 @@ type CompleteIPRotationRequest struct {
 
 func (s *CompleteIPRotationRequest) MarshalJSON() ([]byte, error) {
 	type NoMethod CompleteIPRotationRequest
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// ConsumptionMeteringConfig: Parameters for controlling consumption
+// metering.
+type ConsumptionMeteringConfig struct {
+	// Enabled: Whether to enable consumption metering for this cluster. If
+	// enabled, a
+	// second BigQuery table will be created to hold resource
+	// consumption
+	// records.
+	Enabled bool `json:"enabled,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Enabled") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Enabled") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *ConsumptionMeteringConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod ConsumptionMeteringConfig
 	raw := NoMethod(*s)
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
@@ -1134,7 +1425,7 @@ type DailyMaintenanceWindow struct {
 	// maintenance operations.
 	// Time format should be in
 	// [RFC3339](https://www.ietf.org/rfc/rfc3339.txt)
-	// format "HH:MM”, where HH : [00-23] and MM : [00-59] GMT.
+	// format "HH:MM", where HH : [00-23] and MM : [00-59] GMT.
 	StartTime string `json:"startTime,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "Duration") to
@@ -1160,6 +1451,48 @@ func (s *DailyMaintenanceWindow) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// DatabaseEncryption: Configuration of etcd encryption.
+type DatabaseEncryption struct {
+	// KeyName: Name of CloudKMS key to use for the encryption of secrets in
+	// etcd.
+	// Ex.
+	// projects/my-project/locations/global/keyRings/my-ring/cryptoKeys/my-ke
+	// y
+	KeyName string `json:"keyName,omitempty"`
+
+	// State: Denotes the state of etcd encryption.
+	//
+	// Possible values:
+	//   "UNKNOWN" - Should never be set
+	//   "ENCRYPTED" - Secrets in etcd are encrypted.
+	//   "DECRYPTED" - Secrets in etcd are stored in plain text (at etcd
+	// level) - this is
+	// unrelated to GCE level full disk encryption.
+	State string `json:"state,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "KeyName") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "KeyName") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *DatabaseEncryption) MarshalJSON() ([]byte, error) {
+	type NoMethod DatabaseEncryption
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
 // Empty: A generic empty message that you can re-use to avoid defining
 // duplicated
 // empty messages in your APIs. A typical example is to use it as the
@@ -1181,6 +1514,11 @@ type Empty struct {
 // GetJSONWebKeysResponse: GetJSONWebKeysResponse is a valid JSON Web
 // Key Set as specififed in rfc 7517
 type GetJSONWebKeysResponse struct {
+	// CacheHeader: OnePlatform automatically extracts this field and uses
+	// it to set the HTTP
+	// Cache-Control header.
+	CacheHeader *HttpCacheControlResponseHeader `json:"cacheHeader,omitempty"`
+
 	// Keys: The public component of the keys used by the cluster to sign
 	// token
 	// requests.
@@ -1190,7 +1528,7 @@ type GetJSONWebKeysResponse struct {
 	// server.
 	googleapi.ServerResponse `json:"-"`
 
-	// ForceSendFields is a list of field names (e.g. "Keys") to
+	// ForceSendFields is a list of field names (e.g. "CacheHeader") to
 	// unconditionally include in API requests. By default, fields with
 	// empty values are omitted from API requests. However, any non-pointer,
 	// non-interface field appearing in ForceSendFields will be sent to the
@@ -1198,10 +1536,10 @@ type GetJSONWebKeysResponse struct {
 	// used to include empty fields in Patch requests.
 	ForceSendFields []string `json:"-"`
 
-	// NullFields is a list of field names (e.g. "Keys") to include in API
-	// requests with the JSON null value. By default, fields with empty
-	// values are omitted from API requests. However, any field with an
-	// empty value appearing in NullFields will be sent to the server as
+	// NullFields is a list of field names (e.g. "CacheHeader") to include
+	// in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. However, any field with
+	// an empty value appearing in NullFields will be sent to the server as
 	// null. It is an error if a field in this list has a non-empty value.
 	// This may be used to include null fields in Patch requests.
 	NullFields []string `json:"-"`
@@ -1217,32 +1555,38 @@ func (s *GetJSONWebKeysResponse) MarshalJSON() ([]byte, error) {
 // document for the cluster.
 // See the OpenID Connect Discovery 1.0 specification for details.
 type GetOpenIDConfigResponse struct {
-	// ClaimsSupported: NOLINT
+	// CacheHeader: OnePlatform automatically extracts this field and uses
+	// it to set the HTTP
+	// Cache-Control header.
+	CacheHeader *HttpCacheControlResponseHeader `json:"cacheHeader,omitempty"`
+
+	// ClaimsSupported: Supported claims.
 	ClaimsSupported []string `json:"claims_supported,omitempty"`
 
-	// GrantTypes: NOLINT
+	// GrantTypes: Supported grant types.
 	GrantTypes []string `json:"grant_types,omitempty"`
 
-	// IdTokenSigningAlgValuesSupported: NOLINT
+	// IdTokenSigningAlgValuesSupported: supported ID Token signing
+	// Algorithms.
 	IdTokenSigningAlgValuesSupported []string `json:"id_token_signing_alg_values_supported,omitempty"`
 
-	// Issuer: NOLINT
+	// Issuer: OIDC Issuer.
 	Issuer string `json:"issuer,omitempty"`
 
-	// JwksUri: NOLINT
+	// JwksUri: JSON Web Key uri.
 	JwksUri string `json:"jwks_uri,omitempty"`
 
-	// ResponseTypesSupported: NOLINT
+	// ResponseTypesSupported: Supported response types.
 	ResponseTypesSupported []string `json:"response_types_supported,omitempty"`
 
-	// SubjectTypesSupported: NOLINT
+	// SubjectTypesSupported: Supported subject types.
 	SubjectTypesSupported []string `json:"subject_types_supported,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the
 	// server.
 	googleapi.ServerResponse `json:"-"`
 
-	// ForceSendFields is a list of field names (e.g. "ClaimsSupported") to
+	// ForceSendFields is a list of field names (e.g. "CacheHeader") to
 	// unconditionally include in API requests. By default, fields with
 	// empty values are omitted from API requests. However, any non-pointer,
 	// non-interface field appearing in ForceSendFields will be sent to the
@@ -1250,13 +1594,12 @@ type GetOpenIDConfigResponse struct {
 	// used to include empty fields in Patch requests.
 	ForceSendFields []string `json:"-"`
 
-	// NullFields is a list of field names (e.g. "ClaimsSupported") to
-	// include in API requests with the JSON null value. By default, fields
-	// with empty values are omitted from API requests. However, any field
-	// with an empty value appearing in NullFields will be sent to the
-	// server as null. It is an error if a field in this list has a
-	// non-empty value. This may be used to include null fields in Patch
-	// requests.
+	// NullFields is a list of field names (e.g. "CacheHeader") to include
+	// in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. However, any field with
+	// an empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
 	NullFields []string `json:"-"`
 }
 
@@ -1298,6 +1641,41 @@ type HorizontalPodAutoscaling struct {
 
 func (s *HorizontalPodAutoscaling) MarshalJSON() ([]byte, error) {
 	type NoMethod HorizontalPodAutoscaling
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// HttpCacheControlResponseHeader: RFC-2616: cache control support
+type HttpCacheControlResponseHeader struct {
+	// Age: 14.6 response cache age, in seconds since the response is
+	// generated
+	Age int64 `json:"age,omitempty,string"`
+
+	// Directive: 14.9 request and response directives
+	Directive string `json:"directive,omitempty"`
+
+	// Expires: 14.21 response cache expires, in RFC 1123 date format
+	Expires string `json:"expires,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Age") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Age") to include in API
+	// requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *HttpCacheControlResponseHeader) MarshalJSON() ([]byte, error) {
+	type NoMethod HttpCacheControlResponseHeader
 	raw := NoMethod(*s)
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
@@ -1505,35 +1883,63 @@ func (s *IPAllocationPolicy) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// IntraNodeVisibilityConfig: IntraNodeVisibilityConfig contains the
+// desired config of the intra-node
+// visibility on this cluster.
+type IntraNodeVisibilityConfig struct {
+	// Enabled: Enables intra node visibility for this cluster.
+	Enabled bool `json:"enabled,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Enabled") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Enabled") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *IntraNodeVisibilityConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod IntraNodeVisibilityConfig
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
 // Jwk: Jwk is a JSON Web Key as specified in RFC 7517
 type Jwk struct {
-	// Alg: NOLINT
+	// Alg: Algorithm.
 	Alg string `json:"alg,omitempty"`
 
-	// Crv: NOLINT
+	// Crv: Used for ECDSA keys.
 	Crv string `json:"crv,omitempty"`
 
-	// E: NOLINT
+	// E: Used for RSA keys.
 	E string `json:"e,omitempty"`
 
-	// Kid: NOLINT
+	// Kid: Key ID.
 	Kid string `json:"kid,omitempty"`
 
-	// Kty: NOLINT
+	// Kty: Key Type.
 	Kty string `json:"kty,omitempty"`
 
-	// N: Fields for RSA keys.
-	// NOLINT
+	// N: Used for RSA keys.
 	N string `json:"n,omitempty"`
 
-	// Use: NOLINT
+	// Use: Permitted uses for the public keys.
 	Use string `json:"use,omitempty"`
 
-	// X: Fields for ECDSA keys.
-	// NOLINT
+	// X: Used for ECDSA keys.
 	X string `json:"x,omitempty"`
 
-	// Y: NOLINT
+	// Y: Used for ECDSA keys.
 	Y string `json:"y,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "Alg") to
@@ -1919,7 +2325,7 @@ func (s *MasterAuth) MarshalJSON() ([]byte, error) {
 // blocks,
 // Google Compute Engine Public IPs and Google Prod IPs.
 type MasterAuthorizedNetworksConfig struct {
-	// CidrBlocks: cidr_blocks define up to 10 external networks that could
+	// CidrBlocks: cidr_blocks define up to 50 external networks that could
 	// access
 	// Kubernetes master through HTTPS.
 	CidrBlocks []*CidrBlock `json:"cidrBlocks,omitempty"`
@@ -1982,6 +2388,11 @@ func (s *MaxPodsConstraint) MarshalJSON() ([]byte, error) {
 // NetworkConfig: NetworkConfig reports the relative names of network &
 // subnetwork.
 type NetworkConfig struct {
+	// EnableIntraNodeVisibility: Whether Intra-node visibility is enabled
+	// for this cluster.
+	// This makes same node pod to pod traffic visible for VPC network.
+	EnableIntraNodeVisibility bool `json:"enableIntraNodeVisibility,omitempty"`
+
 	// Network: Output only. The relative name of the Google Compute
 	// Engine
 	// network(/compute/docs/networks-and-firewalls#networks) to which
@@ -1997,20 +2408,22 @@ type NetworkConfig struct {
 	// projects/my-project/regions/us-central1/subnetworks/my-subnet
 	Subnetwork string `json:"subnetwork,omitempty"`
 
-	// ForceSendFields is a list of field names (e.g. "Network") to
-	// unconditionally include in API requests. By default, fields with
-	// empty values are omitted from API requests. However, any non-pointer,
-	// non-interface field appearing in ForceSendFields will be sent to the
-	// server regardless of whether the field is empty or not. This may be
-	// used to include empty fields in Patch requests.
+	// ForceSendFields is a list of field names (e.g.
+	// "EnableIntraNodeVisibility") to unconditionally include in API
+	// requests. By default, fields with empty values are omitted from API
+	// requests. However, any non-pointer, non-interface field appearing in
+	// ForceSendFields will be sent to the server regardless of whether the
+	// field is empty or not. This may be used to include empty fields in
+	// Patch requests.
 	ForceSendFields []string `json:"-"`
 
-	// NullFields is a list of field names (e.g. "Network") to include in
-	// API requests with the JSON null value. By default, fields with empty
-	// values are omitted from API requests. However, any field with an
-	// empty value appearing in NullFields will be sent to the server as
-	// null. It is an error if a field in this list has a non-empty value.
-	// This may be used to include null fields in Patch requests.
+	// NullFields is a list of field names (e.g.
+	// "EnableIntraNodeVisibility") to include in API requests with the JSON
+	// null value. By default, fields with empty values are omitted from API
+	// requests. However, any field with an empty value appearing in
+	// NullFields will be sent to the server as null. It is an error if a
+	// field in this list has a non-empty value. This may be used to include
+	// null fields in Patch requests.
 	NullFields []string `json:"-"`
 }
 
@@ -2135,12 +2548,11 @@ type NodeConfig struct {
 	// LocalSsdCount: The number of local SSD disks to be attached to the
 	// node.
 	//
-	// The limit for this value is dependant upon the maximum number
+	// The limit for this value is dependent upon the maximum number
 	// of
 	// disks available on a machine per zone.
 	// See:
-	// https://cloud.google.com/compute/docs/disks/local-ssd#local_ssd_l
-	// imits
+	// https://cloud.google.com/compute/docs/disks/local-ssd
 	// for more information.
 	LocalSsdCount int64 `json:"localSsdCount,omitempty"`
 
@@ -2175,6 +2587,13 @@ type NodeConfig struct {
 	//  "kube-env"
 	//  "startup-script"
 	//  "user-data"
+	//  "disable-address-manager"
+	//  "windows-startup-script-ps1"
+	//  "common-psm1"
+	//  "k8s-node-setup-psm1"
+	//  "install-ssh-psm1"
+	//  "user-profile-psm1"
+	//  "serial-port-logging-enable"
 	//
 	// Values are free-form strings, and only have meaning as interpreted
 	// by
@@ -2235,6 +2654,9 @@ type NodeConfig struct {
 	// no Service Account is specified, the "default" service account is
 	// used.
 	ServiceAccount string `json:"serviceAccount,omitempty"`
+
+	// ShieldedInstanceConfig: Shielded Instance options.
+	ShieldedInstanceConfig *ShieldedInstanceConfig `json:"shieldedInstanceConfig,omitempty"`
 
 	// Tags: The list of instance tags applied to all nodes. Tags are used
 	// to identify
@@ -2372,6 +2794,10 @@ type NodePool struct {
 	// Name: The name of the node pool.
 	Name string `json:"name,omitempty"`
 
+	// PodIpv4CidrSize: [Output only] The pod CIDR block size per node in
+	// this node pool.
+	PodIpv4CidrSize int64 `json:"podIpv4CidrSize,omitempty"`
+
 	// SelfLink: [Output only] Server-defined URL for the resource.
 	SelfLink string `json:"selfLink,omitempty"`
 
@@ -2441,6 +2867,9 @@ func (s *NodePool) MarshalJSON() ([]byte, error) {
 // required by cluster autoscaler to
 // adjust the size of the node pool to the current cluster usage.
 type NodePoolAutoscaling struct {
+	// Autoprovisioned: Can this node pool be deleted automatically.
+	Autoprovisioned bool `json:"autoprovisioned,omitempty"`
+
 	// Enabled: Is autoscaling enabled for this node pool.
 	Enabled bool `json:"enabled,omitempty"`
 
@@ -2454,7 +2883,7 @@ type NodePoolAutoscaling struct {
 	// max_node_count.
 	MinNodeCount int64 `json:"minNodeCount,omitempty"`
 
-	// ForceSendFields is a list of field names (e.g. "Enabled") to
+	// ForceSendFields is a list of field names (e.g. "Autoprovisioned") to
 	// unconditionally include in API requests. By default, fields with
 	// empty values are omitted from API requests. However, any non-pointer,
 	// non-interface field appearing in ForceSendFields will be sent to the
@@ -2462,12 +2891,13 @@ type NodePoolAutoscaling struct {
 	// used to include empty fields in Patch requests.
 	ForceSendFields []string `json:"-"`
 
-	// NullFields is a list of field names (e.g. "Enabled") to include in
-	// API requests with the JSON null value. By default, fields with empty
-	// values are omitted from API requests. However, any field with an
-	// empty value appearing in NullFields will be sent to the server as
-	// null. It is an error if a field in this list has a non-empty value.
-	// This may be used to include null fields in Patch requests.
+	// NullFields is a list of field names (e.g. "Autoprovisioned") to
+	// include in API requests with the JSON null value. By default, fields
+	// with empty values are omitted from API requests. However, any field
+	// with an empty value appearing in NullFields will be sent to the
+	// server as null. It is an error if a field in this list has a
+	// non-empty value. This may be used to include null fields in Patch
+	// requests.
 	NullFields []string `json:"-"`
 }
 
@@ -2689,6 +3119,83 @@ type PrivateClusterConfig struct {
 
 func (s *PrivateClusterConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod PrivateClusterConfig
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// ResourceLimit: Contains information about amount of some resource in
+// the cluster.
+// For memory, value should be in GB.
+type ResourceLimit struct {
+	// Maximum: Maximum amount of the resource in the cluster.
+	Maximum int64 `json:"maximum,omitempty,string"`
+
+	// Minimum: Minimum amount of the resource in the cluster.
+	Minimum int64 `json:"minimum,omitempty,string"`
+
+	// ResourceType: Resource name "cpu", "memory" or gpu-specific string.
+	ResourceType string `json:"resourceType,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Maximum") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Maximum") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *ResourceLimit) MarshalJSON() ([]byte, error) {
+	type NoMethod ResourceLimit
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// ResourceUsageExportConfig: Configuration for exporting cluster
+// resource usages.
+type ResourceUsageExportConfig struct {
+	// BigqueryDestination: Configuration to use BigQuery as usage export
+	// destination.
+	BigqueryDestination *BigQueryDestination `json:"bigqueryDestination,omitempty"`
+
+	// ConsumptionMeteringConfig: Configuration to enable resource
+	// consumption metering.
+	ConsumptionMeteringConfig *ConsumptionMeteringConfig `json:"consumptionMeteringConfig,omitempty"`
+
+	// EnableNetworkEgressMetering: Whether to enable network egress
+	// metering for this cluster. If enabled, a
+	// daemonset will be created in the cluster to meter network egress
+	// traffic.
+	EnableNetworkEgressMetering bool `json:"enableNetworkEgressMetering,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "BigqueryDestination")
+	// to unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "BigqueryDestination") to
+	// include in API requests with the JSON null value. By default, fields
+	// with empty values are omitted from API requests. However, any field
+	// with an empty value appearing in NullFields will be sent to the
+	// server as null. It is an error if a field in this list has a
+	// non-empty value. This may be used to include null fields in Patch
+	// requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *ResourceUsageExportConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod ResourceUsageExportConfig
 	raw := NoMethod(*s)
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
@@ -3228,6 +3735,9 @@ type SetMonitoringServiceRequest struct {
 	// write metrics.
 	// Currently available options:
 	//
+	// * "monitoring.googleapis.com/kubernetes" - the Google Cloud
+	// Monitoring
+	// service with Kubernetes-native resource model
 	// * "monitoring.googleapis.com" - the Google Cloud Monitoring service
 	// * "none" - no metrics will be exported from the cluster
 	MonitoringService string `json:"monitoringService,omitempty"`
@@ -3507,6 +4017,55 @@ func (s *SetNodePoolSizeRequest) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// ShieldedInstanceConfig: A set of Shielded Instance options.
+type ShieldedInstanceConfig struct {
+	// EnableIntegrityMonitoring: Defines whether the instance has integrity
+	// monitoring enabled.
+	//
+	// Enables monitoring and attestation of the boot integrity of the
+	// instance.
+	// The attestation is performed against the integrity policy baseline.
+	// This
+	// baseline is initially derived from the implicitly trusted boot image
+	// when
+	// the instance is created.
+	EnableIntegrityMonitoring bool `json:"enableIntegrityMonitoring,omitempty"`
+
+	// EnableSecureBoot: Defines whether the instance has Secure Boot
+	// enabled.
+	//
+	// Secure Boot helps ensure that the system only runs authentic software
+	// by
+	// verifying the digital signature of all boot components, and halting
+	// the
+	// boot process if signature verification fails.
+	EnableSecureBoot bool `json:"enableSecureBoot,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g.
+	// "EnableIntegrityMonitoring") to unconditionally include in API
+	// requests. By default, fields with empty values are omitted from API
+	// requests. However, any non-pointer, non-interface field appearing in
+	// ForceSendFields will be sent to the server regardless of whether the
+	// field is empty or not. This may be used to include empty fields in
+	// Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g.
+	// "EnableIntegrityMonitoring") to include in API requests with the JSON
+	// null value. By default, fields with empty values are omitted from API
+	// requests. However, any field with an empty value appearing in
+	// NullFields will be sent to the server as null. It is an error if a
+	// field in this list has a non-empty value. This may be used to include
+	// null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *ShieldedInstanceConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod ShieldedInstanceConfig
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
 // StartIPRotationRequest: StartIPRotationRequest creates a new IP for
 // the cluster and then performs
 // a node upgrade on each node pool to point to the new IP.
@@ -3578,6 +4137,9 @@ type StatusCondition struct {
 	//   "GCE_QUOTA_EXCEEDED" - Google Compute Engine quota was exceeded.
 	//   "SET_BY_OPERATOR" - Cluster state was manually changed by an SRE
 	// due to a system logic error.
+	//   "CLOUD_KMS_KEY_ERROR" - Unable to perform an encrypt operation
+	// against the CloudKMS key used for
+	// etcd level encryption.
 	// More codes TBA
 	Code string `json:"code,omitempty"`
 
@@ -3907,6 +4469,37 @@ func (s *UsableSubnetworkSecondaryRange) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// VerticalPodAutoscaling: VerticalPodAutoscaling contains global,
+// per-cluster information
+// required by Vertical Pod Autoscaler to automatically adjust
+// the resources of pods controlled by it.
+type VerticalPodAutoscaling struct {
+	// Enabled: Enables vertical pod autoscaling.
+	Enabled bool `json:"enabled,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Enabled") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Enabled") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *VerticalPodAutoscaling) MarshalJSON() ([]byte, error) {
+	type NoMethod VerticalPodAutoscaling
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
 // method id "container.projects.aggregated.usableSubnetworks.list":
 
 type ProjectsAggregatedUsableSubnetworksListCall struct {
@@ -3995,6 +4588,7 @@ func (c *ProjectsAggregatedUsableSubnetworksListCall) Header() http.Header {
 
 func (c *ProjectsAggregatedUsableSubnetworksListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -4196,6 +4790,7 @@ func (c *ProjectsLocationsGetServerConfigCall) Header() http.Header {
 
 func (c *ProjectsLocationsGetServerConfigCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -4340,6 +4935,7 @@ func (c *ProjectsLocationsClustersCompleteIpRotationCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersCompleteIpRotationCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -4495,6 +5091,7 @@ func (c *ProjectsLocationsClustersCreateCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersCreateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -4673,6 +5270,7 @@ func (c *ProjectsLocationsClustersDeleteCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -4858,6 +5456,7 @@ func (c *ProjectsLocationsClustersGetCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -5021,6 +5620,7 @@ func (c *ProjectsLocationsClustersGetJwksCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersGetJwksCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -5101,10 +5701,7 @@ func (c *ProjectsLocationsClustersGetJwksCall) Do(opts ...googleapi.CallOption) 
 	//   "path": "v1/{+parent}/jwks",
 	//   "response": {
 	//     "$ref": "GetJSONWebKeysResponse"
-	//   },
-	//   "scopes": [
-	//     "https://www.googleapis.com/auth/cloud-platform"
-	//   ]
+	//   }
 	// }
 
 }
@@ -5187,6 +5784,7 @@ func (c *ProjectsLocationsClustersListCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -5331,6 +5929,7 @@ func (c *ProjectsLocationsClustersSetAddonsCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetAddonsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -5471,6 +6070,7 @@ func (c *ProjectsLocationsClustersSetLegacyAbacCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetLegacyAbacCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -5610,6 +6210,7 @@ func (c *ProjectsLocationsClustersSetLocationsCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetLocationsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -5749,6 +6350,7 @@ func (c *ProjectsLocationsClustersSetLoggingCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetLoggingCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -5888,6 +6490,7 @@ func (c *ProjectsLocationsClustersSetMaintenancePolicyCall) Header() http.Header
 
 func (c *ProjectsLocationsClustersSetMaintenancePolicyCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -6031,6 +6634,7 @@ func (c *ProjectsLocationsClustersSetMasterAuthCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetMasterAuthCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -6170,6 +6774,7 @@ func (c *ProjectsLocationsClustersSetMonitoringCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetMonitoringCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -6309,6 +6914,7 @@ func (c *ProjectsLocationsClustersSetNetworkPolicyCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetNetworkPolicyCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -6448,6 +7054,7 @@ func (c *ProjectsLocationsClustersSetResourceLabelsCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersSetResourceLabelsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -6587,6 +7194,7 @@ func (c *ProjectsLocationsClustersStartIpRotationCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersStartIpRotationCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -6726,6 +7334,7 @@ func (c *ProjectsLocationsClustersUpdateCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -6865,6 +7474,7 @@ func (c *ProjectsLocationsClustersUpdateMasterCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersUpdateMasterCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7004,6 +7614,7 @@ func (c *ProjectsLocationsClustersNodePoolsCreateCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsCreateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7179,6 +7790,7 @@ func (c *ProjectsLocationsClustersNodePoolsDeleteCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7377,6 +7989,7 @@ func (c *ProjectsLocationsClustersNodePoolsGetCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7570,6 +8183,7 @@ func (c *ProjectsLocationsClustersNodePoolsListCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7721,6 +8335,7 @@ func (c *ProjectsLocationsClustersNodePoolsRollbackCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsRollbackCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -7861,6 +8476,7 @@ func (c *ProjectsLocationsClustersNodePoolsSetAutoscalingCall) Header() http.Hea
 
 func (c *ProjectsLocationsClustersNodePoolsSetAutoscalingCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8000,6 +8616,7 @@ func (c *ProjectsLocationsClustersNodePoolsSetManagementCall) Header() http.Head
 
 func (c *ProjectsLocationsClustersNodePoolsSetManagementCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8139,6 +8756,7 @@ func (c *ProjectsLocationsClustersNodePoolsSetSizeCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsSetSizeCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8279,6 +8897,7 @@ func (c *ProjectsLocationsClustersNodePoolsUpdateCall) Header() http.Header {
 
 func (c *ProjectsLocationsClustersNodePoolsUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8437,6 +9056,7 @@ func (c *ProjectsLocationsClustersWellKnownGetOpenidConfigurationCall) Header() 
 
 func (c *ProjectsLocationsClustersWellKnownGetOpenidConfigurationCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8517,10 +9137,7 @@ func (c *ProjectsLocationsClustersWellKnownGetOpenidConfigurationCall) Do(opts .
 	//   "path": "v1/{+parent}/.well-known/openid-configuration",
 	//   "response": {
 	//     "$ref": "GetOpenIDConfigResponse"
-	//   },
-	//   "scopes": [
-	//     "https://www.googleapis.com/auth/cloud-platform"
-	//   ]
+	//   }
 	// }
 
 }
@@ -8571,6 +9188,7 @@ func (c *ProjectsLocationsOperationsCancelCall) Header() http.Header {
 
 func (c *ProjectsLocationsOperationsCancelCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8749,6 +9367,7 @@ func (c *ProjectsLocationsOperationsGetCall) Header() http.Header {
 
 func (c *ProjectsLocationsOperationsGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -8930,6 +9549,7 @@ func (c *ProjectsLocationsOperationsListCall) Header() http.Header {
 
 func (c *ProjectsLocationsOperationsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9094,6 +9714,7 @@ func (c *ProjectsZonesGetServerconfigCall) Header() http.Header {
 
 func (c *ProjectsZonesGetServerconfigCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9244,6 +9865,7 @@ func (c *ProjectsZonesClustersAddonsCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersAddonsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9402,6 +10024,7 @@ func (c *ProjectsZonesClustersCompleteIpRotationCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersCompleteIpRotationCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9574,6 +10197,7 @@ func (c *ProjectsZonesClustersCreateCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersCreateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9741,6 +10365,7 @@ func (c *ProjectsZonesClustersDeleteCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -9913,6 +10538,7 @@ func (c *ProjectsZonesClustersGetCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10072,6 +10698,7 @@ func (c *ProjectsZonesClustersLegacyAbacCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersLegacyAbacCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10248,6 +10875,7 @@ func (c *ProjectsZonesClustersListCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10398,6 +11026,7 @@ func (c *ProjectsZonesClustersLocationsCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersLocationsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10556,6 +11185,7 @@ func (c *ProjectsZonesClustersLoggingCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersLoggingCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10714,6 +11344,7 @@ func (c *ProjectsZonesClustersMasterCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersMasterCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -10872,6 +11503,7 @@ func (c *ProjectsZonesClustersMonitoringCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersMonitoringCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11030,6 +11662,7 @@ func (c *ProjectsZonesClustersResourceLabelsCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersResourceLabelsCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11188,6 +11821,7 @@ func (c *ProjectsZonesClustersSetMaintenancePolicyCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersSetMaintenancePolicyCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11350,6 +11984,7 @@ func (c *ProjectsZonesClustersSetMasterAuthCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersSetMasterAuthCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11508,6 +12143,7 @@ func (c *ProjectsZonesClustersSetNetworkPolicyCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersSetNetworkPolicyCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11666,6 +12302,7 @@ func (c *ProjectsZonesClustersStartIpRotationCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersStartIpRotationCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11824,6 +12461,7 @@ func (c *ProjectsZonesClustersUpdateCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -11985,6 +12623,7 @@ func (c *ProjectsZonesClustersNodePoolsAutoscalingCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsAutoscalingCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -12151,6 +12790,7 @@ func (c *ProjectsZonesClustersNodePoolsCreateCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsCreateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -12319,6 +12959,7 @@ func (c *ProjectsZonesClustersNodePoolsDeleteCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -12503,6 +13144,7 @@ func (c *ProjectsZonesClustersNodePoolsGetCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -12686,6 +13328,7 @@ func (c *ProjectsZonesClustersNodePoolsListCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -12848,6 +13491,7 @@ func (c *ProjectsZonesClustersNodePoolsRollbackCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsRollbackCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -13016,6 +13660,7 @@ func (c *ProjectsZonesClustersNodePoolsSetManagementCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsSetManagementCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -13184,6 +13829,7 @@ func (c *ProjectsZonesClustersNodePoolsSetSizeCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsSetSizeCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -13353,6 +13999,7 @@ func (c *ProjectsZonesClustersNodePoolsUpdateCall) Header() http.Header {
 
 func (c *ProjectsZonesClustersNodePoolsUpdateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -13519,6 +14166,7 @@ func (c *ProjectsZonesOperationsCancelCall) Header() http.Header {
 
 func (c *ProjectsZonesOperationsCancelCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -13694,6 +14342,7 @@ func (c *ProjectsZonesOperationsGetCall) Header() http.Header {
 
 func (c *ProjectsZonesOperationsGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -13869,6 +14518,7 @@ func (c *ProjectsZonesOperationsListCall) Header() http.Header {
 
 func (c *ProjectsZonesOperationsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
+	reqHeaders.Set("x-goog-api-client", "gl-go/1.13.4 gdcl/20191114")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
