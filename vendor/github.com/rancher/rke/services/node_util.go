@@ -19,7 +19,7 @@ import (
 
 func CheckNodeReady(kubeClient *kubernetes.Clientset, runHost *hosts.Host, component string) error {
 	for retries := 0; retries < k8s.MaxRetries; retries++ {
-		logrus.Infof("[%s] Now checking status of node %v", component, runHost.HostnameOverride)
+		logrus.Infof("[%s] Now checking status of node %v, try #%v", component, runHost.HostnameOverride, retries+1)
 		k8sNode, err := k8s.GetNode(kubeClient, runHost.HostnameOverride)
 		if err != nil {
 			return fmt.Errorf("[%s] Error getting node %v: %v", component, runHost.HostnameOverride, err)
@@ -80,9 +80,6 @@ func getNodeListForUpgrade(kubeClient *kubernetes.Clientset, hostsFailed *sync.M
 		if inactiveHosts[node.Labels[k8s.HostnameLabel]] {
 			continue
 		}
-		if val, ok := node.Labels[k8s.IgnoreHostDuringUpgradeLabel]; ok && val == k8s.IgnoreLabelValue {
-			continue
-		}
 		nodeList = append(nodeList, node)
 	}
 	return nodeList, nil
@@ -115,7 +112,7 @@ func CalculateMaxUnavailable(maxUnavailableVal string, numHosts int, role string
 	return maxUnavailable, nil
 }
 
-func resetMaxUnavailable(maxUnavailable, lenInactiveHosts int, component string) (int, error) {
+func ResetMaxUnavailable(maxUnavailable, lenInactiveHosts int, component string) (int, error) {
 	if maxUnavailable > WorkerThreads {
 		/* upgrading a large number of nodes in parallel leads to a large number of goroutines, which has led to errors regarding too many open sockets
 		Because of this RKE switched to using workerpools. 50 workerthreads has been sufficient to optimize rke up, upgrading at most 50 nodes in parallel.

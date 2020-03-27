@@ -27,8 +27,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
-	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	apiserverv1alpha1 "k8s.io/apiserver/pkg/apis/apiserver/v1alpha1"
@@ -70,7 +70,6 @@ type Cluster struct {
 	NewHosts                         map[string]bool
 	MaxUnavailableForWorkerNodes     int
 	MaxUnavailableForControlNodes    int
-	HostsLabeledToIgnoreUpgrade      map[string]bool
 }
 
 type encryptionConfig struct {
@@ -166,22 +165,26 @@ func (c *Cluster) UpgradeControlPlane(ctx context.Context, kubeClient *kubernete
 	inactiveHosts := make(map[string]bool)
 	var controlPlaneHosts, notReadyHosts []*hosts.Host
 	var notReadyHostNames []string
+	var err error
 
 	for _, host := range c.InactiveHosts {
 		// include only hosts with controlplane role
-		if host.IsControl && !c.HostsLabeledToIgnoreUpgrade[host.Address] {
+		if host.IsControl {
 			inactiveHosts[host.HostnameOverride] = true
 		}
 	}
+	c.MaxUnavailableForControlNodes, err = services.ResetMaxUnavailable(c.MaxUnavailableForControlNodes, len(inactiveHosts), services.ControlRole)
+	if err != nil {
+		return "", err
+	}
 	for _, host := range c.ControlPlaneHosts {
-		if !c.HostsLabeledToIgnoreUpgrade[host.Address] {
-			controlPlaneHosts = append(controlPlaneHosts, host)
-		}
+		controlPlaneHosts = append(controlPlaneHosts, host)
 		if c.NewHosts[host.HostnameOverride] {
 			continue
 		}
 		// find existing nodes that are in NotReady state
 		if err := services.CheckNodeReady(kubeClient, host, services.ControlRole); err != nil {
+			logrus.Debugf("Found node %v in NotReady state", host.HostnameOverride)
 			notReadyHosts = append(notReadyHosts, host)
 			notReadyHostNames = append(notReadyHostNames, host.HostnameOverride)
 		}
@@ -190,16 +193,32 @@ func (c *Cluster) UpgradeControlPlane(ctx context.Context, kubeClient *kubernete
 	if len(notReadyHostNames) > 0 {
 		// attempt upgrade on NotReady hosts without respecting max_unavailable_controlplane
 		logrus.Infof("Attempting upgrade of controlplane components on following hosts in NotReady status: %v", strings.Join(notReadyHostNames, ","))
-		services.RunControlPlane(ctx, notReadyHosts,
+		err = services.RunControlPlane(ctx, notReadyHosts,
 			c.LocalConnDialerFactory,
 			c.PrivateRegistriesMap,
 			cpNodePlanMap,
 			c.UpdateWorkersOnly,
 			c.SystemImages.Alpine,
 			c.Certificates)
+		if err != nil {
+			logrus.Errorf("Failed to upgrade controlplane components on NotReady hosts, error: %v", err)
+		}
+		err = services.RunWorkerPlane(ctx, notReadyHosts,
+			c.LocalConnDialerFactory,
+			c.PrivateRegistriesMap,
+			cpNodePlanMap,
+			c.Certificates,
+			c.UpdateWorkersOnly,
+			c.SystemImages.Alpine)
+		if err != nil {
+			logrus.Errorf("Failed to upgrade worker components on NotReady hosts, error: %v", err)
+		}
 		// Calling CheckNodeReady wil give some time for nodes to get in Ready state
 		for _, host := range notReadyHosts {
-			services.CheckNodeReady(kubeClient, host, services.ControlRole)
+			err = services.CheckNodeReady(kubeClient, host, services.ControlRole)
+			if err != nil {
+				logrus.Errorf("Host %v failed to report Ready status with error: %v", host.HostnameOverride, err)
+			}
 		}
 	}
 	// rolling upgrade respecting maxUnavailable
@@ -232,7 +251,7 @@ func (c *Cluster) DeployWorkerPlane(ctx context.Context, svcOptionData map[strin
 			return "", err
 		}
 		workerNodePlanMap[host.Address] = BuildRKEConfigNodePlan(ctx, c, host, host.DockerInfo, svcOptions)
-		if host.IsControl || c.HostsLabeledToIgnoreUpgrade[host.Address] {
+		if host.IsControl {
 			continue
 		}
 		if !host.IsEtcd {
@@ -265,12 +284,17 @@ func (c *Cluster) UpgradeWorkerPlane(ctx context.Context, kubeClient *kubernetes
 	inactiveHosts := make(map[string]bool)
 	var notReadyHosts []*hosts.Host
 	var notReadyHostNames []string
+	var err error
 
 	for _, host := range c.InactiveHosts {
 		// if host has controlplane role, it already has worker components upgraded
-		if !host.IsControl && !c.HostsLabeledToIgnoreUpgrade[host.Address] {
+		if !host.IsControl {
 			inactiveHosts[host.HostnameOverride] = true
 		}
+	}
+	c.MaxUnavailableForWorkerNodes, err = services.ResetMaxUnavailable(c.MaxUnavailableForWorkerNodes, len(inactiveHosts), services.WorkerRole)
+	if err != nil {
+		return "", err
 	}
 	for _, host := range append(etcdAndWorkerHosts, workerOnlyHosts...) {
 		if c.NewHosts[host.HostnameOverride] {
@@ -278,6 +302,7 @@ func (c *Cluster) UpgradeWorkerPlane(ctx context.Context, kubeClient *kubernetes
 		}
 		// find existing nodes that are in NotReady state
 		if err := services.CheckNodeReady(kubeClient, host, services.WorkerRole); err != nil {
+			logrus.Debugf("Found node %v in NotReady state", host.HostnameOverride)
 			notReadyHosts = append(notReadyHosts, host)
 			notReadyHostNames = append(notReadyHostNames, host.HostnameOverride)
 		}
@@ -285,16 +310,22 @@ func (c *Cluster) UpgradeWorkerPlane(ctx context.Context, kubeClient *kubernetes
 	if len(notReadyHostNames) > 0 {
 		// attempt upgrade on NotReady hosts without respecting max_unavailable_worker
 		logrus.Infof("Attempting upgrade of worker components on following hosts in NotReady status: %v", strings.Join(notReadyHostNames, ","))
-		services.RunWorkerPlane(ctx, notReadyHosts,
+		err = services.RunWorkerPlane(ctx, notReadyHosts,
 			c.LocalConnDialerFactory,
 			c.PrivateRegistriesMap,
 			workerNodePlanMap,
 			c.Certificates,
 			c.UpdateWorkersOnly,
 			c.SystemImages.Alpine)
+		if err != nil {
+			logrus.Errorf("Failed to upgrade worker components on NotReady hosts, error: %v", err)
+		}
 		// Calling CheckNodeReady wil give some time for nodes to get in Ready state
 		for _, host := range notReadyHosts {
-			services.CheckNodeReady(kubeClient, host, services.WorkerRole)
+			err = services.CheckNodeReady(kubeClient, host, services.WorkerRole)
+			if err != nil {
+				logrus.Errorf("Host %v failed to report Ready status with error: %v", host.HostnameOverride, err)
+			}
 		}
 	}
 
@@ -486,25 +517,26 @@ func parseIngressConfig(clusterFile string, rkeConfig *v3.RancherKubernetesEngin
 	return nil
 }
 
-func parseDaemonSetUpdateStrategy(updateStrategyField interface{}) (*appsv1.DaemonSetUpdateStrategy, error) {
+func parseDaemonSetUpdateStrategy(updateStrategyField interface{}) (*v3.DaemonSetUpdateStrategy, error) {
 	updateStrategyBytes, err := json.Marshal(updateStrategyField)
 	if err != nil {
 		return nil, fmt.Errorf("[parseDaemonSetUpdateStrategy] error marshalling updateStrategy: %v", err)
 	}
-	var updateStrategy *appsv1.DaemonSetUpdateStrategy
+	var updateStrategy *v3.DaemonSetUpdateStrategy
 	err = json.Unmarshal(updateStrategyBytes, &updateStrategy)
 	if err != nil {
 		return nil, fmt.Errorf("[parseIngressUpdateStrategy] error unmarshaling updateStrategy: %v", err)
 	}
+
 	return updateStrategy, nil
 }
 
-func parseDeploymentUpdateStrategy(updateStrategyField interface{}) (*appsv1.DeploymentStrategy, error) {
+func parseDeploymentUpdateStrategy(updateStrategyField interface{}) (*v3.DeploymentStrategy, error) {
 	updateStrategyBytes, err := json.Marshal(updateStrategyField)
 	if err != nil {
 		return nil, fmt.Errorf("[parseDeploymentUpdateStrategy] error marshalling updateStrategy: %v", err)
 	}
-	var updateStrategy *appsv1.DeploymentStrategy
+	var updateStrategy *v3.DeploymentStrategy
 	err = json.Unmarshal(updateStrategyBytes, &updateStrategy)
 	if err != nil {
 		return nil, fmt.Errorf("[parseDeploymentUpdateStrategy] error unmarshaling updateStrategy: %v", err)
@@ -621,7 +653,7 @@ func parseNodeDrainInput(clusterFile string, rkeConfig *v3.RancherKubernetesEngi
 }
 
 func ParseConfig(clusterFile string) (*v3.RancherKubernetesEngineConfig, error) {
-	logrus.Debugf("Parsing cluster file [%v]", clusterFile)
+	logrus.Tracef("Parsing cluster file [%v]", clusterFile)
 	var rkeConfig v3.RancherKubernetesEngineConfig
 
 	// the customConfig is mapped to a k8s type, which doesn't unmarshal well because it has a
@@ -671,7 +703,6 @@ func InitClusterObject(ctx context.Context, rkeConfig *v3.RancherKubernetesEngin
 		EncryptionConfig: encryptionConfig{
 			EncryptionProviderFile: encryptConfig,
 		},
-		HostsLabeledToIgnoreUpgrade: make(map[string]bool),
 	}
 	if metadata.K8sVersionToRKESystemImages == nil {
 		if err := metadata.InitMetadata(ctx); err != nil {
@@ -926,7 +957,7 @@ func setNodeAnnotationsLabelsTaints(k8sClient *kubernetes.Clientset, host *hosts
 	for retries := 0; retries <= 5; retries++ {
 		node, err = k8s.GetNode(k8sClient, host.HostnameOverride)
 		if err != nil {
-			logrus.Debugf("[hosts] Can't find node by name [%s], retrying..", host.HostnameOverride)
+			logrus.Debugf("[hosts] Can't find node by name [%s], error: %v", host.HostnameOverride, err)
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -940,7 +971,7 @@ func setNodeAnnotationsLabelsTaints(k8sClient *kubernetes.Clientset, host *hosts
 			logrus.Debugf("skipping syncing labels for node [%s]", node.Name)
 			return nil
 		}
-		_, err = k8sClient.CoreV1().Nodes().Update(node)
+		_, err = k8sClient.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 		if err != nil {
 			logrus.Debugf("Error syncing labels for node [%s]: %v", node.Name, err)
 			time.Sleep(5 * time.Second)
