@@ -1,6 +1,7 @@
 package objectclient
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -127,13 +128,13 @@ func (p *ObjectClient) Create(o runtime.Object) (runtime.Object, error) {
 		}
 	}
 	result := p.Factory.Object()
-	logrus.Debugf("REST CREATE %s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, ns, p.resource.Name)
+	logrus.Tracef("REST CREATE %s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, ns, p.resource.Name)
 	err := p.restClient.Post().
 		Prefix(p.getAPIPrefix(), p.gvk.Group, p.gvk.Version).
 		NamespaceIfScoped(ns, p.resource.Namespaced).
 		Resource(p.resource.Name).
 		Body(o).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return result, err
 }
@@ -149,9 +150,9 @@ func (p *ObjectClient) GetNamespaced(namespace, name string, opts metav1.GetOpti
 		Resource(p.resource.Name).
 		VersionedParams(&opts, metav1.ParameterCodec).
 		Name(name).
-		Do().
+		Do(context.TODO()).
 		Into(result)
-	logrus.Debugf("REST GET %s/%s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, namespace, p.resource.Name, name)
+	logrus.Tracef("REST GET %s/%s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, namespace, p.resource.Name, name)
 	return result, err
 
 }
@@ -164,9 +165,9 @@ func (p *ObjectClient) Get(name string, opts metav1.GetOptions) (runtime.Object,
 		Resource(p.resource.Name).
 		VersionedParams(&opts, metav1.ParameterCodec).
 		Name(name).
-		Do().
+		Do(context.TODO()).
 		Into(result)
-	logrus.Debugf("REST GET %s/%s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, p.ns, p.resource.Name, name)
+	logrus.Tracef("REST GET %s/%s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, p.ns, p.resource.Name, name)
 	return result, err
 }
 
@@ -179,14 +180,14 @@ func (p *ObjectClient) Update(name string, o runtime.Object) (runtime.Object, er
 	if len(name) == 0 {
 		return result, errors.New("object missing name")
 	}
-	logrus.Debugf("REST UPDATE %s/%s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, ns, p.resource.Name, name)
+	logrus.Tracef("REST UPDATE %s/%s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, ns, p.resource.Name, name)
 	err := p.restClient.Put().
 		Prefix(p.getAPIPrefix(), p.gvk.Group, p.gvk.Version).
 		NamespaceIfScoped(ns, p.resource.Namespaced).
 		Resource(p.resource.Name).
 		Name(name).
 		Body(o).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return result, err
 }
@@ -197,47 +198,47 @@ func (p *ObjectClient) DeleteNamespaced(namespace, name string, opts *metav1.Del
 	if namespace != "" {
 		req = req.Namespace(namespace)
 	}
-	logrus.Debugf("REST DELETE %s/%s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, namespace, p.resource.Name, name)
+	logrus.Tracef("REST DELETE %s/%s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, namespace, p.resource.Name, name)
 	return req.Resource(p.resource.Name).
 		Name(name).
 		Body(opts).
-		Do().
+		Do(context.TODO()).
 		Error()
 }
 
 func (p *ObjectClient) Delete(name string, opts *metav1.DeleteOptions) error {
-	logrus.Debugf("REST DELETE %s/%s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, p.ns, p.resource.Name, name)
+	logrus.Tracef("REST DELETE %s/%s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, p.ns, p.resource.Name, name)
 	return p.restClient.Delete().
 		Prefix(p.getAPIPrefix(), p.gvk.Group, p.gvk.Version).
 		NamespaceIfScoped(p.ns, p.resource.Namespaced).
 		Resource(p.resource.Name).
 		Name(name).
 		Body(opts).
-		Do().
+		Do(context.TODO()).
 		Error()
 }
 
 func (p *ObjectClient) List(opts metav1.ListOptions) (runtime.Object, error) {
 	result := p.Factory.List()
-	logrus.Debugf("REST LIST %s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, p.ns, p.resource.Name)
+	logrus.Tracef("REST LIST %s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, p.ns, p.resource.Name)
 	return result, p.restClient.Get().
 		Prefix(p.getAPIPrefix(), p.gvk.Group, p.gvk.Version).
 		NamespaceIfScoped(p.ns, p.resource.Namespaced).
 		Resource(p.resource.Name).
 		VersionedParams(&opts, metav1.ParameterCodec).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 }
 
 func (p *ObjectClient) ListNamespaced(namespace string, opts metav1.ListOptions) (runtime.Object, error) {
 	result := p.Factory.List()
-	logrus.Debugf("REST LIST %s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, namespace, p.resource.Name)
+	logrus.Tracef("REST LIST %s/%s/%s/%s/%s", p.getAPIPrefix(), p.gvk.Group, p.gvk.Version, namespace, p.resource.Name)
 	return result, p.restClient.Get().
 		Prefix(p.getAPIPrefix(), p.gvk.Group, p.gvk.Version).
 		NamespaceIfScoped(namespace, p.resource.Namespaced).
 		Resource(p.resource.Name).
 		VersionedParams(&opts, metav1.ParameterCodec).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 }
 
@@ -253,7 +254,7 @@ func (p *ObjectClient) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 		NamespaceIfScoped(p.ns, p.resource.Namespaced).
 		Resource(p.resource.Name).
 		VersionedParams(&opts, metav1.ParameterCodec).
-		Stream()
+		Stream(context.TODO())
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +303,7 @@ func (p *ObjectClient) DeleteCollection(deleteOptions *metav1.DeleteOptions, lis
 		Resource(p.resource.Name).
 		VersionedParams(&listOptions, metav1.ParameterCodec).
 		Body(deleteOptions).
-		Do().
+		Do(context.TODO()).
 		Error()
 }
 
@@ -322,7 +323,7 @@ func (p *ObjectClient) Patch(name string, o runtime.Object, patchType types.Patc
 		SubResource(subresources...).
 		Name(name).
 		Body(data).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return result, err
 }

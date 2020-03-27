@@ -18,6 +18,7 @@ import (
 	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+	appsv1 "k8s.io/api/apps/v1"
 )
 
 const (
@@ -52,10 +53,11 @@ const (
 	// FlannelBackendVxLanNetworkIdentify should be greater than or equal to 4096 if using VxLan mode in the cluster with Windows nodes
 	FlannelBackendVxLanNetworkIdentify = "flannel_backend_vni"
 
-	CalicoNetworkPlugin   = "calico"
-	CalicoNodeLabel       = "calico-node"
-	CalicoControllerLabel = "calico-kube-controllers"
-	CalicoCloudProvider   = "calico_cloud_provider"
+	CalicoNetworkPlugin          = "calico"
+	CalicoNodeLabel              = "calico-node"
+	CalicoControllerLabel        = "calico-kube-controllers"
+	CalicoCloudProvider          = "calico_cloud_provider"
+	CalicoFlexVolPluginDirectory = "calico_flex_volume_plugin_dir"
 
 	CanalNetworkPlugin      = "canal"
 	CanalIface              = "canal_iface"
@@ -64,6 +66,7 @@ const (
 	CanalFlannelBackendPort = "canal_flannel_backend_port"
 	// CanalFlannelBackendVxLanNetworkIdentify should be greater than or equal to 4096 if using Flannel VxLan mode in the cluster with Windows nodes
 	CanalFlannelBackendVxLanNetworkIdentify = "canal_flannel_backend_vni"
+	CanalFlexVolPluginDirectory             = "canal_flex_volume_plugin_dir"
 
 	WeaveNetworkPlugin  = "weave"
 	WeaveNetworkAppName = "weave-net"
@@ -104,6 +107,7 @@ const (
 	FlannelInterface = "FlannelInterface"
 	FlannelBackend   = "FlannelBackend"
 	CanalInterface   = "CanalInterface"
+	FlexVolPluginDir = "FlexVolPluginDir"
 	WeavePassword    = "WeavePassword"
 	MTU              = "MTU"
 	RBACConfig       = "RBACConfig"
@@ -174,7 +178,10 @@ func (c *Cluster) doFlannelDeploy(ctx context.Context, data map[string]interface
 		RBACConfig:     c.Authorization.Mode,
 		ClusterVersion: util.GetTagMajorVersion(c.Version),
 		NodeSelector:   c.Network.NodeSelector,
-		UpdateStrategy: c.Network.UpdateStrategy,
+		UpdateStrategy: &appsv1.DaemonSetUpdateStrategy{
+			Type:          c.Network.UpdateStrategy.Strategy,
+			RollingUpdate: c.Network.UpdateStrategy.RollingUpdate,
+		},
 	}
 	pluginYaml, err := c.getNetworkPluginManifest(flannelConfig, data)
 	if err != nil {
@@ -198,7 +205,11 @@ func (c *Cluster) doCalicoDeploy(ctx context.Context, data map[string]interface{
 		RBACConfig:       c.Authorization.Mode,
 		NodeSelector:     c.Network.NodeSelector,
 		MTU:              c.Network.MTU,
-		UpdateStrategy:   c.Network.UpdateStrategy,
+		UpdateStrategy: &appsv1.DaemonSetUpdateStrategy{
+			Type:          c.Network.UpdateStrategy.Strategy,
+			RollingUpdate: c.Network.UpdateStrategy.RollingUpdate,
+		},
+		FlexVolPluginDir: c.Network.Options[CalicoFlexVolPluginDirectory],
 	}
 	pluginYaml, err := c.getNetworkPluginManifest(calicoConfig, data)
 	if err != nil {
@@ -236,9 +247,13 @@ func (c *Cluster) doCanalDeploy(ctx context.Context, data map[string]interface{}
 			"VNI":  flannelVni,
 			"Port": flannelPort,
 		},
-		NodeSelector:   c.Network.NodeSelector,
-		MTU:            c.Network.MTU,
-		UpdateStrategy: c.Network.UpdateStrategy,
+		NodeSelector: c.Network.NodeSelector,
+		MTU:          c.Network.MTU,
+		UpdateStrategy: &appsv1.DaemonSetUpdateStrategy{
+			Type:          c.Network.UpdateStrategy.Strategy,
+			RollingUpdate: c.Network.UpdateStrategy.RollingUpdate,
+		},
+		FlexVolPluginDir: c.Network.Options[CanalFlexVolPluginDirectory],
 	}
 	pluginYaml, err := c.getNetworkPluginManifest(canalConfig, data)
 	if err != nil {
@@ -257,7 +272,10 @@ func (c *Cluster) doWeaveDeploy(ctx context.Context, data map[string]interface{}
 		RBACConfig:         c.Authorization.Mode,
 		NodeSelector:       c.Network.NodeSelector,
 		MTU:                c.Network.MTU,
-		UpdateStrategy:     c.Network.UpdateStrategy,
+		UpdateStrategy: &appsv1.DaemonSetUpdateStrategy{
+			Type:          c.Network.UpdateStrategy.Strategy,
+			RollingUpdate: c.Network.UpdateStrategy.RollingUpdate,
+		},
 	}
 	pluginYaml, err := c.getNetworkPluginManifest(weaveConfig, data)
 	if err != nil {
