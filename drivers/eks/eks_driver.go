@@ -569,7 +569,7 @@ func (d *Driver) Create(ctx context.Context, options *types.DriverOptions, _ *ty
 			StackName: aws.String(state.DisplayName + "-eks-vpc"),
 		})
 		if err != nil {
-			return info, fmt.Errorf("error getting stack resoures")
+			return info, fmt.Errorf("error getting stack resources")
 		}
 
 		for _, resource := range resources.StackResources {
