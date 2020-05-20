@@ -18,9 +18,9 @@ require (
 	github.com/golang/protobuf v1.3.2
 	github.com/heptio/authenticator v0.0.0-20180409043135-d282f87a1972
 	github.com/pkg/errors v0.8.1
-	github.com/rancher/norman v0.0.0-20200326201949-eb806263e8ad
-	github.com/rancher/rke v1.1.0-rc9.0.20200327175519-ecc629f2c3d5
-	github.com/rancher/types v0.0.0-20200326224235-0d1e1dcc8d55
+	github.com/rancher/norman v0.0.0-20200520181341-ab75acb55410
+	github.com/rancher/rke v1.1.2-0.20200520231200-ceb7c46ce54b
+	github.com/rancher/types v0.0.0-20200520205802-ee9c76e143bf
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/testify v1.4.0
 	github.com/urfave/cli v1.20.0
