@@ -262,7 +262,7 @@ func pullImage(ctx context.Context, dClient *client.Client, hostname string, con
 			continue
 		}
 		defer out.Close()
-		if logrus.GetLevel() == logrus.DebugLevel {
+		if logrus.GetLevel() == logrus.TraceLevel {
 			io.Copy(os.Stdout, out)
 		} else {
 			io.Copy(ioutil.Discard, out)
@@ -705,7 +705,7 @@ func GetKubeletDockerConfig(prsMap map[string]v3.PrivateRegistry) (string, error
 	auths := map[string]authConfig{}
 
 	for url, pr := range prsMap {
-		auth := base64.URLEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", pr.User, pr.Password)))
+		auth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", pr.User, pr.Password)))
 		auths[url] = authConfig{Auth: auth}
 	}
 	cfg, err := json.Marshal(dockerConfig{auths})

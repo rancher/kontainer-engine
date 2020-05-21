@@ -41,6 +41,7 @@ const (
 	ClusterConditionEtcd           condition.Cond = "etcd"
 	ClusterConditionProvisioned    condition.Cond = "Provisioned"
 	ClusterConditionUpdated        condition.Cond = "Updated"
+	ClusterConditionUpgraded       condition.Cond = "Upgraded"
 	ClusterConditionWaiting        condition.Cond = "Waiting"
 	ClusterConditionRemoved        condition.Cond = "Removed"
 	// ClusterConditionNoDiskPressure true when all cluster nodes have sufficient disk
@@ -70,6 +71,7 @@ const (
 	ClusterDriverLocal    = "local"
 	ClusterDriverRKE      = "rancherKubernetesEngine"
 	ClusterDriverK3s      = "k3s"
+	ClusterDriverK3os     = "k3os"
 )
 
 // +genclient
@@ -151,9 +153,12 @@ type ClusterStatus struct {
 	AppliedEnableNetworkPolicy           bool                        `json:"appliedEnableNetworkPolicy" norman:"nocreate,noupdate,default=false"`
 	Capabilities                         Capabilities                `json:"capabilities,omitempty"`
 	MonitoringStatus                     *MonitoringStatus           `json:"monitoringStatus,omitempty" norman:"nocreate,noupdate"`
+	NodeVersion                          int                         `json:"nodeVersion,omitempty"`
+	NodeCount                            int                         `json:"nodeCount,omitempty" norman:"nocreate,noupdate"`
 	IstioEnabled                         bool                        `json:"istioEnabled,omitempty" norman:"nocreate,noupdate,default=false"`
 	CertificatesExpiration               map[string]CertExpiration   `json:"certificatesExpiration,omitempty"`
 	ScheduledClusterScanStatus           *ScheduledClusterScanStatus `json:"scheduledClusterScanStatus,omitempty"`
+	CurrentCisRunName                    string                      `json:"currentCisRunName,omitempty"`
 }
 
 type ClusterComponentStatus struct {

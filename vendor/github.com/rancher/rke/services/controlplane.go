@@ -56,7 +56,7 @@ func UpgradeControlPlaneNodes(ctx context.Context, kubeClient *kubernetes.Client
 	}
 	var errMsgMaxUnavailableNotFailed string
 	var drainHelper drain.Helper
-	log.Infof(ctx, "[%s] Processing controlplane hosts for upgrade one at a time", ControlRole)
+	log.Infof(ctx, "[%s] Processing controlplane hosts for upgrade %v at a time", ControlRole, maxUnavailable)
 	if len(newHosts) > 0 {
 		var nodes []string
 		for _, host := range controlHosts {
@@ -72,16 +72,28 @@ func UpgradeControlPlaneNodes(ctx context.Context, kubeClient *kubernetes.Client
 		drainHelper = getDrainHelper(kubeClient, *upgradeStrategy)
 		log.Infof(ctx, "[%s] Parameters provided to drain command: %#v", ControlRole, fmt.Sprintf("Force: %v, IgnoreAllDaemonSets: %v, DeleteLocalData: %v, Timeout: %v, GracePeriodSeconds: %v", drainHelper.Force, drainHelper.IgnoreAllDaemonSets, drainHelper.DeleteLocalData, drainHelper.Timeout, drainHelper.GracePeriodSeconds))
 	}
-	maxUnavailable, err := resetMaxUnavailable(maxUnavailable, len(inactiveHosts), ControlRole)
-	if err != nil {
-		return errMsgMaxUnavailableNotFailed, err
+	var inactiveHostErr error
+	if len(inactiveHosts) > 0 {
+		var inactiveHostNames []string
+		for hostName := range inactiveHosts {
+			inactiveHostNames = append(inactiveHostNames, hostName)
+		}
+		inactiveHostErr = fmt.Errorf("provisioning incomplete, host(s) [%s] skipped because they could not be contacted", strings.Join(inactiveHostNames, ","))
 	}
 	hostsFailedToUpgrade, err := processControlPlaneForUpgrade(ctx, kubeClient, controlHosts, localConnDialerFactory, prsMap, cpNodePlanMap, updateWorkersOnly, alpineImage, certMap,
 		upgradeStrategy, newHosts, inactiveHosts, maxUnavailable, drainHelper)
-	if err != nil {
-		logrus.Errorf("Failed to upgrade hosts: %v with error %v", strings.Join(hostsFailedToUpgrade, ","), err)
-		errMsgMaxUnavailableNotFailed = fmt.Sprintf("Failed to upgrade hosts: %v with error %v", strings.Join(hostsFailedToUpgrade, ","), err)
-		return errMsgMaxUnavailableNotFailed, err
+	if err != nil || inactiveHostErr != nil {
+		if len(hostsFailedToUpgrade) > 0 {
+			logrus.Errorf("Failed to upgrade hosts: %v with error %v", strings.Join(hostsFailedToUpgrade, ","), err)
+			errMsgMaxUnavailableNotFailed = fmt.Sprintf("Failed to upgrade hosts: %v with error %v", strings.Join(hostsFailedToUpgrade, ","), err)
+		}
+		var errors []error
+		for _, e := range []error{err, inactiveHostErr} {
+			if e != nil {
+				errors = append(errors, e)
+			}
+		}
+		return errMsgMaxUnavailableNotFailed, util.ErrList(errors)
 	}
 	log.Infof(ctx, "[%s] Successfully upgraded Controller Plane..", ControlRole)
 	return errMsgMaxUnavailableNotFailed, nil
@@ -151,6 +163,10 @@ func processControlPlaneForUpgrade(ctx context.Context, kubeClient *kubernetes.C
 				}
 				if !controlPlaneUpgradable && !workerPlaneUpgradable {
 					log.Infof(ctx, "Upgrade not required for controlplane and worker components of host %v", runHost.HostnameOverride)
+					if err := k8s.CordonUncordon(kubeClient, runHost.HostnameOverride, false); err != nil {
+						// This node didn't undergo an upgrade, so RKE will only log any error after uncordoning it and won't count this in maxUnavailable
+						logrus.Errorf("[controlplane] Failed to uncordon node %v, error: %v", runHost.HostnameOverride, err)
+					}
 					continue
 				}
 				if err := upgradeControlHost(ctx, kubeClient, runHost, upgradeStrategy.Drain, drainHelper, localConnDialerFactory, prsMap, cpNodePlanMap, updateWorkersOnly, alpineImage, certMap, controlPlaneUpgradable, workerPlaneUpgradable); err != nil {

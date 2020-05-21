@@ -1,12 +1,13 @@
 package k8s
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -14,14 +15,12 @@ import (
 )
 
 const (
-	HostnameLabel                = "kubernetes.io/hostname"
-	InternalAddressAnnotation    = "rke.cattle.io/internal-ip"
-	ExternalAddressAnnotation    = "rke.cattle.io/external-ip"
-	IgnoreHostDuringUpgradeLabel = "user.cattle.io/upgrade-policy"
-	IgnoreLabelValue             = "prevent"
-	AWSCloudProvider             = "aws"
-	MaxRetries                   = 5
-	RetryInterval                = 5
+	HostnameLabel             = "kubernetes.io/hostname"
+	InternalAddressAnnotation = "rke.cattle.io/internal-ip"
+	ExternalAddressAnnotation = "rke.cattle.io/external-ip"
+	AWSCloudProvider          = "aws"
+	MaxRetries                = 5
+	RetryInterval             = 5
 )
 
 func DeleteNode(k8sClient *kubernetes.Clientset, nodeName, cloudProvider string) error {
@@ -33,22 +32,25 @@ func DeleteNode(k8sClient *kubernetes.Clientset, nodeName, cloudProvider string)
 		}
 		nodeName = node.Name
 	}
-	return k8sClient.CoreV1().Nodes().Delete(nodeName, &metav1.DeleteOptions{})
+	return k8sClient.CoreV1().Nodes().Delete(context.TODO(), nodeName, metav1.DeleteOptions{})
 }
 
 func GetNodeList(k8sClient *kubernetes.Clientset) (*v1.NodeList, error) {
-	return k8sClient.CoreV1().Nodes().List(metav1.ListOptions{})
+	return k8sClient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
 }
 
 func GetNode(k8sClient *kubernetes.Clientset, nodeName string) (*v1.Node, error) {
 	var listErr error
 	for retries := 0; retries < MaxRetries; retries++ {
+		logrus.Debugf("Checking node list for node [%v], try #%v", nodeName, retries+1)
 		nodes, err := GetNodeList(k8sClient)
 		if err != nil {
 			listErr = err
 			time.Sleep(time.Second * RetryInterval)
 			continue
 		}
+		// reset listErr back to nil
+		listErr = nil
 		for _, node := range nodes.Items {
 			if strings.ToLower(node.Labels[HostnameLabel]) == strings.ToLower(nodeName) {
 				return &node, nil
@@ -76,7 +78,7 @@ func CordonUncordon(k8sClient *kubernetes.Clientset, nodeName string, cordoned b
 			return nil
 		}
 		node.Spec.Unschedulable = cordoned
-		_, err = k8sClient.CoreV1().Nodes().Update(node)
+		_, err = k8sClient.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 		if err != nil {
 			logrus.Debugf("Error setting cordoned state for node %s: %v", nodeName, err)
 			time.Sleep(time.Second * RetryInterval)
@@ -124,7 +126,7 @@ func RemoveTaintFromNodeByKey(k8sClient *kubernetes.Clientset, nodeName, taintKe
 		if !foundTaint {
 			return nil
 		}
-		_, err = k8sClient.CoreV1().Nodes().Update(node)
+		_, err = k8sClient.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 		if err != nil {
 			logrus.Debugf("Error updating node [%s] with new set of taints: %v", node.Name, err)
 			time.Sleep(time.Second * 5)
