@@ -73,6 +73,10 @@ func createWapper(ctx *cli.Context) error {
 	return ctx.App.Run(os.Args)
 }
 
+func flagExternalDriverLookup()string{
+	return flagHackLookup("--external-driver-addr")
+}
+
 func flagHackLookup(flagName string) string {
 	// e.g. "-d" for "--driver"
 	flagPrefix := flagName[1:3]
