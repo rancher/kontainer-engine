@@ -16,14 +16,14 @@ func runRPCDriver(driverName string) (types.CloseableDriver, string, error) {
 
 	externalDriverAddr := flagExternalDriverLookup()
 
-	if externalDriverAddr == ""{
+	if externalDriverAddr == "" {
 		creator := drivers.Drivers[driverName]
 		if creator == nil {
 			return nil, "", fmt.Errorf("no driver %v found", driverName)
 		}
 		go types.NewServer(creator, addrChan).ServeOrDie(service.ListenAddress)
-	}else{
-		go func(){ addrChan <- externalDriverAddr }()
+	} else {
+		go func() { addrChan <- externalDriverAddr }()
 	}
 
 	addr := <-addrChan

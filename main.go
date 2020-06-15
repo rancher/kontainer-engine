@@ -73,7 +73,7 @@ func main() {
 			Usage: "The listening address for rpc plugin server",
 		},
 		cli.StringFlag{
-			Name: "external-driver-addr",
+			Name:  "external-driver-addr",
 			Usage: "The listening address of an external driver",
 		},
 	}
