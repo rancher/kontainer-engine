@@ -13,12 +13,18 @@ import (
 func runRPCDriver(driverName string) (types.CloseableDriver, string, error) {
 	// addrChan is the channel to receive the server listen address
 	addrChan := make(chan string)
-	creator := drivers.Drivers[driverName]
-	if creator == nil {
-		return nil, "", fmt.Errorf("no driver %v found", driverName)
-	}
 
-	go types.NewServer(creator, addrChan).ServeOrDie(service.ListenAddress)
+	externalDriverAddr := flagExternalDriverLookup()
+
+	if externalDriverAddr == ""{
+		creator := drivers.Drivers[driverName]
+		if creator == nil {
+			return nil, "", fmt.Errorf("no driver %v found", driverName)
+		}
+		go types.NewServer(creator, addrChan).ServeOrDie(service.ListenAddress)
+	}else{
+		go func(){ addrChan <- externalDriverAddr }()
+	}
 
 	addr := <-addrChan
 	rpcClient, err := types.NewClient(driverName, addr)
