@@ -36,7 +36,6 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-
 const (
 	amiNamePrefix = "amazon-eks-node-"
 )
@@ -346,15 +345,15 @@ func getStateFromOptions(driverOptions *types.DriverOptions, isUpdate bool) (sta
 	state.AMI = options.GetValueFromDriverOptions(driverOptions, types.StringType, "ami").(string)
 	state.AssociateWorkerNodePublicIP, _ = options.GetValueFromDriverOptions(driverOptions, types.BoolPointerType, "associate-worker-node-public-ip", "associateWorkerNodePublicIp").(*bool)
 	state.KeyPairName = options.GetValueFromDriverOptions(driverOptions, types.StringType, "keyPairName").(string)
-	state.EBSEncryption =  options.GetValueFromDriverOptions(driverOptions, types.BoolType, "ebsEncryption", "EBSEncryption").(bool)
+	state.EBSEncryption = options.GetValueFromDriverOptions(driverOptions, types.BoolType, "ebsEncryption", "EBSEncryption").(bool)
 	// UserData
 	state.UserData = options.GetValueFromDriverOptions(driverOptions, types.StringType, "user-data", "userData").(string)
 
-	if isUpdate{
+	if isUpdate {
 		return state, nil
-	}else{
-		return state, state.validate()
 	}
+
+	return state, state.validate()
 }
 
 func (state *state) validate() error {
@@ -989,7 +988,7 @@ func (d *Driver) Update(ctx context.Context, info *types.ClusterInfo, options *t
 	}
 	*oldstate = state
 
-	newState, err := getStateFromOptions(options,true)
+	newState, err := getStateFromOptions(options, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1316,21 +1315,21 @@ func (d *Driver) SetVersion(ctx context.Context, info *types.ClusterInfo, versio
 	return nil
 }
 
-func (d *Driver) updateNodePoolAndAwait(state state, info *types.ClusterInfo)error{
+func (d *Driver) updateNodePoolAndAwait(state state, info *types.ClusterInfo) error {
 
 	var params []*cloudformation.Parameter
-	errUnmarshal := json.Unmarshal([]byte(info.Metadata["parameters"]),&params)
+	errUnmarshal := json.Unmarshal([]byte(info.Metadata["parameters"]), &params)
 
-	if errUnmarshal != nil{
+	if errUnmarshal != nil {
 		return errUnmarshal
 	}
 
 	desiredASGSize := strconv.Itoa(int(state.DesiredASGSize))
 
 	updateFields := map[string]string{
-		"NodeAutoScalingGroupMinSize": desiredASGSize,
+		"NodeAutoScalingGroupMinSize":         desiredASGSize,
 		"NodeAutoScalingGroupDesiredCapacity": desiredASGSize,
-		"NodeAutoScalingGroupMaxSize": desiredASGSize,
+		"NodeAutoScalingGroupMaxSize":         desiredASGSize,
 	}
 
 	updateParams(params, updateFields)
@@ -1360,9 +1359,9 @@ func (d *Driver) updateNodePoolAndAwait(state state, info *types.ClusterInfo)err
 
 	updateInput := &cloudformation.UpdateStackInput{
 		Capabilities: []*string{aws.String(cloudformation.CapabilityCapabilityIam)},
-		StackName: aws.String(stackName),
+		StackName:    aws.String(stackName),
 		TemplateBody: templateOutput.TemplateBody,
-		Parameters: params,
+		Parameters:   params,
 	}
 
 	_, errUpdate := cloudFormationService.UpdateStack(updateInput)
@@ -1374,7 +1373,7 @@ func (d *Driver) updateNodePoolAndAwait(state state, info *types.ClusterInfo)err
 	stackStatus := "UPDATE_IN_PROGRESS"
 
 	for stackStatus == "UPDATE_IN_PROGRESS" || stackStatus == "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS" {
-		time.Sleep(2*time.Second)
+		time.Sleep(2 * time.Second)
 		describeOut, errDescribe := cloudFormationService.DescribeStacks(&cloudformation.DescribeStacksInput{
 			StackName: aws.String(stackName),
 		})
@@ -1390,8 +1389,8 @@ func (d *Driver) updateNodePoolAndAwait(state state, info *types.ClusterInfo)err
 		stackStatus = *describeOut.Stacks[0].StackStatus
 	}
 
-	if stackStatus != "UPDATE_COMPLETE"{
-		return fmt.Errorf("error in update nodepool stack: %s",stackStatus)
+	if stackStatus != "UPDATE_COMPLETE" {
+		return fmt.Errorf("error in update nodepool stack: %s", stackStatus)
 	}
 
 	return nil
@@ -1491,8 +1490,8 @@ func (d *Driver) waitForClusterUpdateReady(ctx context.Context, svc *eks.EKS, st
 	return nil
 }
 
-func updateParams(params []*cloudformation.Parameter, fieldValues map[string]string){
-	for _,param := range params{
+func updateParams(params []*cloudformation.Parameter, fieldValues map[string]string) {
+	for _, param := range params {
 		value, found := fieldValues[*param.ParameterKey]
 		if found {
 			*param.ParameterValue = value
