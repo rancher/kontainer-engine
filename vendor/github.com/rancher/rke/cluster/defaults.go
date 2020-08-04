@@ -15,8 +15,8 @@ import (
 	"github.com/rancher/rke/metadata"
 	"github.com/rancher/rke/services"
 	"github.com/rancher/rke/templates"
+	v3 "github.com/rancher/rke/types"
 	"github.com/rancher/rke/util"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -89,10 +89,10 @@ const (
 	DefaultMaxUnavailableControlplane = "1"
 	DefaultNodeDrainTimeout           = 120
 	DefaultNodeDrainGracePeriod       = -1
-	DefaultNodeDrainIgnoreDaemonsets  = true
 )
 
 var (
+	DefaultNodeDrainIgnoreDaemonsets      = true
 	DefaultDaemonSetMaxUnavailable        = intstr.FromInt(1)
 	DefaultDeploymentUpdateStrategyParams = intstr.FromString("25%")
 	DefaultDaemonSetUpdateStrategy        = v3.DaemonSetUpdateStrategy{
@@ -120,6 +120,7 @@ type ExternalFlags struct {
 	GenerateCSR      bool
 	Local            bool
 	UpdateOnly       bool
+	UseLocalState    bool
 }
 
 func setDefaultIfEmptyMapValue(configMap map[string]string, key string, value string) {
@@ -242,7 +243,7 @@ func (c *Cluster) setNodeUpgradeStrategy() {
 	}
 	if c.UpgradeStrategy.DrainInput == nil {
 		c.UpgradeStrategy.DrainInput = &v3.NodeDrainInput{
-			IgnoreDaemonSets: DefaultNodeDrainIgnoreDaemonsets,
+			IgnoreDaemonSets: &DefaultNodeDrainIgnoreDaemonsets,
 			// default to 120 seems to work better for controlplane nodes
 			Timeout: DefaultNodeDrainTimeout,
 			//Period of time in seconds given to each pod to terminate gracefully.
@@ -606,13 +607,14 @@ func (c *Cluster) setCloudProvider() error {
 	return nil
 }
 
-func GetExternalFlags(local, updateOnly, disablePortCheck bool, configDir, clusterFilePath string) ExternalFlags {
+func GetExternalFlags(local, updateOnly, disablePortCheck, useLocalState bool, configDir, clusterFilePath string) ExternalFlags {
 	return ExternalFlags{
 		Local:            local,
 		UpdateOnly:       updateOnly,
 		DisablePortCheck: disablePortCheck,
 		ConfigDir:        configDir,
 		ClusterFilePath:  clusterFilePath,
+		UseLocalState:    useLocalState,
 	}
 }
 

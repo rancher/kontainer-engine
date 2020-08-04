@@ -3,7 +3,7 @@ package kdm
 import (
 	"encoding/json"
 
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/rke/types"
 )
 
 const (
@@ -18,6 +18,8 @@ const (
 	Nodelocal     = "nodelocal"
 	TemplateKeys  = "templateKeys"
 )
+
+// +k8s:deepcopy-gen=false
 
 type Data struct {
 	// K8sVersionServiceOptions - service options per k8s version
@@ -41,11 +43,13 @@ type Data struct {
 	// K8sVersionWindowsServiceOptions - service options per windows k8s version
 	K8sVersionWindowsServiceOptions map[string]v3.KubernetesServicesOptions
 
-	CisConfigParams         map[string]v3.CisConfigParams
-	CisBenchmarkVersionInfo map[string]v3.CisBenchmarkVersionInfo
+	CisConfigParams         map[string]CisConfigParams
+	CisBenchmarkVersionInfo map[string]CisBenchmarkVersionInfo
 
 	// K3S specific data, opaque and defined by the config file in kdm
 	K3S map[string]interface{} `json:"k3s,omitempty"`
+	// Rke2 specific data, defined by the config file in kdm
+	RKE2 map[string]interface{} `json:"rke2,omitempty"`
 }
 
 func FromData(b []byte) (Data, error) {
@@ -55,4 +59,15 @@ func FromData(b []byte) (Data, error) {
 		return Data{}, err
 	}
 	return *d, nil
+}
+
+type CisBenchmarkVersionInfo struct {
+	Managed              bool              `yaml:"managed" json:"managed"`
+	MinKubernetesVersion string            `yaml:"min_kubernetes_version" json:"minKubernetesVersion"`
+	SkippedChecks        map[string]string `yaml:"skipped_checks" json:"skippedChecks"`
+	NotApplicableChecks  map[string]string `yaml:"not_applicable_checks" json:"notApplicableChecks"`
+}
+
+type CisConfigParams struct {
+	BenchmarkVersion string `yaml:"benchmark_version" json:"benchmarkVersion"`
 }

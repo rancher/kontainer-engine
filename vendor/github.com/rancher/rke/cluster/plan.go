@@ -18,8 +18,8 @@ import (
 	"github.com/rancher/rke/metadata"
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
+	v3 "github.com/rancher/rke/types"
 	"github.com/rancher/rke/util"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 )
 
@@ -659,8 +659,15 @@ func (c *Cluster) BuildKubeProxyProcess(host *hosts.Host, prefixPath string, ser
 	Binds := []string{
 		fmt.Sprintf("%s:/etc/kubernetes:z", path.Join(prefixPath, "/etc/kubernetes")),
 		"/run:/run",
-		"/lib/modules:/lib/modules:z,ro",
 	}
+
+	BindModules := "/lib/modules:/lib/modules:z,ro"
+	if hosts.IsEnterpriseLinuxHost(host) && hosts.IsDockerSELinuxEnabled(host) && !hosts.IsEnterpriseLinuxDocker(host) {
+		// Avoid relabing on Enterprise Linux with Docker SELinux and upstream Docker
+		BindModules = "/lib/modules:/lib/modules:ro"
+	}
+	Binds = append(Binds, BindModules)
+
 	if host.DockerInfo.OSType == "windows" { // compatible with Windows
 		Binds = []string{
 			// put the execution binaries to the host

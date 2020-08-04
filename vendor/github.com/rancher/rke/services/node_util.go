@@ -9,9 +9,9 @@ import (
 
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/k8s"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/rke/types"
 	"github.com/sirupsen/logrus"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	k8sutil "k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/drain"
@@ -49,10 +49,14 @@ func cordonAndDrainNode(kubeClient *kubernetes.Clientset, host *hosts.Host, drai
 }
 
 func getDrainHelper(kubeClient *kubernetes.Clientset, upgradeStrategy v3.NodeUpgradeStrategy) drain.Helper {
+	var ignoreDaemonSets bool
+	if upgradeStrategy.DrainInput == nil || upgradeStrategy.DrainInput.IgnoreDaemonSets == nil || *upgradeStrategy.DrainInput.IgnoreDaemonSets {
+		ignoreDaemonSets = true
+	}
 	drainHelper := drain.Helper{
 		Client:              kubeClient,
 		Force:               upgradeStrategy.DrainInput.Force,
-		IgnoreAllDaemonSets: upgradeStrategy.DrainInput.IgnoreDaemonSets,
+		IgnoreAllDaemonSets: ignoreDaemonSets,
 		DeleteLocalData:     upgradeStrategy.DrainInput.DeleteLocalData,
 		GracePeriodSeconds:  upgradeStrategy.DrainInput.GracePeriod,
 		Timeout:             time.Second * time.Duration(upgradeStrategy.DrainInput.Timeout),

@@ -12,8 +12,8 @@ import (
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
+	v3 "github.com/rancher/rke/types"
 	"github.com/rancher/rke/util"
-	"github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -54,9 +54,8 @@ func setOptionsFromCLI(c *cli.Context, rkeConfig *v3.RancherKubernetesEngineConf
 		rkeConfig.SSHAgentAuth = c.Bool("ssh-agent-auth")
 	}
 
-	if c.Bool("ignore-docker-version") {
-		rkeConfig.IgnoreDockerVersion = c.Bool("ignore-docker-version")
-	}
+	ignoreDockerVersion := c.Bool("ignore-docker-version")
+	rkeConfig.IgnoreDockerVersion = &ignoreDockerVersion
 
 	if c.Bool("s3") {
 		if rkeConfig.Services.Etcd.BackupConfig == nil {

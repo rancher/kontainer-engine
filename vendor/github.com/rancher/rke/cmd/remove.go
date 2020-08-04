@@ -12,7 +12,7 @@ import (
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/rke/types"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -116,7 +116,7 @@ func clusterRemoveFromCli(ctx *cli.Context) error {
 	}
 
 	// setting up the flags
-	flags := cluster.GetExternalFlags(false, false, false, "", filePath)
+	flags := cluster.GetExternalFlags(false, false, false, false, "", filePath)
 
 	return ClusterRemove(context.Background(), rkeConfig, hosts.DialersOptions{}, flags)
 }
@@ -140,7 +140,7 @@ func clusterRemoveLocal(ctx *cli.Context) error {
 		return err
 	}
 	// setting up the flags
-	flags := cluster.GetExternalFlags(true, false, false, "", filePath)
+	flags := cluster.GetExternalFlags(true, false, false, false, "", filePath)
 
 	return ClusterRemove(context.Background(), rkeConfig, hosts.DialersOptions{}, flags)
 }

@@ -22,8 +22,8 @@ import (
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/pki/cert"
 	"github.com/rancher/rke/services"
+	v3 "github.com/rancher/rke/types"
 	"github.com/rancher/rke/util"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
@@ -628,7 +628,7 @@ func parseNodeDrainInput(clusterFile string, rkeConfig *v3.RancherKubernetesEngi
 	var update bool
 	if _, ok := nodeDrainInputMap["ignore_daemonsets"]; !ok {
 		// user hasn't provided any input, default to true
-		nodeDrainInput.IgnoreDaemonSets = DefaultNodeDrainIgnoreDaemonsets
+		nodeDrainInput.IgnoreDaemonSets = &DefaultNodeDrainIgnoreDaemonsets
 		update = true
 	}
 	if _, ok := nodeDrainInputMap["timeout"]; !ok {

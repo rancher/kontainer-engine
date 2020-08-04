@@ -17,9 +17,9 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/golang/protobuf v1.3.2
 	github.com/heptio/authenticator v0.0.0-20180409043135-d282f87a1972
-	github.com/pkg/errors v0.8.1
-	github.com/rancher/norman v0.0.0-20200326201949-eb806263e8ad
-	github.com/rancher/rke v1.1.0-rc9.0.20200327175519-ecc629f2c3d5
+	github.com/pkg/errors v0.9.1
+	github.com/rancher/norman v0.0.0-20200517050325-f53cae161640
+	github.com/rancher/rke v1.2.0-rc5
 	github.com/rancher/types v0.0.0-20200326224235-0d1e1dcc8d55
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/testify v1.4.0

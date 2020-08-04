@@ -14,7 +14,7 @@ import (
 	"github.com/rancher/rke/docker"
 	"github.com/rancher/rke/k8s"
 	"github.com/rancher/rke/log"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/rke/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 )
@@ -394,4 +394,33 @@ func GetInternalAddressForHosts(hostList []*Host) []string {
 		hostAddresses = append(hostAddresses, host.InternalAddress)
 	}
 	return hostAddresses
+}
+
+func IsDockerSELinuxEnabled(host *Host) bool {
+	for _, securityOpt := range host.DockerInfo.SecurityOptions {
+		if securityOpt == "selinux" {
+			logrus.Debugf("Host [%s] has SELinux enabled in Docker", host.Address)
+			return true
+		}
+	}
+	return false
+}
+
+func IsEnterpriseLinuxHost(host *Host) bool {
+	operatingSystem := strings.ToLower(host.DockerInfo.OperatingSystem)
+	if strings.Contains(operatingSystem, "centos") || strings.Contains(operatingSystem, "enterprise linux") || strings.Contains(operatingSystem, "oracle linux") {
+		logrus.Debugf("Host [%s] with OperatingSystem [%s] is Enterprise Linux", host.Address, operatingSystem)
+		return true
+	}
+	return false
+}
+
+func IsEnterpriseLinuxDocker(host *Host) bool {
+	dockerInitBinary := host.DockerInfo.InitBinary
+	// Init binary for Enterprise Linux Docker (not upstream) is /usr/libexec/docker/docker-init-current
+	// Init binary for upstream Docker is docker-init
+	if strings.EqualFold(dockerInitBinary, "/usr/libexec/docker/docker-init-current") {
+		return true
+	}
+	return false
 }

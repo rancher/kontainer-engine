@@ -12,7 +12,7 @@ import (
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/pki/cert"
 	"github.com/rancher/rke/services"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/rke/types"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -91,7 +91,7 @@ func rotateRKECertificatesFromCli(ctx *cli.Context) error {
 		return err
 	}
 	// setting up the flags
-	externalFlags := cluster.GetExternalFlags(false, false, false, "", filePath)
+	externalFlags := cluster.GetExternalFlags(false, false, false, false, "", filePath)
 	// setting up rotate flags
 	rkeConfig.RotateCertificates = &v3.RotateCertificates{
 		CACertificates: rotateCACerts,
@@ -120,7 +120,7 @@ func generateCSRFromCli(ctx *cli.Context) error {
 		return err
 	}
 	// setting up the flags
-	externalFlags := cluster.GetExternalFlags(false, false, false, "", filePath)
+	externalFlags := cluster.GetExternalFlags(false, false, false, false, "", filePath)
 	externalFlags.CertificateDir = ctx.String("cert-dir")
 	externalFlags.CustomCerts = ctx.Bool("custom-certs")
 
