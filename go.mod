@@ -14,13 +14,15 @@ require (
 	github.com/Azure/go-autorest/autorest/adal v0.8.1-0.20191028180845-3492b2aff503
 	github.com/Azure/go-autorest/autorest/to v0.3.1-0.20191028180845-3492b2aff503
 	github.com/aws/aws-sdk-go v1.25.48
+	github.com/coreos/bbolt v1.3.3 // indirect
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
 	github.com/golang/protobuf v1.3.2
+	github.com/gregjones/httpcache v0.0.0-20190212212710-3befbb6ad0cc // indirect
 	github.com/heptio/authenticator v0.0.0-20180409043135-d282f87a1972
 	github.com/pkg/errors v0.9.1
-	github.com/rancher/norman v0.0.0-20200517050325-f53cae161640
+	github.com/rancher/norman v0.0.0-20200802063631-071be464e454
 	github.com/rancher/rke v1.2.0-rc5
-	github.com/rancher/types v0.0.0-20200326224235-0d1e1dcc8d55
+	github.com/rancher/types v0.0.0-20200625174156-fe03f32597d2
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/testify v1.4.0
 	github.com/urfave/cli v1.20.0
