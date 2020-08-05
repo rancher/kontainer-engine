@@ -39,7 +39,7 @@ func (c *Cluster) TunnelHosts(ctx context.Context, flags ExternalFlags) error {
 	for _, uniqueHost := range uniqueHosts {
 		runHost := uniqueHost
 		errgrp.Go(func() error {
-			if err := runHost.TunnelUp(ctx, c.DockerDialerFactory, c.PrefixPath, c.Version); err != nil {
+			if err := runHost.TunnelUp(ctx, c.DockerDialerFactory, c.getPrefixPath(runHost.OS()), c.Version); err != nil {
 				// Unsupported Docker version is NOT a connectivity problem that we can recover! So we bail out on it
 				if strings.Contains(err.Error(), "Unsupported Docker version found") {
 					return err
@@ -81,7 +81,7 @@ func (c *Cluster) InvertIndexHosts() error {
 		for k, v := range host.Labels {
 			newHost.ToAddLabels[k] = v
 		}
-		newHost.IgnoreDockerVersion = c.IgnoreDockerVersion
+		newHost.IgnoreDockerVersion = *c.IgnoreDockerVersion
 		if c.BastionHost.Address != "" {
 			// Add the bastion host information to each host object
 			newHost.BastionHost = c.BastionHost

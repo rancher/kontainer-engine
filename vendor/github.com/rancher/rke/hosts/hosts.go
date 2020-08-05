@@ -147,6 +147,46 @@ func (h *Host) CleanUp(ctx context.Context, toCleanPaths []string, cleanerImage 
 	return nil
 }
 
+func (h *Host) OS() string {
+	return h.DockerInfo.OSType
+}
+
+func (h *Host) IsWindows() bool {
+	return h.DockerInfo.OSType == "windows"
+}
+
+func (h *Host) IsLinux() bool {
+	return h.DockerInfo.OSType == "linux"
+}
+
+func (h *Host) ProcessFilter(processes map[string]v3.Process) map[string]v3.Process {
+	if h.IsWindows() {
+		for name, process := range processes {
+			// doesn't support host network on windows
+			if process.NetworkMode == "host" {
+				process.NetworkMode = ""
+			}
+
+			// doesn't support PID on windows
+			if process.PidMode != "" {
+				process.PidMode = ""
+			}
+
+			// doesn't support privileged mode on windows
+			if process.Privileged {
+				process.Privileged = false
+			}
+
+			// doesn't execute health check
+			process.HealthCheck = v3.HealthCheck{}
+
+			processes[name] = process
+		}
+	}
+
+	return processes
+}
+
 func DeleteNode(ctx context.Context, toDeleteHost *Host, kubeClient *kubernetes.Clientset, hasAnotherRole bool, cloudProvider string) error {
 	if hasAnotherRole {
 		log.Infof(ctx, "[hosts] host [%s] has another role, skipping delete from kubernetes cluster", toDeleteHost.Address)
@@ -315,23 +355,50 @@ func GetUniqueHostList(etcdHosts, cpHosts, workerHosts []*Host) []*Host {
 	return uniqHostList
 }
 
-func GetPrefixPath(osType, ClusterPrefixPath string) string {
+func (h *Host) SetPrefixPath(clusterPrefixPath string) {
 	var prefixPath string
 	switch {
-	case ClusterPrefixPath != "/":
-		prefixPath = ClusterPrefixPath
-	case strings.Contains(osType, B2DOS):
+	case clusterPrefixPath != "/":
+		prefixPath = clusterPrefixPath
+	case strings.Contains(h.DockerInfo.OperatingSystem, B2DOS):
 		prefixPath = B2DPrefixPath
-	case strings.Contains(osType, ROS):
+	case strings.Contains(h.DockerInfo.OperatingSystem, ROS):
 		prefixPath = ROSPrefixPath
-	case strings.Contains(osType, CoreOS):
+	case strings.Contains(h.DockerInfo.OperatingSystem, CoreOS):
 		prefixPath = CoreOSPrefixPath
-	case strings.Contains(osType, WindowsOS):
+	case strings.Contains(h.DockerInfo.OperatingSystem, WindowsOS):
 		prefixPath = WindowsPrefixPath
 	default:
-		prefixPath = ClusterPrefixPath
+		prefixPath = clusterPrefixPath
 	}
-	return prefixPath
+
+	h.PrefixPath = prefixPath
+}
+
+func (h *Host) GetExtraBinds(service v3.BaseService) []string {
+	switch {
+	case h.OS() == "windows" && len(service.WindowsExtraBinds) > 0:
+		return service.WindowsExtraBinds
+	default:
+		return service.ExtraBinds
+	}
+}
+
+func (h *Host) GetExtraEnv(service v3.BaseService) []string {
+	switch {
+	case h.OS() == "windows" && len(service.WindowsExtraEnv) > 0:
+		return service.WindowsExtraEnv
+	default:
+		return service.ExtraEnv
+	}
+}
+func (h *Host) GetExtraArgs(service v3.BaseService) map[string]string {
+	switch {
+	case h.OS() == "windows" && len(service.WindowsExtraArgs) > 0:
+		return service.WindowsExtraArgs
+	default:
+		return service.ExtraArgs
+	}
 }
 
 func DoRunLogCleaner(ctx context.Context, host *Host, alpineImage string, prsMap map[string]v3.PrivateRegistry) error {
@@ -394,4 +461,33 @@ func GetInternalAddressForHosts(hostList []*Host) []string {
 		hostAddresses = append(hostAddresses, host.InternalAddress)
 	}
 	return hostAddresses
+}
+
+func IsDockerSELinuxEnabled(host *Host) bool {
+	for _, securityOpt := range host.DockerInfo.SecurityOptions {
+		if securityOpt == "selinux" {
+			logrus.Debugf("Host [%s] has SELinux enabled in Docker", host.Address)
+			return true
+		}
+	}
+	return false
+}
+
+func IsEnterpriseLinuxHost(host *Host) bool {
+	operatingSystem := strings.ToLower(host.DockerInfo.OperatingSystem)
+	if strings.Contains(operatingSystem, "centos") || strings.Contains(operatingSystem, "enterprise linux") || strings.Contains(operatingSystem, "oracle linux") {
+		logrus.Debugf("Host [%s] with OperatingSystem [%s] is Enterprise Linux", host.Address, operatingSystem)
+		return true
+	}
+	return false
+}
+
+func IsEnterpriseLinuxDocker(host *Host) bool {
+	dockerInitBinary := host.DockerInfo.InitBinary
+	// Init binary for Enterprise Linux Docker (not upstream) is /usr/libexec/docker/docker-init-current
+	// Init binary for upstream Docker is docker-init
+	if strings.EqualFold(dockerInitBinary, "/usr/libexec/docker/docker-init-current") {
+		return true
+	}
+	return false
 }
