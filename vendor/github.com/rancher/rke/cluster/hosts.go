@@ -10,8 +10,8 @@ import (
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
 	"github.com/rancher/rke/services"
+	v3 "github.com/rancher/rke/types"
 	"github.com/rancher/rke/util"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apiserver/pkg/apis/apiserver/v1alpha1"
@@ -39,7 +39,7 @@ func (c *Cluster) TunnelHosts(ctx context.Context, flags ExternalFlags) error {
 	for _, uniqueHost := range uniqueHosts {
 		runHost := uniqueHost
 		errgrp.Go(func() error {
-			if err := runHost.TunnelUp(ctx, c.DockerDialerFactory, c.PrefixPath, c.Version); err != nil {
+			if err := runHost.TunnelUp(ctx, c.DockerDialerFactory, c.getPrefixPath(runHost.OS()), c.Version); err != nil {
 				// Unsupported Docker version is NOT a connectivity problem that we can recover! So we bail out on it
 				if strings.Contains(err.Error(), "Unsupported Docker version found") {
 					return err
@@ -81,7 +81,9 @@ func (c *Cluster) InvertIndexHosts() error {
 		for k, v := range host.Labels {
 			newHost.ToAddLabels[k] = v
 		}
-		newHost.IgnoreDockerVersion = c.IgnoreDockerVersion
+		if c.IgnoreDockerVersion != nil {
+			newHost.IgnoreDockerVersion = *c.IgnoreDockerVersion
+		}
 		if c.BastionHost.Address != "" {
 			// Add the bastion host information to each host object
 			newHost.BastionHost = c.BastionHost
@@ -219,8 +221,20 @@ func (c *Cluster) SetUpHosts(ctx context.Context, flags ExternalFlags) error {
 			errgrp.Go(func() error {
 				var errList []error
 				for host := range hostsQueue {
-					err := pki.DeployCertificatesOnPlaneHost(ctx, host.(*hosts.Host), c.RancherKubernetesEngineConfig, c.Certificates, c.SystemImages.CertDownloader, c.PrivateRegistriesMap, c.ForceDeployCerts)
-					if err != nil {
+					h := host.(*hosts.Host)
+					var env []string
+					if h.IsWindows() {
+						env = c.getWindowsEnv(h)
+					}
+					if err := pki.DeployCertificatesOnPlaneHost(
+						ctx,
+						h,
+						c.RancherKubernetesEngineConfig,
+						c.Certificates,
+						c.SystemImages.CertDownloader,
+						c.PrivateRegistriesMap,
+						c.ForceDeployCerts,
+						env); err != nil {
 						errList = append(errList, err)
 					}
 				}

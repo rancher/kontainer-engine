@@ -17,7 +17,7 @@ import (
 	"github.com/rancher/rke/k8s"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
-	v3 "github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/rke/types"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 	v1 "k8s.io/api/core/v1"
@@ -53,7 +53,7 @@ func (c *Cluster) GetClusterState(ctx context.Context, fullState *FullState) (*C
 	}
 
 	// resetup external flags
-	flags := GetExternalFlags(false, false, false, c.ConfigDir, c.ConfigPath)
+	flags := GetExternalFlags(false, false, false, false, c.ConfigDir, c.ConfigPath)
 	currentCluster, err := InitClusterObject(ctx, fullState.CurrentState.RancherKubernetesEngineConfig, flags, fullState.CurrentState.EncryptionConfig)
 	if err != nil {
 		return nil, err
@@ -228,6 +228,19 @@ func GetCertificateDirPath(configPath, configDir string) string {
 	return trimmedName + certDirExt
 }
 
+func StringToFullState(ctx context.Context, stateFileContent string) (*FullState, error) {
+	rkeFullState := &FullState{}
+	logrus.Tracef("stateFileContent: %s", stateFileContent)
+	if err := json.Unmarshal([]byte(stateFileContent), rkeFullState); err != nil {
+		return rkeFullState, err
+	}
+	rkeFullState.DesiredState.CertificatesBundle = pki.TransformPEMToObject(rkeFullState.DesiredState.CertificatesBundle)
+	rkeFullState.CurrentState.CertificatesBundle = pki.TransformPEMToObject(rkeFullState.CurrentState.CertificatesBundle)
+	logrus.Tracef("rkeFullState: %+v", rkeFullState)
+
+	return rkeFullState, nil
+}
+
 func ReadStateFile(ctx context.Context, statePath string) (*FullState, error) {
 	rkeFullState := &FullState{}
 	fp, err := filepath.Abs(statePath)
@@ -251,7 +264,7 @@ func ReadStateFile(ctx context.Context, statePath string) (*FullState, error) {
 	return rkeFullState, nil
 }
 
-func removeStateFile(ctx context.Context, statePath string) {
+func RemoveStateFile(ctx context.Context, statePath string) {
 	log.Infof(ctx, "Removing state file: %s", statePath)
 	if err := os.Remove(statePath); err != nil {
 		logrus.Warningf("Failed to remove state file: %v", err)

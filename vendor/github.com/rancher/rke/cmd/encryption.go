@@ -8,7 +8,7 @@ import (
 	"github.com/rancher/rke/hosts"
 	"github.com/rancher/rke/log"
 	"github.com/rancher/rke/pki"
-	"github.com/rancher/types/apis/management.cattle.io/v3"
+	v3 "github.com/rancher/rke/types"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -55,7 +55,7 @@ func rotateEncryptionKeyFromCli(ctx *cli.Context) error {
 	}
 
 	// setting up the flags
-	flags := cluster.GetExternalFlags(false, false, false, "", filePath)
+	flags := cluster.GetExternalFlags(false, false, false, false, "", filePath)
 
 	return RotateEncryptionKey(context.Background(), rkeConfig, hosts.DialersOptions{}, flags)
 }
