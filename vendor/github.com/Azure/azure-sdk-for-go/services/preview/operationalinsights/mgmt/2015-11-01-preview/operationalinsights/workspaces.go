@@ -36,7 +36,8 @@ func NewWorkspacesClient(subscriptionID string) WorkspacesClient {
 	return NewWorkspacesClientWithBaseURI(DefaultBaseURI, subscriptionID)
 }
 
-// NewWorkspacesClientWithBaseURI creates an instance of the WorkspacesClient client.
+// NewWorkspacesClientWithBaseURI creates an instance of the WorkspacesClient client using a custom endpoint.  Use this
+// when interacting with an Azure cloud that uses a non-standard base URI (sovereign clouds, Azure stack).
 func NewWorkspacesClientWithBaseURI(baseURI string, subscriptionID string) WorkspacesClient {
 	return WorkspacesClient{NewWithBaseURI(baseURI, subscriptionID)}
 }
@@ -66,7 +67,7 @@ func (client WorkspacesClient) CreateOrUpdate(ctx context.Context, resourceGroup
 			Constraints: []validation.Constraint{{Target: "parameters.WorkspaceProperties", Name: validation.Null, Rule: false,
 				Chain: []validation.Constraint{{Target: "parameters.WorkspaceProperties.RetentionInDays", Name: validation.Null, Rule: false,
 					Chain: []validation.Constraint{{Target: "parameters.WorkspaceProperties.RetentionInDays", Name: validation.InclusiveMaximum, Rule: int64(730), Chain: nil},
-						{Target: "parameters.WorkspaceProperties.RetentionInDays", Name: validation.InclusiveMinimum, Rule: -1, Chain: nil},
+						{Target: "parameters.WorkspaceProperties.RetentionInDays", Name: validation.InclusiveMinimum, Rule: int64(-1), Chain: nil},
 					}},
 				}}}}}); err != nil {
 		return result, validation.NewError("operationalinsights.WorkspacesClient", "CreateOrUpdate", err.Error())
@@ -113,9 +114,8 @@ func (client WorkspacesClient) CreateOrUpdatePreparer(ctx context.Context, resou
 // CreateOrUpdateSender sends the CreateOrUpdate request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) CreateOrUpdateSender(req *http.Request) (future WorkspacesCreateOrUpdateFuture, err error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
 	var resp *http.Response
-	resp, err = autorest.SendWithSender(client, req, sd...)
+	resp, err = client.Send(req, azure.DoRetryWithRegistration(client.Client))
 	if err != nil {
 		return
 	}
@@ -128,7 +128,6 @@ func (client WorkspacesClient) CreateOrUpdateSender(req *http.Request) (future W
 func (client WorkspacesClient) CreateOrUpdateResponder(resp *http.Response) (result Workspace, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusCreated),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -196,8 +195,7 @@ func (client WorkspacesClient) DeletePreparer(ctx context.Context, resourceGroup
 // DeleteSender sends the Delete request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) DeleteSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // DeleteResponder handles the response to the Delete request. The method always
@@ -205,7 +203,6 @@ func (client WorkspacesClient) DeleteSender(req *http.Request) (*http.Response, 
 func (client WorkspacesClient) DeleteResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK, http.StatusNoContent),
 		autorest.ByClosing())
 	result.Response = resp
@@ -282,8 +279,7 @@ func (client WorkspacesClient) DisableIntelligencePackPreparer(ctx context.Conte
 // DisableIntelligencePackSender sends the DisableIntelligencePack request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) DisableIntelligencePackSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // DisableIntelligencePackResponder handles the response to the DisableIntelligencePack request. The method always
@@ -291,7 +287,6 @@ func (client WorkspacesClient) DisableIntelligencePackSender(req *http.Request) 
 func (client WorkspacesClient) DisableIntelligencePackResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByClosing())
 	result.Response = resp
@@ -368,8 +363,7 @@ func (client WorkspacesClient) EnableIntelligencePackPreparer(ctx context.Contex
 // EnableIntelligencePackSender sends the EnableIntelligencePack request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) EnableIntelligencePackSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // EnableIntelligencePackResponder handles the response to the EnableIntelligencePack request. The method always
@@ -377,7 +371,6 @@ func (client WorkspacesClient) EnableIntelligencePackSender(req *http.Request) (
 func (client WorkspacesClient) EnableIntelligencePackResponder(resp *http.Response) (result autorest.Response, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByClosing())
 	result.Response = resp
@@ -444,8 +437,7 @@ func (client WorkspacesClient) GetPreparer(ctx context.Context, resourceGroupNam
 // GetSender sends the Get request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) GetSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetResponder handles the response to the Get request. The method always
@@ -453,7 +445,6 @@ func (client WorkspacesClient) GetSender(req *http.Request) (*http.Response, err
 func (client WorkspacesClient) GetResponder(resp *http.Response) (result Workspace, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -529,8 +520,7 @@ func (client WorkspacesClient) GetSharedKeysPreparer(ctx context.Context, resour
 // GetSharedKeysSender sends the GetSharedKeys request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) GetSharedKeysSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // GetSharedKeysResponder handles the response to the GetSharedKeys request. The method always
@@ -538,7 +528,6 @@ func (client WorkspacesClient) GetSharedKeysSender(req *http.Request) (*http.Res
 func (client WorkspacesClient) GetSharedKeysResponder(resp *http.Response) (result SharedKeys, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -601,8 +590,7 @@ func (client WorkspacesClient) ListPreparer(ctx context.Context) (*http.Request,
 // ListSender sends the List request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) ListSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListResponder handles the response to the List request. The method always
@@ -610,7 +598,6 @@ func (client WorkspacesClient) ListSender(req *http.Request) (*http.Response, er
 func (client WorkspacesClient) ListResponder(resp *http.Response) (result WorkspaceListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -684,8 +671,7 @@ func (client WorkspacesClient) ListByResourceGroupPreparer(ctx context.Context, 
 // ListByResourceGroupSender sends the ListByResourceGroup request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) ListByResourceGroupSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListByResourceGroupResponder handles the response to the ListByResourceGroup request. The method always
@@ -693,7 +679,6 @@ func (client WorkspacesClient) ListByResourceGroupSender(req *http.Request) (*ht
 func (client WorkspacesClient) ListByResourceGroupResponder(resp *http.Response) (result WorkspaceListResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -770,8 +755,7 @@ func (client WorkspacesClient) ListIntelligencePacksPreparer(ctx context.Context
 // ListIntelligencePacksSender sends the ListIntelligencePacks request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) ListIntelligencePacksSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListIntelligencePacksResponder handles the response to the ListIntelligencePacks request. The method always
@@ -779,7 +763,6 @@ func (client WorkspacesClient) ListIntelligencePacksSender(req *http.Request) (*
 func (client WorkspacesClient) ListIntelligencePacksResponder(resp *http.Response) (result ListIntelligencePack, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result.Value),
 		autorest.ByClosing())
@@ -855,8 +838,7 @@ func (client WorkspacesClient) ListManagementGroupsPreparer(ctx context.Context,
 // ListManagementGroupsSender sends the ListManagementGroups request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) ListManagementGroupsSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListManagementGroupsResponder handles the response to the ListManagementGroups request. The method always
@@ -864,7 +846,6 @@ func (client WorkspacesClient) ListManagementGroupsSender(req *http.Request) (*h
 func (client WorkspacesClient) ListManagementGroupsResponder(resp *http.Response) (result WorkspaceListManagementGroupsResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -940,8 +921,7 @@ func (client WorkspacesClient) ListUsagesPreparer(ctx context.Context, resourceG
 // ListUsagesSender sends the ListUsages request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) ListUsagesSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // ListUsagesResponder handles the response to the ListUsages request. The method always
@@ -949,7 +929,6 @@ func (client WorkspacesClient) ListUsagesSender(req *http.Request) (*http.Respon
 func (client WorkspacesClient) ListUsagesResponder(resp *http.Response) (result WorkspaceListUsagesResult, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())
@@ -1028,8 +1007,7 @@ func (client WorkspacesClient) UpdatePreparer(ctx context.Context, resourceGroup
 // UpdateSender sends the Update request. The method will close the
 // http.Response Body if it receives an error.
 func (client WorkspacesClient) UpdateSender(req *http.Request) (*http.Response, error) {
-	sd := autorest.GetSendDecorators(req.Context(), azure.DoRetryWithRegistration(client.Client))
-	return autorest.SendWithSender(client, req, sd...)
+	return client.Send(req, azure.DoRetryWithRegistration(client.Client))
 }
 
 // UpdateResponder handles the response to the Update request. The method always
@@ -1037,7 +1015,6 @@ func (client WorkspacesClient) UpdateSender(req *http.Request) (*http.Response, 
 func (client WorkspacesClient) UpdateResponder(resp *http.Response) (result Workspace, err error) {
 	err = autorest.Respond(
 		resp,
-		client.ByInspecting(),
 		azure.WithErrorUnlessStatusCode(http.StatusOK),
 		autorest.ByUnmarshallingJSON(&result),
 		autorest.ByClosing())

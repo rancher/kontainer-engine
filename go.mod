@@ -4,14 +4,15 @@ go 1.13
 
 replace (
 	git.apache.org/thrift.git => github.com/apache/thrift v0.12.0
-	github.com/Azure/go-autorest => github.com/Azure/go-autorest v12.2.0+incompatible
+	github.com/Azure/go-autorest => github.com/Azure/go-autorest v14.2.0+incompatible
 	k8s.io/client-go => k8s.io/client-go v0.18.0
 )
 
 require (
-	github.com/Azure/azure-sdk-for-go v36.1.0+incompatible
-	github.com/Azure/go-autorest/autorest v0.9.3-0.20191028180845-3492b2aff503
-	github.com/Azure/go-autorest/autorest/adal v0.8.1-0.20191028180845-3492b2aff503
+	github.com/Azure/azure-sdk-for-go v44.0.0+incompatible
+	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
+	github.com/Azure/go-autorest/autorest v0.11.0
+	github.com/Azure/go-autorest/autorest/adal v0.9.0
 	github.com/Azure/go-autorest/autorest/to v0.3.1-0.20191028180845-3492b2aff503
 	github.com/aws/aws-sdk-go v1.25.48
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f // indirect
@@ -24,7 +25,7 @@ require (
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/testify v1.4.0
 	github.com/urfave/cli v1.20.0
-	golang.org/x/crypto v0.0.0-20200220183623-bac4c82f6975
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/net v0.0.0-20191112182307-2180aed22343
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	google.golang.org/api v0.14.0
