@@ -736,6 +736,12 @@ func (d *Driver) generateClusterCreateRequest(state state) *raw.CreateClusterReq
 		KubernetesDashboard:      &raw.KubernetesDashboard{Disabled: !state.EnableKubernetesDashboard},
 		NetworkPolicyConfig:      &raw.NetworkPolicyConfig{Disabled: disableNetworkPolicyConfig},
 	}
+	if !disableNetworkPolicyConfig {
+		request.Cluster.NetworkPolicy = &raw.NetworkPolicy{
+			Enabled:  true,
+			Provider: "CALICO",
+		}
+	}
 	request.Cluster.Network = state.Network
 	request.Cluster.Subnetwork = state.SubNetwork
 	request.Cluster.LegacyAbac = &raw.LegacyAbac{
