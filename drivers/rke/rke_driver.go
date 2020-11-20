@@ -160,9 +160,9 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, info *ty
 	dialers, externalFlags := d.getFlags(rkeConfig, stateDir)
 	APIURL, caCrt, clientCert, clientKey, certs, err := clusterUp(ctx, &rkeConfig, dialers, externalFlags, data)
 	if len(certs) > 0 {
-		certsStr, err = rkecerts.ToString(certs)
+		certsStr, _ = rkecerts.ToString(certs)
 	}
-	if err != nil && certsStr == "" {
+	if err != nil && (certsStr == "" || APIURL == "") {
 		return d.save(&types.ClusterInfo{
 			Metadata: map[string]string{
 				"Config": yaml,
@@ -179,7 +179,7 @@ func (d *Driver) Create(ctx context.Context, opts *types.DriverOptions, info *ty
 			"Config":     yaml,
 			"Certs":      certsStr,
 		},
-	}, stateDir), err
+	}, stateDir), nil
 }
 
 func getData(s Store, k8sVersion string) (map[string]interface{}, error) {
