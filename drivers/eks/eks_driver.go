@@ -110,7 +110,7 @@ var amiForRegionAndVersion = map[string]map[string]string{
 		"eu-central-1":   "ami-03b60cc48aeb2f7ff",
 		"eu-west-1":      "ami-00d1b45828b8e0fa6",
 		"eu-west-2":      "ami-0ebcd1100fc79e335",
-		"eu-south-1":      "",
+		"eu-south-1":     "",
 		"eu-west-3":      "ami-0559916f1a5f2c7e2",
 		"eu-north-1":     "ami-030439217b90ccaf7",
 		"me-south-1":     "ami-03bc32a8fb30f8c22",
